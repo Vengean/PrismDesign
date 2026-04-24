@@ -1,0 +1,33 @@
+.user-profile-card {
+  border: 1px solid var(--color-border, #ede9fe);
+  overflow: hidden;
+}
+
+.user-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px;
+  background: linear-gradient(135deg, #ede9fe 0%, #f0f0ff 100%);
+  border-bottom: 1px solid var(--color-border, #ede9fe);
+}
+
+.user-avatar {
+  font-size: 28px !important;
+  background: rgba(99, 102, 241, 0.1) !important;
+}
+
+.user-stats {
+  display: flex;
+  padding: 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.stat-item {
+  flex: 1;
+  text-align: center;
+}
+
+.user-menu {
+  border-inline-end: none !important;
+}

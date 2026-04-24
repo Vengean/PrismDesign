@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "PrismDesign",
+  "version": "0.1.0",
+  "description": "Visual UI editing for designers — click, edit, and refine live pages with AI",
+  "permissions": ["sidePanel", "activeTab", "tabs", "scripting", "storage"],
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://localhost:*/*", "http://127.0.0.1:*/*", "http://*/*", "https://*/*"],
+      "js": ["content.js"]
+    }
+  ],
+  "action": {
+    "default_title": "PrismDesign"
+  }
+}

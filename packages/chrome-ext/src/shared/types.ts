@@ -1,0 +1,109 @@
+// ============================================================
+// Core data types
+// ============================================================
+
+export interface ComponentInfo {
+  name: string;
+  props: Record<string, unknown>;
+  sourceFile?: string;
+  sourceLine?: number;
+}
+
+export interface ElementSelection {
+  domPath: string;
+  tagName: string;
+  textContent: string;
+  className: string;
+  component: ComponentInfo | null;
+  componentChain: string;
+  styles: Record<string, string>;
+  rect: { top: number; left: number; width: number; height: number };
+  isTextElement: boolean;
+  isFlexContainer: boolean;
+}
+
+export interface StyleChange {
+  selector: string;
+  property: string;
+  oldValue: string;
+  newValue: string;
+  componentChain?: string;
+  componentName?: string;
+  sourceFile?: string;
+  sourceLine?: number;
+  textContent?: string;
+  siblingIndex?: string;
+}
+
+export interface DOMTreeNode {
+  id: string;
+  tagName: string;
+  className: string;
+  componentName: string | null;
+  domPath: string;
+  hasChildren: boolean;
+  children: DOMTreeNode[];
+}
+
+export interface ChatMessage {
+  role: "user" | "ai";
+  content: string;
+  timestamp: number;
+}
+
+export interface ProjectInfo {
+  framework: string;
+  styling: string[];
+  componentLib: string[];
+}
+
+// ============================================================
+// Message protocol — Side Panel <-> Background <-> Content Script
+// ============================================================
+
+// Downstream: Side Panel -> Background -> Content Script
+export type DownstreamMessage =
+  | { type: "DESIGN_MODE_ON" }
+  | { type: "DESIGN_MODE_OFF" }
+  | { type: "APPLY_STYLE_PREVIEW"; payload: { domPath: string; property: string; value: string } }
+  | { type: "CLEAR_STYLE_PREVIEW"; payload: { domPath: string } }
+  | { type: "HIGHLIGHT_ELEMENT"; payload: { domPath: string } }
+  | { type: "UNHIGHLIGHT_ELEMENT" }
+  | { type: "SELECT_ELEMENT"; payload: { domPath: string } }
+  | { type: "ENABLE_DRAG_MODE" }
+  | { type: "DISABLE_DRAG_MODE" }
+  | { type: "GET_DOM_TREE" }
+  | { type: "GET_PENDING_CHANGES" }
+  | { type: "CLEAR_CHANGES" }
+  | { type: "UNDO" }
+  | { type: "REDO" }
+  | { type: "PING" };
+
+// Upstream: Content Script -> Background -> Side Panel
+export type UpstreamMessage =
+  | { type: "ELEMENT_SELECTED"; payload: ElementSelection }
+  | { type: "ELEMENT_DESELECTED" }
+  | { type: "DOM_TREE"; payload: DOMTreeNode[] }
+  | { type: "CHANGES_UPDATE"; payload: { changes: StyleChange[]; undoCount: number; redoCount: number } }
+  | { type: "DRAG_MOVE"; payload: { element: string; from: number; to: number } }
+  | { type: "CONTENT_READY" }
+  | { type: "DESIGN_MODE_STATUS"; payload: { active: boolean } }
+  | { type: "OPEN_SIDE_PANEL" };
+
+// Agent operations: Side Panel -> Background (not forwarded to content)
+export type AgentMessage =
+  | { type: "AGENT_CONNECT"; payload: { url: string } }
+  | { type: "AGENT_DISCONNECT" }
+  | { type: "AGENT_APPLY_CHANGES"; payload: { changes: StyleChange[]; pagePath?: string; supplement?: string } }
+  | { type: "AGENT_CHAT"; payload: { message: string; context: { pagePath: string; components: ComponentInfo[] } } }
+  | { type: "AGENT_ROLLBACK" };
+
+// Agent events: Background -> Side Panel
+export type AgentEventMessage =
+  | { type: "AGENT_STATUS"; payload: { connected: boolean; project?: ProjectInfo } }
+  | { type: "AGENT_WORKING"; payload: { working: boolean } }
+  | { type: "AGENT_RESULT"; payload: { success: boolean; message: string; filesModified?: string[] } }
+  | { type: "AGENT_ERROR"; payload: { message: string } };
+
+// All message types
+export type PrismMessage = DownstreamMessage | UpstreamMessage | AgentMessage | AgentEventMessage;
