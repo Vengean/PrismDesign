@@ -2,12 +2,18 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, Layers } from "lucide-react";
 import { useNavigator } from "../hooks/use-navigator";
-import { useElement } from "../hooks/use-element";
+import type { ElementSelection } from "../../shared/types.js";
 import { NavigatorNode } from "./NavigatorNode";
 
-export function Navigator() {
+interface NavigatorProps {
+  selection: ElementSelection | null;
+  highlightElement: (domPath: string) => void;
+  unhighlightElement: () => void;
+  selectElement: (domPath: string) => void;
+}
+
+export function Navigator({ selection, highlightElement, unhighlightElement, selectElement }: NavigatorProps) {
   const { tree, refreshTree } = useNavigator();
-  const { selection, highlightElement, unhighlightElement, selectElement } = useElement();
   const [filter, setFilter] = useState("");
 
   useEffect(() => {

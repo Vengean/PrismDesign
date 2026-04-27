@@ -1,15 +1,15 @@
 /**
  * Keyboard shortcuts for design mode.
- * Only active when design mode is on.
+ * Supports plain keys (e.g. Escape) and Ctrl/Cmd shortcuts.
  */
 
 let enabled = false;
-let handlers: Record<string, () => void> = {};
+let ctrlHandlers: Record<string, () => void> = {};
+let plainHandlers: Record<string, () => void> = {};
 
 function onKeyDown(e: KeyboardEvent) {
   if (!enabled) return;
 
-  // Skip when typing in inputs
   const active = document.activeElement;
   if (
     active &&
@@ -21,18 +21,33 @@ function onKeyDown(e: KeyboardEvent) {
     return;
   }
 
-  if (!(e.ctrlKey || e.metaKey)) return;
-
   const key = e.key.toLowerCase();
-  const handler = handlers[key];
-  if (handler) {
+
+  // Plain key shortcuts (no modifier)
+  const plain = plainHandlers[key];
+  if (plain && !e.ctrlKey && !e.metaKey && !e.altKey) {
     e.preventDefault();
-    handler();
+    plain();
+    return;
+  }
+
+  // Ctrl/Cmd shortcuts
+  if (!(e.ctrlKey || e.metaKey)) return;
+  const ctrl = ctrlHandlers[key];
+  if (ctrl) {
+    e.preventDefault();
+    ctrl();
   }
 }
 
-export function initKeyboard(shortcuts: Record<string, () => void>) {
-  handlers = shortcuts;
+interface KeyboardShortcuts {
+  ctrl?: Record<string, () => void>;
+  plain?: Record<string, () => void>;
+}
+
+export function initKeyboard(shortcuts: KeyboardShortcuts) {
+  ctrlHandlers = shortcuts.ctrl || {};
+  plainHandlers = shortcuts.plain || {};
   enabled = true;
   document.addEventListener("keydown", onKeyDown, true);
 }
@@ -40,9 +55,6 @@ export function initKeyboard(shortcuts: Record<string, () => void>) {
 export function destroyKeyboard() {
   enabled = false;
   document.removeEventListener("keydown", onKeyDown, true);
-  handlers = {};
-}
-
-export function setKeyboardEnabled(on: boolean) {
-  enabled = on;
+  ctrlHandlers = {};
+  plainHandlers = {};
 }

@@ -4,6 +4,7 @@ import type { ProjectInfo, PrismMessage } from "../../shared/types.js";
 export function useAgent() {
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [aiWorking, setAiWorking] = useState(false);
   const [agentUrl, setAgentUrl] = useState("http://localhost:9527");
@@ -38,16 +39,19 @@ export function useAgent() {
 
   const connect = useCallback(async (url: string) => {
     setConnecting(true);
+    setError(null);
     setAgentUrl(url);
     try {
       const result = await chrome.runtime.sendMessage({ type: "AGENT_CONNECT", payload: { url } }) as any;
       if (!result?.success) {
         setConnecting(false);
         setConnected(false);
+        setError(result?.error || "连接失败，请检查 Agent 服务是否已启动");
       }
     } catch {
       setConnecting(false);
       setConnected(false);
+      setError("连接失败，请检查 Agent 服务是否已启动");
     }
   }, []);
 
@@ -76,7 +80,7 @@ export function useAgent() {
   }, []);
 
   return {
-    connected, connecting, project, aiWorking, agentUrl, setAgentUrl,
+    connected, connecting, error, project, aiWorking, agentUrl, setAgentUrl,
     connect, disconnect, applyChanges, chat, rollback,
   };
 }

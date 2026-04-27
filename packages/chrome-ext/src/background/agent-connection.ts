@@ -18,9 +18,20 @@ export async function connectAgent(
 
   state.agentUrl = url;
 
-  // Test connection
-  const res = await fetch(`${url}/api/status`);
-  const status = await res.json();
+  // Test connection with timeout
+  let res: Response;
+  try {
+    res = await fetch(`${url}/api/status`, { signal: AbortSignal.timeout(5000) });
+  } catch (err) {
+    state.agentUrl = null;
+    if (err instanceof DOMException && err.name === "TimeoutError") {
+      throw new Error("连接超时，请检查 Agent 服务是否已启动");
+    }
+    throw new Error("无法连接到 Agent 服务，请检查地址是否正确以及服务是否已启动");
+  }
+  if (!res.ok) { state.agentUrl = null; throw new Error(`Agent 返回错误 (${res.status})`); }
+  let status: any;
+  try { status = await res.json(); } catch { state.agentUrl = null; throw new Error("Agent 返回了无效数据"); }
 
   state.connected = true;
   state.project = status.project;

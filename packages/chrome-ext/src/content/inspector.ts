@@ -1,25 +1,84 @@
 import type { ElementSelection, ComponentInfo } from "../shared/types.js";
 
-/** Get React component info from a DOM element via Fiber */
-function getReactComponentInfo(element: HTMLElement): ComponentInfo | null {
-  const fiberKey = Object.keys(element).find(
-    (key) =>
-      key.startsWith("__reactFiber$") ||
-      key.startsWith("__reactInternalInstance$")
+// ---- React Fiber Utilities ----
+
+function getReactFiber(element: HTMLElement): any | null {
+  const key = Object.keys(element).find(
+    (k) => k.startsWith("__reactFiber$") || k.startsWith("__reactInternalInstance$")
   );
+  return key ? (element as any)[key] : null;
+}
 
-  if (!fiberKey) return null;
+/**
+ * Extract source location from a React fiber.
+ * Tries multiple strategies because React 19 removed _debugSource.
+ */
+function getSourceFromFiber(fiber: any): { fileName?: string; lineNumber?: number } | null {
+  // Strategy 1: _debugSource (React 16-18 dev mode)
+  if (fiber._debugSource) {
+    return fiber._debugSource;
+  }
 
-  let fiber = (element as any)[fiberKey];
+  // Strategy 2: _debugOwner._debugSource (parent component's source)
+  if (fiber._debugOwner?._debugSource) {
+    return fiber._debugOwner._debugSource;
+  }
+
+  // Strategy 3: React DevTools hook — if installed, it has source info
+  const hook = (window as any).__REACT_DEVTOOLS_GLOBAL_HOOK__;
+  if (hook?.renderers?.size > 0) {
+    try {
+      for (const renderer of hook.renderers.values()) {
+        // React DevTools fiber inspector can get source
+        if (renderer.findFiberByHostInstance) {
+          const inspected = renderer.currentDispatcherRef;
+          // This is a fallback — DevTools may have richer info
+          if (inspected) break;
+        }
+      }
+    } catch {}
+  }
+
+  // Strategy 4: function.toString() + name heuristic for Vite dev
+  // In Vite dev, component functions retain original names and sometimes
+  // have source-mapped stack traces we can parse
+  if (typeof fiber.type === "function" && fiber.type.name) {
+    try {
+      const err = { stack: "" };
+      const orig = Error.prepareStackTrace;
+      Error.prepareStackTrace = (_, stack) => stack;
+      try {
+        // Calling the component as new to get a stack trace is too risky,
+        // but we can look at __source which some Babel/SWC plugins inject
+        const fn = fiber.type as any;
+        if (fn.__source) {
+          return { fileName: fn.__source.fileName, lineNumber: fn.__source.lineNumber };
+        }
+      } finally {
+        Error.prepareStackTrace = orig;
+      }
+    } catch {}
+  }
+
+  return null;
+}
+
+/** Get the nearest user-land React component info from an element */
+function getReactComponentInfo(element: HTMLElement): ComponentInfo | null {
+  let fiber = getReactFiber(element);
+  if (!fiber) return null;
 
   while (fiber) {
     if (typeof fiber.type === "function") {
-      const source = fiber._debugSource;
+      const name = fiber.type.displayName || fiber.type.name;
+      if (!name) { fiber = fiber.return; continue; }
+
+      const source = getSourceFromFiber(fiber);
       const isNodeModules = source?.fileName?.includes("node_modules");
 
       if (!isNodeModules) {
         return {
-          name: fiber.type.displayName || fiber.type.name || "Anonymous",
+          name,
           props: sanitizeProps(fiber.memoizedProps),
           sourceFile: source?.fileName,
           sourceLine: source?.lineNumber,
@@ -31,7 +90,38 @@ function getReactComponentInfo(element: HTMLElement): ComponentInfo | null {
   return null;
 }
 
-/** Get Vue component info from a DOM element */
+/**
+ * Walk the React fiber tree upward and collect all user-land component names.
+ * This is more accurate than walking DOM parents because React fibers
+ * include components that don't render their own DOM node.
+ */
+function getReactFiberChain(element: HTMLElement): string[] {
+  let fiber = getReactFiber(element);
+  if (!fiber) return [];
+
+  const chain: string[] = [];
+  while (fiber) {
+    if (typeof fiber.type === "function") {
+      const name = fiber.type.displayName || fiber.type.name;
+      if (name) {
+        const source = getSourceFromFiber(fiber);
+        const isNodeModules = source?.fileName?.includes("node_modules");
+        // Include user components + named library components (like Button from antd)
+        if (!isNodeModules || name[0] === name[0].toUpperCase()) {
+          if (chain.length === 0 || chain[chain.length - 1] !== name) {
+            chain.push(name);
+          }
+        }
+      }
+    }
+    fiber = fiber.return;
+  }
+  chain.reverse();
+  return chain;
+}
+
+// ---- Vue Component Detection ----
+
 function getVueComponentInfo(element: HTMLElement): ComponentInfo | null {
   // Vue 3
   const vueInstance = (element as any).__vueParentComponent;
@@ -56,7 +146,8 @@ function getVueComponentInfo(element: HTMLElement): ComponentInfo | null {
   return null;
 }
 
-/** Remove non-serializable props */
+// ---- Helpers ----
+
 function sanitizeProps(props: Record<string, unknown> | null): Record<string, unknown> {
   if (!props) return {};
   const clean: Record<string, unknown> = {};
@@ -70,12 +161,10 @@ function sanitizeProps(props: Record<string, unknown> | null): Record<string, un
     } else if (t === "object") {
       clean[key] = "[Object]";
     }
-    // skip functions
   }
   return clean;
 }
 
-/** Get relevant computed styles */
 function getRelevantStyles(element: HTMLElement): Record<string, string> {
   const computed = window.getComputedStyle(element);
   const keys = [
@@ -98,7 +187,6 @@ function getRelevantStyles(element: HTMLElement): Record<string, string> {
   return styles;
 }
 
-/** Build a unique DOM path for an element */
 function getDomPath(element: HTMLElement): string {
   const parts: string[] = [];
   let el: HTMLElement | null = element;
@@ -116,12 +204,20 @@ function getDomPath(element: HTMLElement): string {
   return parts.join(" > ");
 }
 
-/** Get component chain walking up the DOM: "App > ProductCard > Button" */
+/**
+ * Get component chain — prefers React fiber tree (more accurate),
+ * falls back to walking DOM parents for Vue or no-framework.
+ */
 export function getComponentChain(element: HTMLElement): string {
+  // Try React fiber chain first (walks fiber tree, catches non-DOM components)
+  const fiberChain = getReactFiberChain(element);
+  if (fiberChain.length > 0) return fiberChain.join(" > ");
+
+  // Fallback: walk DOM parents
   const chain: string[] = [];
   let node: HTMLElement | null = element;
   while (node && node !== document.body) {
-    const comp = getReactComponentInfo(node) || getVueComponentInfo(node);
+    const comp = getVueComponentInfo(node);
     if (comp && (chain.length === 0 || chain[chain.length - 1] !== comp.name)) {
       chain.push(comp.name);
     }

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Palette } from "lucide-react";
-import { useElement } from "../hooks/use-element";
+import type { ElementSelection } from "../../shared/types.js";
 import { Separator } from "@/components/ui/separator";
 
 interface PropertyField {
@@ -71,8 +71,12 @@ function rgbToHex(rgb: string): string {
   return "#" + match.slice(0, 3).map((n) => parseInt(n).toString(16).padStart(2, "0")).join("");
 }
 
-export function PropertiesPanel() {
-  const { selection, applyStylePreview } = useElement();
+interface PropertiesPanelProps {
+  selection: ElementSelection | null;
+  applyStylePreview: (domPath: string, property: string, value: string) => void;
+}
+
+export function PropertiesPanel({ selection, applyStylePreview }: PropertiesPanelProps) {
   const [localValues, setLocalValues] = useState<Record<string, string>>({});
 
   if (!selection) {

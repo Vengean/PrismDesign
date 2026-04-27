@@ -7,6 +7,30 @@ import { scanProject, type ProjectProfile } from "./project-profiler.js";
 import { analyzeConventions } from "./convention-analyzer.js";
 import { startServer } from "./server.js";
 
+/**
+ * Walk up from cwd to find the monorepo root (pnpm runs agent from packages/agent).
+ */
+function findProjectRoot(): string {
+  let dir = process.cwd();
+  while (dir !== path.dirname(dir)) {
+    if (
+      fs.existsSync(path.join(dir, "pnpm-workspace.yaml")) ||
+      fs.existsSync(path.join(dir, "lerna.json"))
+    ) {
+      return dir;
+    }
+    const pkgPath = path.join(dir, "package.json");
+    if (fs.existsSync(pkgPath)) {
+      try {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+        if (pkg.workspaces) return dir;
+      } catch {}
+    }
+    dir = path.dirname(dir);
+  }
+  return process.cwd();
+}
+
 function getLocalIP(): string {
   const interfaces = os.networkInterfaces();
   for (const name of Object.keys(interfaces)) {
@@ -32,7 +56,7 @@ Usage:
 
 Options:
   --port <number>    Agent 服务端口 (default: 9527)
-  --project <path>   项目根目录 (default: 当前目录)
+  --project <path>   项目根目录 (default: 自动检测)
   --skip-analysis    跳过 AI 规范分析，加速启动
 `);
     process.exit(0);
@@ -45,14 +69,13 @@ Options:
   const projectIdx = args.indexOf("--project");
   const projectRoot = projectIdx !== -1
     ? path.resolve(args[projectIdx + 1])
-    : process.cwd();
+    : findProjectRoot();
 
   const skipAnalysis = args.includes("--skip-analysis");
 
   // Step 1: Scan project
   console.log("🔍 扫描项目...");
   let profile: ProjectProfile;
-  const cacheFile = path.join(projectRoot, ".design-agent-profile.json");
 
   try {
     profile = scanProject(projectRoot);
@@ -60,6 +83,10 @@ Options:
     console.error(`❌ 项目扫描失败: ${error instanceof Error ? error.message : error}`);
     process.exit(1);
   }
+
+  // Use resolved root (may differ in monorepos)
+  const resolvedRoot = profile.resolvedRoot;
+  const cacheFile = path.join(resolvedRoot, ".design-agent-profile.json");
 
   console.log(`   框架:     ${profile.framework}`);
   console.log(`   语言:     ${profile.language}`);
@@ -72,7 +99,7 @@ Options:
   if (!skipAnalysis) {
     console.log("\n🤖 分析项目编码规范...");
     try {
-      profile.conventions = await analyzeConventions(projectRoot, profile);
+      profile.conventions = await analyzeConventions(resolvedRoot, profile);
       console.log("\n📋 项目规范:");
       console.log(profile.conventions);
     } catch (error) {
@@ -94,12 +121,12 @@ Options:
   console.log("  🎨 PrismDesign Agent 准备就绪");
   console.log("=".repeat(50));
   console.log(`\n  Agent 服务: http://${localIP}:${port}`);
-  console.log(`  项目目录:   ${projectRoot}`);
+  console.log(`  项目目录:   ${resolvedRoot}`);
   console.log(`\n  👉 请将 Agent 地址发给设计师`);
   console.log(`     设计师在 Chrome 插件中配置此地址即可开始编辑`);
   console.log("\n" + "=".repeat(50) + "\n");
 
-  startServer(projectRoot, profile, port);
+  startServer(resolvedRoot, profile, port);
 }
 
 main().catch((error) => {

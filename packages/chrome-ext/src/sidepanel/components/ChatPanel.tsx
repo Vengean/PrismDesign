@@ -1,18 +1,82 @@
 import { useRef, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Send, Trash2, MessageSquare } from "lucide-react";
-import { useChat } from "../hooks/use-chat";
+import { Input } from "@/components/ui/input";
+import { Send, Trash2, MessageSquare, Plug, Loader2, AlertCircle } from "lucide-react";
+import type { ChatMessage } from "../../shared/types.js";
 import Markdown from "react-markdown";
 
-export function ChatPanel() {
-  const { messages, sending, sendMessage, clearHistory } = useChat();
+interface AgentState {
+  connected: boolean;
+  connecting: boolean;
+  error: string | null;
+  agentUrl: string;
+  setAgentUrl: (url: string) => void;
+  connect: (url: string) => Promise<void>;
+}
+
+interface ChatState {
+  messages: ChatMessage[];
+  sending: boolean;
+  sendMessage: (text: string) => void;
+  clearHistory: () => void;
+}
+
+export function ChatPanel({ agent, chat }: { agent: AgentState; chat: ChatState }) {
+  if (!agent.connected && !agent.connecting) {
+    return <ConnectionForm agent={agent} />;
+  }
+  if (agent.connecting) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-xs gap-3">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+        <p>正在连接 Agent...</p>
+      </div>
+    );
+  }
+  return <ChatView chat={chat} />;
+}
+
+function ConnectionForm({ agent }: { agent: AgentState }) {
+  const [url, setUrl] = useState(agent.agentUrl || "http://localhost:9527");
+
+  return (
+    <div className="flex flex-col items-center justify-center h-full px-6 gap-4">
+      <div className="text-center space-y-2">
+        <Plug className="h-10 w-10 text-primary/30 mx-auto" />
+        <p className="text-sm font-medium">连接 Agent 服务</p>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          请输入 Agent 服务地址，连接后即可开始设计编辑。
+        </p>
+      </div>
+      <div className="w-full space-y-2">
+        <Input
+          placeholder="http://localhost:9527"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") agent.connect(url); }}
+        />
+        <Button className="w-full" onClick={() => agent.connect(url)}>
+          <Plug className="h-3.5 w-3.5 mr-1.5" />
+          连接
+        </Button>
+        {agent.error && (
+          <div className="flex items-start gap-1.5 p-2 rounded-md bg-destructive/10 text-destructive text-xs leading-relaxed">
+            <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+            <span>{agent.error}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ChatView({ chat }: { chat: ChatState }) {
+  const { messages, sending, sendMessage, clearHistory } = chat;
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages]);
 
   const handleSend = () => {
@@ -22,40 +86,26 @@ export function ChatPanel() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-      e.preventDefault();
-      handleSend();
-    }
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleSend(); }
   };
 
   return (
     <div className="flex flex-col h-full">
-      {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-xs gap-2 py-8">
             <MessageSquare className="h-8 w-8 text-primary/30" />
-            <p className="text-center leading-relaxed">
-              描述你想要的修改，<br />AI 会直接修改源代码。
-            </p>
+            <p className="text-center leading-relaxed">描述你想要的修改，<br />AI 会直接修改源代码。</p>
           </div>
         ) : (
           messages.map((msg, i) => (
             <div key={i} className={`flex gap-2 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
               {msg.role === "ai" && (
-                <div className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[9px] font-bold shrink-0 mt-0.5">
-                  AI
-                </div>
+                <div className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[9px] font-bold shrink-0 mt-0.5">AI</div>
               )}
-              <div
-                className={`max-w-[85%] px-3 py-2 rounded-xl text-xs leading-relaxed ${
-                  msg.role === "user"
-                    ? "bg-primary text-primary-foreground rounded-br-sm"
-                    : "bg-muted text-foreground rounded-bl-sm"
-                }`}
-              >
+              <div className={`max-w-[85%] px-3 py-2 rounded-xl text-xs leading-relaxed ${msg.role === "user" ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}>
                 {msg.role === "ai" && msg.content !== "思考中..." ? (
-                  <div className="prose prose-xs prose-slate max-w-none [&_pre]:bg-slate-900 [&_pre]:text-slate-200 [&_pre]:rounded-md [&_pre]:p-2 [&_pre]:text-[10px] [&_code]:bg-primary/10 [&_code]:text-primary [&_code]:px-1 [&_code]:rounded [&_code]:text-[10px] [&_table]:text-[10px] [&_table_td]:border [&_table_td]:px-1.5 [&_table_td]:py-0.5 [&_table_th]:border [&_table_th]:px-1.5 [&_table_th]:py-0.5 [&_p]:my-1 [&_ul]:my-1 [&_li]:my-0.5">
+                  <div className="prose prose-xs prose-slate max-w-none [&_pre]:bg-slate-900 [&_pre]:text-slate-200 [&_pre]:rounded-md [&_pre]:p-2 [&_pre]:text-[10px] [&_code]:bg-primary/10 [&_code]:text-primary [&_code]:px-1 [&_code]:rounded [&_code]:text-[10px] [&_p]:my-1 [&_ul]:my-1 [&_li]:my-0.5">
                     <Markdown>{msg.content}</Markdown>
                   </div>
                 ) : (
@@ -67,7 +117,6 @@ export function ChatPanel() {
         )}
       </div>
 
-      {/* Input */}
       <div className="border-t p-2 flex gap-1.5">
         <textarea
           className="flex-1 min-h-[36px] max-h-[80px] px-2.5 py-1.5 text-xs border rounded-md resize-none bg-background focus:outline-none focus:ring-1 focus:ring-ring"

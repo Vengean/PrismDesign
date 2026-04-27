@@ -88,7 +88,11 @@ export type UpstreamMessage =
   | { type: "DRAG_MOVE"; payload: { element: string; from: number; to: number } }
   | { type: "CONTENT_READY" }
   | { type: "DESIGN_MODE_STATUS"; payload: { active: boolean } }
-  | { type: "OPEN_SIDE_PANEL" };
+  | { type: "OPEN_SIDE_PANEL" }
+  | { type: "OPEN_CHAT" }
+  | { type: "OPEN_NAVIGATOR"; payload?: { mode: "select" | "drag" } }
+  | { type: "OPEN_CHANGES" }
+  | { type: "COMMENT_ADDED"; payload: { element: ElementSelection; comment: string } };
 
 // Agent operations: Side Panel -> Background (not forwarded to content)
 export type AgentMessage =

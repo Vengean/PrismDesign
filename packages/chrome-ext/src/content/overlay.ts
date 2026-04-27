@@ -41,6 +41,10 @@ function createLabel(): HTMLDivElement {
 }
 
 export function initOverlays() {
+  document.getElementById("prism-design-hover")?.remove();
+  document.getElementById("prism-design-select")?.remove();
+  document.getElementById("prism-design-label")?.remove();
+
   hoverOverlay = createOverlay("prism-design-hover", "rgba(99, 102, 241, 0.6)");
   selectOverlay = createOverlay("prism-design-select", "#6366f1");
   labelEl = createLabel();

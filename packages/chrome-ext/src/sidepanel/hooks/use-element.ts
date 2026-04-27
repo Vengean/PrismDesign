@@ -1,15 +1,25 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { ElementSelection, PrismMessage } from "../../shared/types.js";
 
-export function useElement() {
+interface UseElementOptions {
+  onSelected?: () => void;
+  onDeselected?: () => void;
+}
+
+export function useElement(options?: UseElementOptions) {
   const [selection, setSelection] = useState<ElementSelection | null>(null);
+  const cbRef = useRef(options);
+  cbRef.current = options;
 
   useEffect(() => {
-    const handler = (message: PrismMessage) => {
+    const handler = (message: PrismMessage, sender: chrome.runtime.MessageSender) => {
+      if (sender.tab) return;
       if (message.type === "ELEMENT_SELECTED") {
         setSelection(message.payload);
+        cbRef.current?.onSelected?.();
       } else if (message.type === "ELEMENT_DESELECTED") {
         setSelection(null);
+        cbRef.current?.onDeselected?.();
       }
     };
     chrome.runtime.onMessage.addListener(handler);

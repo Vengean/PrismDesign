@@ -11,13 +11,34 @@ import type { PrismMessage } from "../shared/types.js";
 // Open side panel when clicking the extension icon
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 
+/** Ensure content script is injected in the given tab. */
+async function ensureContentScript(tabId: number) {
+  try {
+    const response = await chrome.tabs.sendMessage(tabId, { type: "PING" });
+    if (response) return;
+  } catch {}
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    files: ["content.js"],
+  }).catch(() => {});
+}
+
+// Re-inject content script after extension reload/update
+chrome.runtime.onInstalled.addListener(async () => {
+  const tabs = await chrome.tabs.query({ url: ["http://*/*", "https://*/*"] });
+  for (const tab of tabs) {
+    if (tab.id) ensureContentScript(tab.id);
+  }
+});
+
 // Clean up tab state when tab is closed
 chrome.tabs.onRemoved.addListener((tabId) => {
   removeTab(tabId);
 });
 
-// Notify side panel when active tab changes
+// Ensure content script + notify side panel when active tab changes
 chrome.tabs.onActivated.addListener(async (info) => {
+  ensureContentScript(info.tabId);
   const state = getTabState(info.tabId);
   broadcastToSidePanel({
     type: "AGENT_STATUS",
@@ -63,22 +84,34 @@ async function sendToActiveTab(message: PrismMessage): Promise<unknown> {
 chrome.runtime.onMessage.addListener((message: PrismMessage, sender, sendResponse) => {
   const isFromTab = !!sender.tab;
 
+  // Handle OPEN_SIDE_PANEL from any context
+  if (message.type === "OPEN_SIDE_PANEL") {
+    (async () => {
+      const tabId = sender.tab?.id || (await getActiveTabId());
+      if (tabId) chrome.sidePanel.open({ tabId });
+      sendResponse({ success: true });
+    })();
+    return true;
+  }
+
   if (isFromTab) {
-    // Content script → broadcast to side panel (no routing needed,
-    // side panel listens on chrome.runtime.onMessage)
+    // Forward critical events to side panel reliably
+    if (
+      message.type === "ELEMENT_SELECTED" ||
+      message.type === "ELEMENT_DESELECTED" ||
+      message.type === "OPEN_CHAT" ||
+      message.type === "OPEN_NAVIGATOR" ||
+      message.type === "OPEN_CHANGES" ||
+      message.type === "COMMENT_ADDED"
+    ) {
+      broadcastToSidePanel(message);
+    }
     return false;
   }
 
   // Side panel → route based on message type
   switch (message.type) {
     // ---- Agent operations (handled by background) ----
-    case "OPEN_SIDE_PANEL":
-      getActiveTabId().then((tabId) => {
-        if (tabId) chrome.sidePanel.open({ tabId });
-      });
-      sendResponse({ success: true });
-      return true;
-
     case "AGENT_CONNECT":
       handleAgentConnect(message.payload.url).then(sendResponse);
       return true;
@@ -157,7 +190,7 @@ async function handleAgentConnect(url: string) {
 
     return { success: true, project };
   } catch (err) {
-    return { success: false, error: String(err) };
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
 

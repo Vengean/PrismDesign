@@ -2,11 +2,7 @@ import express from "express";
 import cors from "cors";
 import { WebSocketServer, WebSocket } from "ws";
 import http from "node:http";
-import fs from "node:fs";
-import path from "node:path";
-import crypto from "node:crypto";
 import { runAgent, initAgent, closeAllSessions } from "./agent.js";
-import { GitSafety } from "./git-safety.js";
 import type { ProjectProfile } from "./project-profiler.js";
 
 interface ApplyChangesRequest {
@@ -20,7 +16,6 @@ interface ApplyChangesRequest {
     sourceFile?: string;
     sourceLine?: number;
     textContent?: string;
-    siblingIndex?: string;
   }>;
   pagePath?: string;
   supplement?: string;
@@ -38,10 +33,6 @@ interface ChatRequest {
   };
 }
 
-/**
- * Extract or assign a client ID from the request.
- * Uses X-Client-ID header, falls back to generating one.
- */
 function getClientId(req: express.Request): string {
   return (req.headers["x-client-id"] as string) || "default";
 }
@@ -51,7 +42,6 @@ export function startServer(
   profile: ProjectProfile,
   port: number
 ) {
-  // Initialize agent module with project info
   initAgent(projectRoot, profile);
 
   const app = express();
@@ -59,7 +49,6 @@ export function startServer(
   app.use(express.json({ limit: "10mb" }));
 
   const server = http.createServer(app);
-  const git = new GitSafety(projectRoot);
 
   // ---- WebSocket for real-time events ----
   const wss = new WebSocketServer({ server, path: "/ws" });
@@ -97,12 +86,8 @@ export function startServer(
   app.post("/api/apply-changes", async (req, res) => {
     const clientId = getClientId(req);
     const body = req.body as ApplyChangesRequest;
-    console.log(`[Server] 客户端 ${clientId} apply-changes:`, JSON.stringify(body.changes).slice(0, 300));
 
     broadcast("agent:start", { changes: body.changes });
-
-    // Auto backup
-    git.stash("before-design-edit");
 
     // Group changes by component
     const grouped = new Map<string, typeof body.changes>();
@@ -117,8 +102,7 @@ export function startServer(
       const first = changes[0];
       const source = first.sourceFile ? `（源文件：${first.sourceFile}${first.sourceLine ? `:${first.sourceLine}` : ""}）` : "";
       const textHint = first.textContent ? `（文本内容：「${first.textContent}」）` : "";
-      const sibHint = first.siblingIndex ? `（${first.siblingIndex}）` : "";
-      changeDesc += `\n【${comp}】${source}${sibHint}${textHint}\n`;
+      changeDesc += `\n【${comp}】${source}${textHint}\n`;
       for (const c of changes) {
         if (c.property === "comment") {
           changeDesc += `  - 设计师评论: "${c.newValue}"\n`;
@@ -137,10 +121,7 @@ ${body.supplement ? `设计师补充说明：${body.supplement}\n` : ""}
 
     try {
       const result = await runAgent(clientId, userMessage);
-      broadcast("agent:done", {
-        success: result.success,
-        filesModified: result.filesModified,
-      });
+      broadcast("agent:done", { success: result.success, filesModified: result.filesModified });
       res.json(result);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -156,73 +137,27 @@ ${body.supplement ? `设计师补充说明：${body.supplement}\n` : ""}
 
     broadcast("agent:start", { type: "chat" });
 
-    // Auto backup
-    git.stash("before-chat-edit");
-
     const componentContext = body.context.components
       .map((c) => `- ${c.name}${c.sourceFile ? ` (${c.sourceFile}:${c.sourceLine || ""})` : ""}`)
       .join("\n");
 
-    const userMessage = `设计师的修改需求：${body.message}
+    const userMessage = `设计师��修改需求：${body.message}
 
 当前页面：${body.context.pagePath}
 页面上的组件：
 ${componentContext}
 
-请根据需求搜索并修改相关源代码。`;
+请��据需求搜索并修改相关源代码。`;
 
     try {
       const result = await runAgent(clientId, userMessage);
-      broadcast("agent:done", {
-        success: result.success,
-        filesModified: result.filesModified,
-      });
+      broadcast("agent:done", { success: result.success, filesModified: result.filesModified });
       res.json(result);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       broadcast("agent:error", { message });
       res.status(500).json({ success: false, message });
     }
-  });
-
-  // Rollback last change
-  app.post("/api/rollback", (_req, res) => {
-    const success = git.rollback();
-    broadcast("agent:rollback", { success });
-    res.json({ success });
-  });
-
-  // Get component source code context
-  app.get("/api/source", (req, res) => {
-    const { file, line } = req.query;
-    if (!file || typeof file !== "string") {
-      res.status(400).json({ success: false, message: "file parameter required" });
-      return;
-    }
-
-    try {
-      const filePath = path.resolve(projectRoot, file);
-      const content = fs.readFileSync(filePath, "utf-8");
-      const lines = content.split("\n");
-      const lineNum = parseInt(line as string, 10) || 0;
-      const contextStart = Math.max(0, lineNum - 15);
-      const contextEnd = Math.min(lines.length, lineNum + 15);
-
-      res.json({
-        success: true,
-        file,
-        content: lines.slice(contextStart, contextEnd).join("\n"),
-        startLine: contextStart + 1,
-        totalLines: lines.length,
-      });
-    } catch {
-      res.status(404).json({ success: false, message: "File not found" });
-    }
-  });
-
-  // Git status
-  app.get("/api/git-status", (_req, res) => {
-    res.json({ status: git.status() });
   });
 
   // ---- Start ----
@@ -232,7 +167,6 @@ ${componentContext}
     console.log(`   WebSocket:  ws://0.0.0.0:${port}/ws\n`);
   });
 
-  // Graceful shutdown
   process.on("SIGTERM", () => { closeAllSessions(); process.exit(0); });
   process.on("SIGINT", () => { closeAllSessions(); process.exit(0); });
 
