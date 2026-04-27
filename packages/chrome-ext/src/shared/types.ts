@@ -7,15 +7,28 @@ export interface ComponentInfo {
   props: Record<string, unknown>;
   sourceFile?: string;
   sourceLine?: number;
+  sourceColumn?: number;
+}
+
+export interface ComponentChainItem {
+  name: string;
+  sourceFile?: string;
+  sourceLine?: number;
+  sourceColumn?: number;
 }
 
 export interface ElementSelection {
+  pagePath: string;
   domPath: string;
   tagName: string;
+  id: string;
   textContent: string;
   className: string;
+  role: string;
+  ariaLabel: string;
   component: ComponentInfo | null;
   componentChain: string;
+  componentChainDetail: ComponentChainItem[];
   styles: Record<string, string>;
   rect: { top: number; left: number; width: number; height: number };
   isTextElement: boolean;

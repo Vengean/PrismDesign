@@ -13,6 +13,15 @@ interface PendingPanelProps {
   onSync: () => void;
 }
 
+function formatSourceLoc(file?: string, line?: number, col?: number): string | null {
+  if (!file) return null;
+  const short = file.split("/").slice(-2).join("/");
+  let loc = short;
+  if (line) loc += `:${line}`;
+  if (col) loc += `:${col}`;
+  return loc;
+}
+
 export function PendingPanel({ comments, onRemove, onSync }: PendingPanelProps) {
   if (comments.length === 0) {
     return (
@@ -33,10 +42,7 @@ export function PendingPanel({ comments, onRemove, onSync }: PendingPanelProps) 
           const el = c.element;
           const comp = el.component;
           const displayName = comp?.name || `<${el.tagName}>`;
-          const sourceFile = comp?.sourceFile?.split("/").slice(-2).join("/");
-          const sourceLoc = sourceFile
-            ? `${sourceFile}${comp?.sourceLine ? `:${comp.sourceLine}` : ""}`
-            : null;
+          const sourceLoc = formatSourceLoc(comp?.sourceFile, comp?.sourceLine, comp?.sourceColumn);
 
           return (
             <div key={i} className="flex items-start gap-2 px-3 py-2.5 border-b group">
@@ -44,13 +50,20 @@ export function PendingPanel({ comments, onRemove, onSync }: PendingPanelProps) 
                 {/* Component / element name */}
                 <div className="flex items-center gap-1.5">
                   <span className="text-[11px] font-semibold text-primary truncate">{displayName}</span>
-                  {el.componentChain && displayName !== el.componentChain && (
-                    <span className="text-[9px] text-muted-foreground truncate">{el.componentChain}</span>
+                  {el.tagName && displayName !== `<${el.tagName}>` && (
+                    <span className="text-[9px] text-muted-foreground">&lt;{el.tagName}&gt;</span>
                   )}
+                  {el.id && <span className="text-[9px] text-muted-foreground">#{el.id}</span>}
                 </div>
-                {/* Source file location */}
-                {sourceLoc && (
+                {/* Component chain */}
+                {el.componentChain && displayName !== el.componentChain && (
+                  <div className="text-[9px] text-muted-foreground truncate mt-0.5">{el.componentChain}</div>
+                )}
+                {/* Source file location or page path */}
+                {sourceLoc ? (
                   <div className="text-[10px] text-muted-foreground font-mono truncate mt-0.5">{sourceLoc}</div>
+                ) : el.pagePath && el.pagePath !== "/" && (
+                  <div className="text-[10px] text-muted-foreground font-mono truncate mt-0.5">{el.pagePath}</div>
                 )}
                 {/* Comment text */}
                 <div className="text-xs text-foreground mt-1 break-words">{c.comment}</div>

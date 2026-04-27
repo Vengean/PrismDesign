@@ -1,169 +1,108 @@
-import type { ElementSelection, ComponentInfo } from "../shared/types.js";
+import type { ElementSelection, ComponentInfo, ComponentChainItem } from "../shared/types.js";
 
-// ---- React Fiber Utilities ----
+// ============================================================
+// Page-world bridge (via custom DOM events)
+// ============================================================
+// The actual fiber inspection code runs in page-bridge.ts (MAIN world).
+// We communicate synchronously via:
+//   1. content script dispatches CustomEvent on the element
+//   2. page-bridge listener (capture, synchronous) inspects and writes
+//      the result to a data-attribute
+//   3. content script reads the attribute immediately after dispatch
 
-function getReactFiber(element: HTMLElement): any | null {
-  const key = Object.keys(element).find(
-    (k) => k.startsWith("__reactFiber$") || k.startsWith("__reactInternalInstance$")
-  );
-  return key ? (element as any)[key] : null;
+const ATTR_RESULT = "data-prism-result";
+const EVENT_NAME = "__prism_inspect";
+
+interface FiberResult {
+  component: {
+    name: string;
+    props: Record<string, unknown>;
+    sourceFile?: string;
+    sourceLine?: number;
+    sourceColumn?: number;
+  } | null;
+  chain: ComponentChainItem[];
+  vue: {
+    name: string;
+    props: Record<string, unknown>;
+    sourceFile?: string;
+  } | null;
+  error?: string;
 }
 
 /**
- * Extract source location from a React fiber.
- * Tries multiple strategies because React 19 removed _debugSource.
+ * Ask the MAIN-world page-bridge to inspect React/Vue fibers on `element`.
+ * Returns synchronously.
  */
-function getSourceFromFiber(fiber: any): { fileName?: string; lineNumber?: number } | null {
-  // Strategy 1: _debugSource (React 16-18 dev mode)
-  if (fiber._debugSource) {
-    return fiber._debugSource;
-  }
+function inspectFibersViaPageWorld(element: HTMLElement): FiberResult | null {
+  try {
+    // Dispatch custom event — page-bridge handles it synchronously
+    element.dispatchEvent(new CustomEvent(EVENT_NAME, { bubbles: false }));
 
-  // Strategy 2: _debugOwner._debugSource (parent component's source)
-  if (fiber._debugOwner?._debugSource) {
-    return fiber._debugOwner._debugSource;
-  }
+    const raw = element.getAttribute(ATTR_RESULT);
+    element.removeAttribute(ATTR_RESULT);
+    if (!raw || raw === "null") return null;
 
-  // Strategy 3: React DevTools hook — if installed, it has source info
-  const hook = (window as any).__REACT_DEVTOOLS_GLOBAL_HOOK__;
-  if (hook?.renderers?.size > 0) {
-    try {
-      for (const renderer of hook.renderers.values()) {
-        // React DevTools fiber inspector can get source
-        if (renderer.findFiberByHostInstance) {
-          const inspected = renderer.currentDispatcherRef;
-          // This is a fallback — DevTools may have richer info
-          if (inspected) break;
-        }
-      }
-    } catch {}
+    const parsed = JSON.parse(raw) as FiberResult;
+    if (parsed.error) {
+      console.warn("[PrismDesign] page-bridge error:", parsed.error);
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
   }
-
-  // Strategy 4: function.toString() + name heuristic for Vite dev
-  // In Vite dev, component functions retain original names and sometimes
-  // have source-mapped stack traces we can parse
-  if (typeof fiber.type === "function" && fiber.type.name) {
-    try {
-      const err = { stack: "" };
-      const orig = Error.prepareStackTrace;
-      Error.prepareStackTrace = (_, stack) => stack;
-      try {
-        // Calling the component as new to get a stack trace is too risky,
-        // but we can look at __source which some Babel/SWC plugins inject
-        const fn = fiber.type as any;
-        if (fn.__source) {
-          return { fileName: fn.__source.fileName, lineNumber: fn.__source.lineNumber };
-        }
-      } finally {
-        Error.prepareStackTrace = orig;
-      }
-    } catch {}
-  }
-
-  return null;
 }
 
-/** Get the nearest user-land React component info from an element */
-function getReactComponentInfo(element: HTMLElement): ComponentInfo | null {
-  let fiber = getReactFiber(element);
-  if (!fiber) return null;
+// ============================================================
+// Cache — avoid double page-world calls within a single inspectElement
+// ============================================================
 
-  while (fiber) {
-    if (typeof fiber.type === "function") {
-      const name = fiber.type.displayName || fiber.type.name;
-      if (!name) { fiber = fiber.return; continue; }
+let _cachedElement: HTMLElement | null = null;
+let _cachedResult: FiberResult | null = null;
 
-      const source = getSourceFromFiber(fiber);
-      const isNodeModules = source?.fileName?.includes("node_modules");
+function getCachedFiberResult(element: HTMLElement): FiberResult | null {
+  if (_cachedElement === element) return _cachedResult;
+  _cachedResult = inspectFibersViaPageWorld(element);
+  _cachedElement = element;
+  return _cachedResult;
+}
 
-      if (!isNodeModules) {
-        return {
-          name,
-          props: sanitizeProps(fiber.memoizedProps),
-          sourceFile: source?.fileName,
-          sourceLine: source?.lineNumber,
-        };
-      }
-    }
-    fiber = fiber.return;
+function getCachedComponentInfo(element: HTMLElement): ComponentInfo | null {
+  const result = getCachedFiberResult(element);
+  if (!result) return null;
+  if (result.component) return result.component;
+  if (result.vue) {
+    return { name: result.vue.name, props: result.vue.props, sourceFile: result.vue.sourceFile };
   }
   return null;
 }
 
-/**
- * Walk the React fiber tree upward and collect all user-land component names.
- * This is more accurate than walking DOM parents because React fibers
- * include components that don't render their own DOM node.
- */
-function getReactFiberChain(element: HTMLElement): string[] {
-  let fiber = getReactFiber(element);
-  if (!fiber) return [];
+function getCachedChainDetail(element: HTMLElement): ComponentChainItem[] {
+  const result = getCachedFiberResult(element);
+  if (!result) return [];
+  if (result.chain.length > 0) return result.chain;
 
-  const chain: string[] = [];
-  while (fiber) {
-    if (typeof fiber.type === "function") {
-      const name = fiber.type.displayName || fiber.type.name;
-      if (name) {
-        const source = getSourceFromFiber(fiber);
-        const isNodeModules = source?.fileName?.includes("node_modules");
-        // Include user components + named library components (like Button from antd)
-        if (!isNodeModules || name[0] === name[0].toUpperCase()) {
-          if (chain.length === 0 || chain[chain.length - 1] !== name) {
-            chain.push(name);
-          }
-        }
+  // Vue fallback: walk DOM parents
+  const chain: ComponentChainItem[] = [];
+  let node: HTMLElement | null = element;
+  while (node && node !== document.body) {
+    const r = inspectFibersViaPageWorld(node);
+    if (r?.vue) {
+      const name = r.vue.name;
+      if (chain.length === 0 || chain[chain.length - 1].name !== name) {
+        chain.push({ name, sourceFile: r.vue.sourceFile });
       }
     }
-    fiber = fiber.return;
+    node = node.parentElement;
   }
   chain.reverse();
   return chain;
 }
 
-// ---- Vue Component Detection ----
-
-function getVueComponentInfo(element: HTMLElement): ComponentInfo | null {
-  // Vue 3
-  const vueInstance = (element as any).__vueParentComponent;
-  if (vueInstance) {
-    return {
-      name: vueInstance.type.__name || vueInstance.type.name || "Anonymous",
-      props: sanitizeProps(vueInstance.props),
-      sourceFile: vueInstance.type.__file,
-    };
-  }
-
-  // Vue 2
-  const vue2 = (element as any).__vue__;
-  if (vue2) {
-    return {
-      name: vue2.$options.name || "Anonymous",
-      props: sanitizeProps(vue2.$props),
-      sourceFile: vue2.$options.__file,
-    };
-  }
-
-  return null;
-}
-
-// ---- Helpers ----
-
-function sanitizeProps(props: Record<string, unknown> | null): Record<string, unknown> {
-  if (!props) return {};
-  const clean: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(props)) {
-    if (key === "children") continue;
-    const t = typeof value;
-    if (t === "string" || t === "number" || t === "boolean" || value === null) {
-      clean[key] = value;
-    } else if (Array.isArray(value)) {
-      clean[key] = `[Array(${value.length})]`;
-    } else if (t === "object") {
-      clean[key] = "[Object]";
-    }
-  }
-  return clean;
-}
+// ============================================================
+// Helpers (run in content-script world — no fiber access needed)
+// ============================================================
 
 function getRelevantStyles(element: HTMLElement): Record<string, string> {
   const computed = window.getComputedStyle(element);
@@ -205,34 +144,23 @@ function getDomPath(element: HTMLElement): string {
 }
 
 /**
- * Get component chain — prefers React fiber tree (more accurate),
- * falls back to walking DOM parents for Vue or no-framework.
+ * Get component chain as a display string.
  */
 export function getComponentChain(element: HTMLElement): string {
-  // Try React fiber chain first (walks fiber tree, catches non-DOM components)
-  const fiberChain = getReactFiberChain(element);
-  if (fiberChain.length > 0) return fiberChain.join(" > ");
-
-  // Fallback: walk DOM parents
-  const chain: string[] = [];
-  let node: HTMLElement | null = element;
-  while (node && node !== document.body) {
-    const comp = getVueComponentInfo(node);
-    if (comp && (chain.length === 0 || chain[chain.length - 1] !== comp.name)) {
-      chain.push(comp.name);
-    }
-    node = node.parentElement;
-  }
-  chain.reverse();
-  return chain.join(" > ");
+  const detail = getCachedChainDetail(element);
+  return detail.map((c) => c.name).join(" > ");
 }
 
 const TEXT_TAGS = new Set(["span", "p", "h1", "h2", "h3", "h4", "h5", "h6", "a", "label", "strong", "em", "b", "i", "li", "td", "th", "dt", "dd", "figcaption"]);
 
 /** Inspect a DOM element and return full selection info */
 export function inspectElement(element: HTMLElement): ElementSelection {
-  const component =
-    getReactComponentInfo(element) || getVueComponentInfo(element);
+  // Reset cache for this element
+  _cachedElement = null;
+  _cachedResult = null;
+
+  const component = getCachedComponentInfo(element);
+  const chainDetail = getCachedChainDetail(element);
 
   const rect = element.getBoundingClientRect();
   const tag = element.tagName.toLowerCase();
@@ -240,12 +168,17 @@ export function inspectElement(element: HTMLElement): ElementSelection {
   const display = computed.display;
 
   return {
+    pagePath: window.location.pathname,
     domPath: getDomPath(element),
     tagName: tag,
+    id: element.id || "",
     textContent: (element.textContent || "").trim().slice(0, 100),
     className: typeof element.className === "string" ? element.className : "",
+    role: element.getAttribute("role") || "",
+    ariaLabel: element.getAttribute("aria-label") || "",
     component,
-    componentChain: getComponentChain(element),
+    componentChain: chainDetail.map((c) => c.name).join(" > "),
+    componentChainDetail: chainDetail,
     styles: getRelevantStyles(element),
     rect: {
       top: rect.top + window.scrollY,

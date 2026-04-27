@@ -14,6 +14,12 @@
   "content_scripts": [
     {
       "matches": ["http://localhost:*/*", "http://127.0.0.1:*/*", "http://*/*", "https://*/*"],
+      "js": ["page-bridge.js"],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["http://localhost:*/*", "http://127.0.0.1:*/*", "http://*/*", "https://*/*"],
       "js": ["content.js"]
     }
   ],

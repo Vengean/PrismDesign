@@ -17,6 +17,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         content: resolve(__dirname, "src/content/index.ts"),
+        "page-bridge": resolve(__dirname, "src/content/page-bridge.ts"),
         sidepanel: resolve(__dirname, "src/sidepanel/index.html"),
         background: resolve(__dirname, "src/background/index.ts"),
       },

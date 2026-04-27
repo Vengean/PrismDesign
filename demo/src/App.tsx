@@ -28,6 +28,7 @@ import {
   Palette,
   Layers,
   Zap,
+  Accessibility,
   Heart,
   Star,
   ChevronRight,
@@ -118,7 +119,7 @@ export default function App() {
             {[
               { Icon: Layers, title: '组件即代码', desc: '复制代码到你的项目，完全掌控每一行逻辑，而不是依赖黑盒 npm 包。' },
               { Icon: Palette, title: '主题可定制', desc: '通过 CSS 变量驱动的设计系统，轻松调整颜色、圆角、间距等视觉风格。' },
-              { Icon: Zap, title: '无障碍优先', desc: '基于 Radix UI 原语构建，所有组件遵循 WAI-ARIA 规范，开箱支持键盘导航。' },
+              { Icon: Accessibility, title: '无障碍支持', desc: '基于 Radix UI 原语构建，支持屏幕阅读器和键盘导航，让所有用户都能无障碍使用。' },
             ].map(({ Icon, title, desc }) => (
               <Card key={title} className="border-0 shadow-none bg-transparent">
                 <CardHeader className="pb-2">

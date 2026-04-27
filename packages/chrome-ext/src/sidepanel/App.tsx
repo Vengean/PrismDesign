@@ -85,13 +85,50 @@ export function App() {
       const el = c.element;
       const comp = el.component;
       const name = comp?.name || `<${el.tagName}>`;
-      const source = comp?.sourceFile ? `(${comp.sourceFile}${comp.sourceLine ? `:${comp.sourceLine}` : ""})` : "";
-      const chain = el.componentChain ? `[${el.componentChain}]` : "";
-      return `${chain} ${name}${source}: ${c.comment}`;
+      const lines: string[] = [];
+
+      // Header: component name + element tag
+      lines.push(`**${name}**${el.id ? ` #${el.id}` : ""}${el.tagName !== name ? ` \`<${el.tagName}>\`` : ""}`);
+
+      // Page path (skip root "/")
+      if (el.pagePath && el.pagePath !== "/") lines.push(`页面: ${el.pagePath}`);
+
+      // Component chain with source locations
+      if (el.componentChainDetail?.length > 0) {
+        const chainStr = el.componentChainDetail.map((item) => {
+          let s = item.name;
+          if (item.sourceFile) {
+            const short = item.sourceFile.split("/").slice(-2).join("/");
+            s += `(${short}${item.sourceLine ? `:${item.sourceLine}` : ""}${item.sourceColumn ? `:${item.sourceColumn}` : ""})`;
+          }
+          return s;
+        }).join(" > ");
+        lines.push(`组件链: ${chainStr}`);
+      } else if (el.componentChain) {
+        lines.push(`组件链: ${el.componentChain}`);
+      }
+
+      // Direct source location
+      if (comp?.sourceFile) {
+        let loc = comp.sourceFile;
+        if (comp.sourceLine) loc += `:${comp.sourceLine}`;
+        if (comp.sourceColumn) loc += `:${comp.sourceColumn}`;
+        lines.push(`源码: ${loc}`);
+      }
+
+      // Semantic hints
+      if (el.role) lines.push(`role: ${el.role}`);
+      if (el.ariaLabel) lines.push(`aria-label: ${el.ariaLabel}`);
+      if (el.textContent) lines.push(`文本: "${el.textContent.slice(0, 60)}"`);
+
+      // The comment itself
+      lines.push(`评论: ${c.comment}`);
+
+      return lines.join("\n");
     });
     setPendingComments([]);
     setView("chat");
-    chat.sendMessage(parts.join("\n"));
+    chat.sendMessage(parts.join("\n\n---\n\n"));
   }, [pendingComments, chat]);
 
   return (
