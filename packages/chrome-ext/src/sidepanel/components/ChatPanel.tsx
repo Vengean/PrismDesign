@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Send, Trash2, MessageSquare, Plug, Loader2, AlertCircle } from "lucide-react";
 import type { ChatMessage } from "../../shared/types.js";
 import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface AgentState {
   connected: boolean;
@@ -104,12 +105,12 @@ function ChatView({ chat }: { chat: ChatState }) {
                 <div className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[9px] font-bold shrink-0 mt-0.5">AI</div>
               )}
               <div className={`max-w-[85%] px-3 py-2 rounded-xl text-xs leading-relaxed ${msg.role === "user" ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}>
-                {msg.role === "ai" && msg.content !== "思考中..." ? (
-                  <div className="prose prose-xs prose-slate max-w-none [&_pre]:bg-slate-900 [&_pre]:text-slate-200 [&_pre]:rounded-md [&_pre]:p-2 [&_pre]:text-[10px] [&_code]:bg-primary/10 [&_code]:text-primary [&_code]:px-1 [&_code]:rounded [&_code]:text-[10px] [&_p]:my-1 [&_ul]:my-1 [&_li]:my-0.5">
-                    <Markdown>{msg.content}</Markdown>
-                  </div>
+                {msg.content === "思考中..." ? (
+                  <span className="animate-pulse">{msg.content}</span>
                 ) : (
-                  <span className={msg.content === "思考中..." ? "animate-pulse" : ""}>{msg.content}</span>
+                  <div className="chat-markdown">
+                    <Markdown remarkPlugins={[remarkGfm]}>{msg.content}</Markdown>
+                  </div>
                 )}
               </div>
             </div>
