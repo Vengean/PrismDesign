@@ -9,7 +9,7 @@ import {
 } from "./editor.js";
 import { buildDOMTree, resetIdCounter } from "./dom-tree.js";
 import { initKeyboard, destroyKeyboard } from "./keyboard.js";
-import { createToolbar, destroyToolbar, isToolbarElement, setActiveMode } from "./toolbar.js";
+import { createToolbar, destroyToolbar, isToolbarElement, setActiveMode, setToolbarDisabled, isToolbarDisabled, triggerMode } from "./toolbar.js";
 import { initCommentPopup, showCommentPopup, hideCommentPopup, destroyCommentPopup, isCommentPopupElement } from "./comment-popup.js";
 import { safeSendMessage, isContextInvalidated, onContextInvalidated } from "./runtime.js";
 import type { PrismMessage } from "../shared/types.js";
@@ -19,8 +19,8 @@ let dragModeActive = false;
 let commentModeActive = false;
 let selectedElement: HTMLElement | null = null;
 
-/** Exit all modes → back to chat panel */
-function exitAllModes() {
+/** ESC — deactivate current toolbar mode and return to chat panel */
+function exitCurrentMode() {
   disableDesignMode();
   setActiveMode(null);
   safeSendMessage({ type: "OPEN_CHAT" });
@@ -29,6 +29,7 @@ function exitAllModes() {
 onContextInvalidated(() => {
   disableDesignMode();
   destroyCommentPopup();
+  removeToolbar();
 });
 
 function isOurElement(element: HTMLElement): boolean {
@@ -112,9 +113,18 @@ function enableDesignMode() {
   document.addEventListener("mousedown", handleMouseDown, true);
   document.addEventListener("mouseleave", handleMouseLeave, true);
 
-  initKeyboard({ plain: { escape: () => exitAllModes() } });
+  initKeyboard({
+    plain: { escape: () => exitCurrentMode() },
+    ctrlShift: {
+      e: () => triggerMode("select"),
+      d: () => triggerMode("drag"),
+      c: () => triggerMode("comment"),
+    },
+  });
 
   if (dragModeActive) document.body.classList.add("prism-design-drag-mode");
+  // Keep default arrow cursor in select / comment mode
+  if (!dragModeActive) document.body.style.cursor = "default";
   console.log("[PrismDesign] Design mode enabled");
 }
 
@@ -233,40 +243,82 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, _sender, sendRespon
       sendResponse({ success: !!el });
       break;
     }
+    case "SHOW_TOOLBAR":
+      ensureToolbar();
+      sendResponse({ success: true });
+      break;
+    case "HIDE_TOOLBAR":
+      disableDesignMode();
+      removeToolbar();
+      sendResponse({ success: true });
+      break;
+    case "TOOLBAR_DISABLE":
+      setToolbarDisabled(message.payload.disabled);
+      if (message.payload.disabled) {
+        // Exit current mode when toolbar is disabled
+        disableDesignMode();
+        setActiveMode(null);
+      }
+      sendResponse({ success: true });
+      break;
     case "PING": sendResponse({ active: designModeActive }); break;
     default: sendResponse({ success: false });
   }
   return true;
 });
 
-// ---- Toolbar (always visible) ----
+// ---- Global keyboard shortcuts (work even when design mode is off) ----
 
-createToolbar({
-  onModeChange(mode) {
-    disableDesignMode();
-    dragModeActive = false;
-    commentModeActive = false;
+document.addEventListener("keydown", (e: KeyboardEvent) => {
+  if (!(e.ctrlKey || e.metaKey) || !e.shiftKey) return;
+  if (isToolbarDisabled()) return;
+  const key = e.key.toLowerCase();
+  if (key === "e" || key === "d" || key === "c") {
+    e.preventDefault();
+    const mode = key === "e" ? "select" : key === "d" ? "drag" : "comment";
+    triggerMode(mode);
+  }
+}, true);
 
-    if (mode === "select") {
-      enableDesignMode();
-      safeSendMessage({ type: "OPEN_SIDE_PANEL" });
-      safeSendMessage({ type: "OPEN_NAVIGATOR", payload: { mode: "select" } });
-    } else if (mode === "drag") {
-      dragModeActive = true;
-      enableDesignMode();
-      safeSendMessage({ type: "OPEN_SIDE_PANEL" });
-      safeSendMessage({ type: "OPEN_NAVIGATOR", payload: { mode: "drag" } });
-    } else if (mode === "comment") {
-      commentModeActive = true;
-      enableDesignMode();
-      safeSendMessage({ type: "OPEN_SIDE_PANEL" });
-      safeSendMessage({ type: "OPEN_CHAT" });
-    } else {
-      // null — exit all, back to chat
-      safeSendMessage({ type: "OPEN_CHAT" });
-    }
-  },
-});
+// ---- Toolbar (created on demand when side panel opens) ----
+
+let toolbarCreated = false;
+
+function ensureToolbar() {
+  if (toolbarCreated) return;
+  toolbarCreated = true;
+  createToolbar({
+    onModeChange(mode) {
+      disableDesignMode();
+      dragModeActive = false;
+      commentModeActive = false;
+
+      if (mode === "select") {
+        enableDesignMode();
+        safeSendMessage({ type: "OPEN_SIDE_PANEL" });
+        safeSendMessage({ type: "OPEN_NAVIGATOR", payload: { mode: "select" } });
+      } else if (mode === "drag") {
+        dragModeActive = true;
+        enableDesignMode();
+        safeSendMessage({ type: "OPEN_SIDE_PANEL" });
+        safeSendMessage({ type: "OPEN_NAVIGATOR", payload: { mode: "drag" } });
+      } else if (mode === "comment") {
+        commentModeActive = true;
+        enableDesignMode();
+        safeSendMessage({ type: "OPEN_SIDE_PANEL" });
+        safeSendMessage({ type: "OPEN_PENDING" });
+      } else {
+        // null — exit current mode
+        safeSendMessage({ type: "OPEN_CHAT" });
+      }
+    },
+  });
+}
+
+function removeToolbar() {
+  destroyToolbar();
+  toolbarCreated = false;
+}
 
 safeSendMessage({ type: "CONTENT_READY" });
 console.log("[PrismDesign] Content script loaded");

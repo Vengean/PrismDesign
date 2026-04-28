@@ -19,7 +19,7 @@ const VIEW_TITLES: Record<ViewType, string> = {
   navigator: "导航",
   properties: "属性",
   changes: "变更",
-  pending: "待同步",
+  pending: "评论",
 };
 
 export function App() {
@@ -41,12 +41,38 @@ export function App() {
   });
   const changes = useChanges();
 
-  // Auto-connect on mount
+  // Side panel lifecycle — port to background manages everything:
+  // open → show toolbar + connect agent; close → hide toolbar + disconnect agent.
+  // Reconnects automatically when the service worker restarts.
   useEffect(() => {
-    if (agent.agentUrl && !agent.connected && !agent.connecting) {
-      agent.connect(agent.agentUrl);
+    let port: chrome.runtime.Port | null = null;
+    let unmounted = false;
+
+    function connectPort() {
+      if (unmounted) return;
+      try {
+        port = chrome.runtime.connect({ name: "prism-sidepanel" });
+        port.onDisconnect.addListener(() => {
+          port = null;
+          // Service worker restarted — reconnect after a short delay
+          if (!unmounted) setTimeout(connectPort, 500);
+        });
+      } catch {
+        // Extension context gone
+      }
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    connectPort();
+
+    return () => {
+      unmounted = true;
+      port?.disconnect();
+    };
+  }, []);
+
+  // Disable toolbar when AI is working; re-enable when done
+  useEffect(() => {
+    chrome.runtime.sendMessage({ type: "TOOLBAR_DISABLE", payload: { disabled: agent.aiWorking } });
+  }, [agent.aiWorking]);
 
   // Listen for toolbar mode changes and comments from content script
   useEffect(() => {
@@ -61,6 +87,8 @@ export function App() {
         setIsDragMode(message.payload?.mode === "drag");
       } else if (message.type === "OPEN_CHANGES") {
         setView("changes");
+      } else if (message.type === "OPEN_PENDING") {
+        setView("pending");
       } else if (message.type === "COMMENT_ADDED") {
         setPendingComments((prev) => [...prev, message.payload]);
         setView("pending");

@@ -10,8 +10,11 @@ export async function connectAgent(
   url: string,
   onEvent: (type: string, data: unknown) => void
 ): Promise<{ framework: string; styling: string[]; componentLib: string[] }> {
-  // Close existing connection
+  // Close existing connection — remove handlers to prevent stale callbacks
   if (state.ws) {
+    state.ws.onclose = null;
+    state.ws.onmessage = null;
+    state.ws.onerror = null;
     try { state.ws.close(); } catch {}
     state.ws = null;
   }
@@ -73,6 +76,11 @@ export async function connectAgent(
  */
 export function disconnectAgent(state: TabState) {
   if (state.ws) {
+    // Remove handlers BEFORE closing to prevent stale onclose from
+    // broadcasting "connection_lost" after an intentional disconnect.
+    state.ws.onclose = null;
+    state.ws.onmessage = null;
+    state.ws.onerror = null;
     try { state.ws.close(); } catch {}
     state.ws = null;
   }

@@ -36,18 +36,81 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   removeTab(tabId);
 });
 
-// Ensure content script + notify side panel when active tab changes
+// Ensure content script when active tab changes
 chrome.tabs.onActivated.addListener(async (info) => {
-  ensureContentScript(info.tabId);
-  const state = getTabState(info.tabId);
-  broadcastToSidePanel({
-    type: "AGENT_STATUS",
-    payload: {
-      connected: state.connected,
-      project: state.project ?? undefined,
-    },
-  });
+  await ensureContentScript(info.tabId);
+  // If side panel is open, show toolbar on the new tab
+  if (sidePanelOpen) {
+    chrome.tabs.sendMessage(info.tabId, { type: "SHOW_TOOLBAR" }).catch(() => {});
+  }
 });
+
+// When a page finishes loading, re-show toolbar if side panel is open
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
+  if (changeInfo.status === "complete" && sidePanelOpen) {
+    await ensureContentScript(tabId);
+    chrome.tabs.sendMessage(tabId, { type: "SHOW_TOOLBAR" }).catch(() => {});
+  }
+});
+
+// ============================================================
+// Side panel lifecycle via port
+// ============================================================
+// Side panel connects a port "prism-sidepanel" on mount.
+// Port keeps service worker alive → prevents WebSocket disconnect.
+// On port disconnect, we wait briefly for reconnection (service worker
+// restart) before concluding the side panel is truly closed.
+
+let sidePanelOpen = false;
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name === "prism-sidepanel") {
+    sidePanelOpen = true;
+    handleSidePanelOpen();
+
+    port.onDisconnect.addListener(() => {
+      sidePanelOpen = false;
+      handleSidePanelClose();
+    });
+  }
+});
+
+async function handleSidePanelOpen() {
+  const tabId = await getActiveTabId();
+  if (!tabId) return;
+  await ensureContentScript(tabId);
+
+  // Show toolbar
+  sendToActiveTab({ type: "SHOW_TOOLBAR" } as PrismMessage);
+
+  // Auto-connect agent
+  const state = getTabState(tabId);
+  if (!state.connected) {
+    const result = await chrome.storage.local.get("agentUrl");
+    const url = result.agentUrl || "http://localhost:9527";
+    await handleAgentConnect(url);
+  } else {
+    // Already connected — notify side panel of current status
+    broadcastToSidePanel({
+      type: "AGENT_STATUS",
+      payload: { connected: true, project: state.project ?? undefined },
+    });
+  }
+}
+
+async function handleSidePanelClose() {
+  // Hide toolbar + exit design mode
+  sendToActiveTab({ type: "HIDE_TOOLBAR" } as PrismMessage);
+
+  // Disconnect agent
+  const tabId = await getActiveTabId();
+  if (tabId) {
+    const state = getTabState(tabId);
+    if (state.connected) {
+      disconnectAgent(state);
+    }
+  }
+}
 
 /**
  * Broadcast a message to all extension contexts (side panel listens here).
@@ -102,6 +165,7 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, sender, sendRespons
       message.type === "OPEN_CHAT" ||
       message.type === "OPEN_NAVIGATOR" ||
       message.type === "OPEN_CHANGES" ||
+      message.type === "OPEN_PENDING" ||
       message.type === "COMMENT_ADDED"
     ) {
       broadcastToSidePanel(message);
@@ -147,6 +211,9 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, sender, sendRespons
     case "CLEAR_CHANGES":
     case "UNDO":
     case "REDO":
+    case "SHOW_TOOLBAR":
+    case "HIDE_TOOLBAR":
+    case "TOOLBAR_DISABLE":
     case "PING":
       sendToActiveTab(message).then(sendResponse);
       return true;

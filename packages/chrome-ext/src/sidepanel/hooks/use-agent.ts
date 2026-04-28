@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { ProjectInfo, PrismMessage } from "../../shared/types.js";
 
 export function useAgent() {
@@ -17,12 +17,17 @@ export function useAgent() {
   }, []);
 
   // Listen for agent events from background
+  const connectingRef = useRef(false);
   useEffect(() => {
     const handler = (message: PrismMessage) => {
       switch (message.type) {
         case "AGENT_STATUS":
+          // Ignore "disconnected" broadcasts while we're actively connecting
+          // (e.g. from tab activation race)
+          if (!message.payload.connected && connectingRef.current) break;
           setConnected(message.payload.connected);
           setConnecting(false);
+          connectingRef.current = false;
           if (message.payload.project) setProject(message.payload.project as ProjectInfo);
           break;
         case "AGENT_WORKING":
@@ -39,6 +44,7 @@ export function useAgent() {
 
   const connect = useCallback(async (url: string) => {
     setConnecting(true);
+    connectingRef.current = true;
     setError(null);
     setAgentUrl(url);
     try {

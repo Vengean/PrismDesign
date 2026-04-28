@@ -1,12 +1,16 @@
 /**
  * Safe wrapper around chrome.runtime for content scripts.
  * Handles "Extension context invalidated" errors gracefully.
+ *
+ * Uses a persistent port connection to the background — when the
+ * extension is unloaded/updated/disabled, the port disconnects
+ * immediately, giving us a reliable cleanup signal.
  */
 
 import type { PrismMessage } from "../shared/types.js";
 
 let invalidated = false;
-let onInvalidated: (() => void) | null = null;
+const invalidatedCallbacks: (() => void)[] = [];
 
 export function isContextInvalidated() {
   return invalidated;
@@ -14,9 +18,10 @@ export function isContextInvalidated() {
 
 /**
  * Register a cleanup callback for when the extension context is invalidated.
+ * Multiple callbacks are supported.
  */
 export function onContextInvalidated(callback: () => void) {
-  onInvalidated = callback;
+  invalidatedCallbacks.push(callback);
 }
 
 /**
@@ -32,11 +37,51 @@ export function safeSendMessage(message: PrismMessage): void {
   }
 }
 
+function markInvalidated() {
+  if (invalidated) return;
+  invalidated = true;
+  console.warn("[PrismDesign] Extension context invalidated — cleaning up");
+  for (const cb of invalidatedCallbacks) {
+    try { cb(); } catch (e) { console.error("[PrismDesign] cleanup error:", e); }
+  }
+}
+
 function checkInvalidated() {
   if (invalidated) return;
   if (!chrome.runtime?.id) {
-    invalidated = true;
-    console.warn("[PrismDesign] Extension context invalidated — cleaning up");
-    onInvalidated?.();
+    markInvalidated();
   }
 }
+
+// ---- Proactive detection via persistent port ----
+// When the extension is unloaded/updated/disabled, the port disconnects.
+// We use a small delay before checking chrome.runtime.id because Chrome
+// may not clear it synchronously on disconnect.
+function isRuntimeAlive(): boolean {
+  try {
+    return !!chrome.runtime?.id;
+  } catch {
+    return false;
+  }
+}
+
+function connectKeepAlive() {
+  if (invalidated) return;
+  try {
+    const port = chrome.runtime.connect({ name: "prism-content-keepalive" });
+    port.onDisconnect.addListener(() => {
+      // Delay check — chrome.runtime.id may not be cleared immediately
+      setTimeout(() => {
+        if (!isRuntimeAlive()) {
+          markInvalidated();
+        } else {
+          // Service worker just went idle — reconnect
+          connectKeepAlive();
+        }
+      }, 500);
+    });
+  } catch {
+    markInvalidated();
+  }
+}
+connectKeepAlive();

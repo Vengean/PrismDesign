@@ -90,6 +90,9 @@ export type DownstreamMessage =
   | { type: "CLEAR_CHANGES" }
   | { type: "UNDO" }
   | { type: "REDO" }
+  | { type: "SHOW_TOOLBAR" }
+  | { type: "HIDE_TOOLBAR" }
+  | { type: "TOOLBAR_DISABLE"; payload: { disabled: boolean } }
   | { type: "PING" };
 
 // Upstream: Content Script -> Background -> Side Panel
@@ -105,6 +108,7 @@ export type UpstreamMessage =
   | { type: "OPEN_CHAT" }
   | { type: "OPEN_NAVIGATOR"; payload?: { mode: "select" | "drag" } }
   | { type: "OPEN_CHANGES" }
+  | { type: "OPEN_PENDING" }
   | { type: "COMMENT_ADDED"; payload: { element: ElementSelection; comment: string } };
 
 // Agent operations: Side Panel -> Background (not forwarded to content)
