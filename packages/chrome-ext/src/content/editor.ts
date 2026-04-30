@@ -15,6 +15,11 @@ let dragState: DragState | null = null;
 let dragMoves: Array<{ element: string; from: number; to: number }> = [];
 let activeElement: HTMLElement | null = null;
 let editorStyleEl: HTMLStyleElement | null = null;
+let onDragComplete: ((element: HTMLElement, from: number, to: number) => void) | null = null;
+
+export function setOnDragComplete(cb: (element: HTMLElement, from: number, to: number) => void) {
+  onDragComplete = cb;
+}
 
 export function initEditor() {
   if (editorStyleEl) return;
@@ -44,18 +49,15 @@ export function destroyEditor() {
   editorStyleEl?.remove();
   editorStyleEl = null;
   activeElement = null;
-  originalStyles.forEach((styles, el) => {
-    Object.assign(el.style, styles);
+  // Only clean up editing UI state, NOT user's style changes.
+  // User modifications (inline styles) are intentionally preserved
+  // until synced to the agent.
+  originalStyles.forEach((_styles, el) => {
     el.classList.remove("prism-design-text-editing");
   });
   originalTexts.forEach((text, el) => {
-    el.textContent = text;
     el.contentEditable = "false";
   });
-  pendingChanges.clear();
-  originalStyles = new Map();
-  originalTexts = new Map();
-  dragMoves = [];
 }
 
 export function handleElementClick(element: HTMLElement) {
@@ -114,6 +116,7 @@ export function handleElementMouseDown(e: MouseEvent, element: HTMLElement) {
       if (toIndex > fromIndex) parent.insertBefore(element, target.nextSibling);
       else parent.insertBefore(element, target);
       dragMoves.push({ element: getDomPath(element), from: fromIndex, to: toIndex });
+      try { onDragComplete?.(element, fromIndex, toIndex); } catch (e) { console.error("[PrismDesign] drag callback error:", e); }
     }
     dragState = null;
   };
@@ -127,15 +130,41 @@ function getDomPath(element: HTMLElement): string {
   let el: HTMLElement | null = element;
   while (el && el !== document.body) {
     let selector = el.tagName.toLowerCase();
-    if (el.id && !el.id.startsWith("prism-design-")) selector += `#${el.id}`;
-    else if (el.className && typeof el.className === "string") {
-      const cls = el.className.split(/\s+/).filter((c) => !c.startsWith("prism-design-")).slice(0, 2).join(".");
-      if (cls) selector += `.${cls}`;
+    if (el.id && !el.id.startsWith("prism-design-")) {
+      selector += `#${el.id}`;
+    } else {
+      if (el.className && typeof el.className === "string") {
+        const cls = el.className.split(/\s+/).filter((c) => !c.startsWith("prism-design-")).slice(0, 2).join(".");
+        if (cls) selector += `.${cls}`;
+      }
+      const parent = el.parentElement;
+      if (parent) {
+        const idx = Array.from(parent.children).indexOf(el);
+        selector += `[${idx}]`;
+      }
     }
     parts.unshift(selector);
     el = el.parentElement;
   }
   return parts.join(" > ");
+}
+
+export function recordStyleChange(
+  element: HTMLElement,
+  property: string,
+  oldValue: string,
+  newValue: string,
+) {
+  const path = getDomPath(element);
+  const key = `${path}::${property}`;
+  const existing = pendingChanges.get(key);
+  pendingChanges.set(key, {
+    selector: path,
+    property,
+    oldValue: existing ? existing.oldValue : oldValue, // keep original old value
+    newValue,
+    textContent: (element.textContent || "").trim().slice(0, 60),
+  });
 }
 
 export function getActiveElement() { return activeElement; }

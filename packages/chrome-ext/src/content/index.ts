@@ -5,7 +5,8 @@ import {
 } from "./overlay.js";
 import {
   initEditor, destroyEditor, handleElementClick, handleElementMouseDown,
-  getPendingChanges, getDragMoves, clearChanges, getActiveElement,
+  getPendingChanges, getDragMoves, clearChanges, getActiveElement, recordStyleChange,
+  setOnDragComplete,
 } from "./editor.js";
 import { buildDOMTree, resetIdCounter } from "./dom-tree.js";
 import { initKeyboard, destroyKeyboard } from "./keyboard.js";
@@ -104,6 +105,10 @@ function enableDesignMode() {
     initOverlays();
     initEditor();
     initCommentPopup();
+    setOnDragComplete((element, from, to) => {
+      const info = inspectElement(element);
+      safeSendMessage({ type: "DRAG_MOVE", payload: { element: info, from, to } });
+    });
   } catch (err) {
     console.error("[PrismDesign] Init error:", err);
   }
@@ -161,15 +166,31 @@ function findElementByPath(domPath: string): HTMLElement | null {
     const parts = domPath.split(" > ");
     let current: HTMLElement = document.body;
     for (const part of parts) {
-      const children = Array.from(current.children) as HTMLElement[];
-      const match = children.find((child) => {
-        const tag = child.tagName.toLowerCase();
-        if (part.includes("#")) { const [t, id] = part.split("#"); return tag === t && child.id === id; }
-        if (part.includes(".")) { const [t, ...cls] = part.split("."); return tag === t && cls.every((c) => child.classList.contains(c)); }
-        return tag === part;
-      });
-      if (!match) return null;
-      current = match;
+      // Check for child index suffix like "div.cls[2]"
+      const idxMatch = part.match(/\[(\d+)\]$/);
+      if (idxMatch) {
+        const idx = parseInt(idxMatch[1]);
+        const children = Array.from(current.children) as HTMLElement[];
+        if (idx < 0 || idx >= children.length) return null;
+        current = children[idx];
+      } else if (part.includes("#")) {
+        // ID selector — unique, no ambiguity
+        const [, id] = part.split("#");
+        const children = Array.from(current.children) as HTMLElement[];
+        const match = children.find((c) => c.id === id);
+        if (!match) return null;
+        current = match;
+      } else {
+        // Fallback for legacy paths without index
+        const children = Array.from(current.children) as HTMLElement[];
+        const match = children.find((child) => {
+          const tag = child.tagName.toLowerCase();
+          if (part.includes(".")) { const [t, ...cls] = part.split("."); return tag === t && cls.every((c) => child.classList.contains(c)); }
+          return tag === part;
+        });
+        if (!match) return null;
+        current = match;
+      }
     }
     return current;
   } catch { return null; }
@@ -229,10 +250,14 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, _sender, sendRespon
       break;
     }
     case "APPLY_STYLE_PREVIEW": {
-      const el = findElementByPath(message.payload.domPath);
+      // Prefer the already-selected element to avoid domPath lookup errors
+      const el = selectedElement || findElementByPath(message.payload.domPath);
       if (el) {
-        const prop = message.payload.property.replace(/-([a-z])/g, (_: string, c: string) => c.toUpperCase());
-        (el.style as any)[prop] = message.payload.value;
+        const cssProperty = message.payload.property;
+        const camelProp = cssProperty.replace(/-([a-z])/g, (_: string, c: string) => c.toUpperCase());
+        const oldValue = window.getComputedStyle(el).getPropertyValue(cssProperty);
+        (el.style as any)[camelProp] = message.payload.value;
+        recordStyleChange(el, cssProperty, oldValue, message.payload.value);
       }
       sendResponse({ success: !!el });
       break;

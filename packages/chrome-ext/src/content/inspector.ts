@@ -133,9 +133,17 @@ function getDomPath(element: HTMLElement): string {
     let selector = el.tagName.toLowerCase();
     if (el.id) {
       selector += `#${el.id}`;
-    } else if (el.className && typeof el.className === "string") {
-      const cls = el.className.trim().split(/\s+/).slice(0, 2).join(".");
-      if (cls) selector += `.${cls}`;
+    } else {
+      if (el.className && typeof el.className === "string") {
+        const cls = el.className.trim().split(/\s+/).slice(0, 2).join(".");
+        if (cls) selector += `.${cls}`;
+      }
+      // Add child index to disambiguate siblings with same tag/class
+      const parent = el.parentElement;
+      if (parent) {
+        const idx = Array.from(parent.children).indexOf(el);
+        selector += `[${idx}]`;
+      }
     }
     parts.unshift(selector);
     el = el.parentElement;

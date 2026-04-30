@@ -44,14 +44,21 @@ function getDomPath(el: HTMLElement): string {
     let sel = node.tagName.toLowerCase();
     if (node.id && !node.id.startsWith("prism-design-")) {
       sel += `#${node.id}`;
-    } else if (node.className && typeof node.className === "string") {
-      const cls = node.className
-        .trim()
-        .split(/\s+/)
-        .filter((c) => !c.startsWith("prism-design-") && !c.startsWith("css-"))
-        .slice(0, 2)
-        .join(".");
-      if (cls) sel += `.${cls}`;
+    } else {
+      if (node.className && typeof node.className === "string") {
+        const cls = node.className
+          .trim()
+          .split(/\s+/)
+          .filter((c) => !c.startsWith("prism-design-") && !c.startsWith("css-"))
+          .slice(0, 2)
+          .join(".");
+        if (cls) sel += `.${cls}`;
+      }
+      const parent = node.parentElement;
+      if (parent) {
+        const idx = Array.from(parent.children).indexOf(node);
+        sel += `[${idx}]`;
+      }
     }
     parts.unshift(sel);
     node = node.parentElement;

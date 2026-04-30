@@ -1,8 +1,30 @@
 /** Visual overlay for element highlighting and selection */
 
 let hoverOverlay: HTMLDivElement | null = null;
-let selectOverlay: HTMLDivElement | null = null;
 let labelEl: HTMLDivElement | null = null;
+let selectTarget: HTMLElement | null = null;
+let hoverTarget: HTMLElement | null = null;
+let resizeObserver: ResizeObserver | null = null;
+let animFrame: number | null = null;
+
+const SELECT_OUTLINE = "2px solid #6366f1";
+const SELECT_OUTLINE_OFFSET = "-2px";
+const SELECT_CLASS = "prism-design-selected";
+
+/** Inject a style rule for the selected-element outline (avoids inline style conflicts) */
+let styleEl: HTMLStyleElement | null = null;
+function ensureStyle() {
+  if (styleEl) return;
+  styleEl = document.createElement("style");
+  styleEl.id = "prism-design-overlay-style";
+  styleEl.textContent = `
+    .${SELECT_CLASS} {
+      outline: ${SELECT_OUTLINE} !important;
+      outline-offset: ${SELECT_OUTLINE_OFFSET} !important;
+    }
+  `;
+  document.head.appendChild(styleEl);
+}
 
 function createOverlay(id: string, borderColor: string): HTMLDivElement {
   const el = document.createElement("div");
@@ -40,13 +62,61 @@ function createLabel(): HTMLDivElement {
   return el;
 }
 
+/** Sync hover overlay position to its target element */
+function syncHoverPosition() {
+  if (!hoverOverlay || !hoverTarget) return;
+  const rect = hoverTarget.getBoundingClientRect();
+  Object.assign(hoverOverlay.style, {
+    top: `${rect.top + window.scrollY}px`,
+    left: `${rect.left + window.scrollX}px`,
+    width: `${rect.width}px`,
+    height: `${rect.height}px`,
+  });
+  if (labelEl && labelEl.style.display !== "none") {
+    Object.assign(labelEl.style, {
+      top: `${rect.top + window.scrollY - 20}px`,
+      left: `${rect.left + window.scrollX}px`,
+    });
+  }
+}
+
+/** Start observing the hover target for size/position changes */
+function observeHover(element: HTMLElement) {
+  stopObserving();
+  hoverTarget = element;
+
+  resizeObserver = new ResizeObserver(() => syncHoverPosition());
+  resizeObserver.observe(element);
+
+  // Also track scroll & animation frames for position changes
+  const tick = () => {
+    if (!hoverTarget) return;
+    syncHoverPosition();
+    animFrame = requestAnimationFrame(tick);
+  };
+  animFrame = requestAnimationFrame(tick);
+}
+
+function stopObserving() {
+  resizeObserver?.disconnect();
+  resizeObserver = null;
+  if (animFrame !== null) {
+    cancelAnimationFrame(animFrame);
+    animFrame = null;
+  }
+  hoverTarget = null;
+}
+
+// ── public API ──
+
 export function initOverlays() {
   document.getElementById("prism-design-hover")?.remove();
-  document.getElementById("prism-design-select")?.remove();
   document.getElementById("prism-design-label")?.remove();
+  styleEl?.remove();
+  styleEl = null;
 
+  ensureStyle();
   hoverOverlay = createOverlay("prism-design-hover", "rgba(99, 102, 241, 0.6)");
-  selectOverlay = createOverlay("prism-design-select", "#6366f1");
   labelEl = createLabel();
 }
 
@@ -70,34 +140,35 @@ export function showHoverHighlight(element: HTMLElement, componentName?: string)
     top: `${rect.top + window.scrollY - 20}px`,
     left: `${rect.left + window.scrollX}px`,
   });
+
+  observeHover(element);
 }
 
 export function hideHoverHighlight() {
   if (hoverOverlay) hoverOverlay.style.display = "none";
   if (labelEl) labelEl.style.display = "none";
+  stopObserving();
 }
 
 export function showSelectHighlight(element: HTMLElement) {
-  if (!selectOverlay) return;
-
-  const rect = element.getBoundingClientRect();
-  Object.assign(selectOverlay.style, {
-    display: "block",
-    top: `${rect.top + window.scrollY}px`,
-    left: `${rect.left + window.scrollX}px`,
-    width: `${rect.width}px`,
-    height: `${rect.height}px`,
-    backgroundColor: "rgba(99, 102, 241, 0.05)",
-  });
+  hideSelectHighlight();
+  ensureStyle();
+  selectTarget = element;
+  element.classList.add(SELECT_CLASS);
 }
 
 export function hideSelectHighlight() {
-  if (selectOverlay) selectOverlay.style.display = "none";
+  if (selectTarget) {
+    selectTarget.classList.remove(SELECT_CLASS);
+    selectTarget = null;
+  }
 }
 
 export function destroyOverlays() {
-  [hoverOverlay, selectOverlay, labelEl].forEach((el) => el?.remove());
+  hideSelectHighlight();
+  stopObserving();
+  [hoverOverlay, labelEl, styleEl].forEach((el) => el?.remove());
   hoverOverlay = null;
-  selectOverlay = null;
   labelEl = null;
+  styleEl = null;
 }

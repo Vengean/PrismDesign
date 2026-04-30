@@ -8,9 +8,10 @@ import { useElement } from "./hooks/use-element";
 import { ChatPanel } from "./components/ChatPanel";
 import { Navigator } from "./components/Navigator";
 import { PropertiesPanel } from "./components/PropertiesPanel";
+import type { StyleEditEvent } from "./components/PropertiesPanel";
 import { ChangesPanel } from "./components/ChangesPanel";
 import { PendingPanel } from "./components/PendingPanel";
-import type { PendingComment } from "./components/PendingPanel";
+import type { PendingComment, PendingEdit, PendingDrag } from "./components/PendingPanel";
 
 type ViewType = "chat" | "navigator" | "properties" | "changes" | "pending";
 
@@ -19,7 +20,7 @@ const VIEW_TITLES: Record<ViewType, string> = {
   navigator: "导航",
   properties: "属性",
   changes: "变更",
-  pending: "评论",
+  pending: "待同步",
 };
 
 export function App() {
@@ -28,6 +29,8 @@ export function App() {
   const [view, setView] = useState<ViewType>("chat");
   const [isDragMode, setIsDragMode] = useState(false);
   const [pendingComments, setPendingComments] = useState<PendingComment[]>([]);
+  const [pendingEdits, setPendingEdits] = useState<Map<string, PendingEdit>>(new Map());
+  const [pendingDrags, setPendingDrags] = useState<PendingDrag[]>([]);
   const isDragModeRef = useRef(false);
   isDragModeRef.current = isDragMode;
 
@@ -41,9 +44,7 @@ export function App() {
   });
   const changes = useChanges();
 
-  // Side panel lifecycle — port to background manages everything:
-  // open → show toolbar + connect agent; close → hide toolbar + disconnect agent.
-  // Reconnects automatically when the service worker restarts.
+  // Side panel lifecycle
   useEffect(() => {
     let port: chrome.runtime.Port | null = null;
     let unmounted = false;
@@ -54,7 +55,6 @@ export function App() {
         port = chrome.runtime.connect({ name: "prism-sidepanel" });
         port.onDisconnect.addListener(() => {
           port = null;
-          // Service worker restarted — reconnect after a short delay
           if (!unmounted) setTimeout(connectPort, 500);
         });
       } catch {
@@ -69,15 +69,14 @@ export function App() {
     };
   }, []);
 
-  // Disable toolbar when AI is working; re-enable when done
+  // Disable toolbar when AI is working
   useEffect(() => {
     chrome.runtime.sendMessage({ type: "TOOLBAR_DISABLE", payload: { disabled: agent.aiWorking } });
   }, [agent.aiWorking]);
 
-  // Listen for toolbar mode changes and comments from content script
+  // Listen for toolbar mode changes and comments
   useEffect(() => {
     const handler = (message: PrismMessage, sender: chrome.runtime.MessageSender) => {
-      // Only process messages forwarded by the background, skip direct content-script messages
       if (sender.tab) return;
       if (message.type === "OPEN_CHAT") {
         setView("chat");
@@ -92,10 +91,50 @@ export function App() {
       } else if (message.type === "COMMENT_ADDED") {
         setPendingComments((prev) => [...prev, message.payload]);
         setView("pending");
+      } else if (message.type === "DRAG_MOVE") {
+        setPendingDrags((prev) => [...prev, message.payload]);
       }
     };
     chrome.runtime.onMessage.addListener(handler);
     return () => chrome.runtime.onMessage.removeListener(handler);
+  }, []);
+
+  // ── Style edit merge logic ──
+  const handleStyleEdit = useCallback((edit: StyleEditEvent) => {
+    setPendingEdits((prev) => {
+      const next = new Map(prev);
+      const key = edit.element.domPath;
+      const existing = next.get(key);
+
+      if (existing) {
+        const props = { ...existing.properties };
+        const prevEntry = props[edit.property];
+        // Keep the original oldValue from the first edit
+        const origOld = prevEntry ? prevEntry.oldValue : edit.oldValue;
+        // If new value === original old value, user reverted — remove this property
+        if (edit.newValue === origOld) {
+          delete props[edit.property];
+        } else {
+          props[edit.property] = { oldValue: origOld, newValue: edit.newValue };
+        }
+        // If no properties left, remove the element entirely
+        if (Object.keys(props).length === 0) {
+          next.delete(key);
+        } else {
+          next.set(key, { ...existing, properties: props });
+        }
+      } else {
+        // First edit for this element
+        if (edit.newValue !== edit.oldValue) {
+          next.set(key, {
+            element: edit.element,
+            properties: { [edit.property]: { oldValue: edit.oldValue, newValue: edit.newValue } },
+          });
+        }
+      }
+
+      return next;
+    });
   }, []);
 
   const handleBack = () => {
@@ -107,21 +146,40 @@ export function App() {
     setPendingComments((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
+  const handleRemoveEdit = useCallback((domPath: string) => {
+    setPendingEdits((prev) => {
+      const next = new Map(prev);
+      next.delete(domPath);
+      return next;
+    });
+  }, []);
+
+  const handleRemoveDrag = useCallback((index: number) => {
+    setPendingDrags((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  // ── Sync: format all pending items as a single message ──
   const handleSync = useCallback(() => {
-    if (pendingComments.length === 0) return;
-    const parts = pendingComments.map((c) => {
-      const el = c.element;
+    const editsArr = Array.from(pendingEdits.values());
+    if (pendingComments.length === 0 && editsArr.length === 0 && pendingDrags.length === 0) return;
+
+    const PROP_LABELS: Record<string, string> = {
+      color: "颜色", backgroundColor: "背景色", "background-color": "背景色",
+      fontSize: "字号", "font-size": "字号",
+      fontWeight: "字重", "font-weight": "字重",
+      opacity: "透明度", borderRadius: "圆角", "border-radius": "圆角",
+      padding: "内边距", margin: "外边距", gap: "间隔",
+    };
+
+    function formatElementInfo(el: typeof pendingComments[0]["element"]): string[] {
       const comp = el.component;
       const name = comp?.name || `<${el.tagName}>`;
       const lines: string[] = [];
 
-      // Header: component name + element tag
       lines.push(`**${name}**${el.id ? ` #${el.id}` : ""}${el.tagName !== name ? ` \`<${el.tagName}>\`` : ""}`);
 
-      // Page path (skip root "/")
       if (el.pagePath && el.pagePath !== "/") lines.push(`页面: ${el.pagePath}`);
 
-      // Component chain with source locations
       if (el.componentChainDetail?.length > 0) {
         const chainStr = el.componentChainDetail.map((item) => {
           let s = item.name;
@@ -136,7 +194,6 @@ export function App() {
         lines.push(`组件链: ${el.componentChain}`);
       }
 
-      // Direct source location
       if (comp?.sourceFile) {
         let loc = comp.sourceFile;
         if (comp.sourceLine) loc += `:${comp.sourceLine}`;
@@ -144,20 +201,48 @@ export function App() {
         lines.push(`源码: ${loc}`);
       }
 
-      // Semantic hints
       if (el.role) lines.push(`role: ${el.role}`);
       if (el.ariaLabel) lines.push(`aria-label: ${el.ariaLabel}`);
       if (el.textContent) lines.push(`文本: "${el.textContent.slice(0, 60)}"`);
 
-      // The comment itself
-      lines.push(`评论: ${c.comment}`);
+      return lines;
+    }
 
-      return lines.join("\n");
-    });
+    const parts: string[] = [];
+
+    // Style edits
+    for (const edit of editsArr) {
+      const lines = formatElementInfo(edit.element);
+      lines.push("修改:");
+      for (const [prop, { oldValue, newValue }] of Object.entries(edit.properties)) {
+        const label = PROP_LABELS[prop] || prop;
+        lines.push(`- ${label}: ${oldValue || "(无)"} → ${newValue}`);
+      }
+      parts.push(lines.join("\n"));
+    }
+
+    // Drag moves
+    for (const d of pendingDrags) {
+      const lines = formatElementInfo(d.element);
+      lines.push(`移动: 从第 ${d.from + 1} 项 → 第 ${d.to + 1} 项`);
+      parts.push(lines.join("\n"));
+    }
+
+    // Comments
+    for (const c of pendingComments) {
+      const lines = formatElementInfo(c.element);
+      lines.push(`评论: ${c.comment}`);
+      parts.push(lines.join("\n"));
+    }
+
     setPendingComments([]);
+    setPendingEdits(new Map());
+    setPendingDrags([]);
     setView("chat");
     chat.sendMessage(parts.join("\n\n---\n\n"));
-  }, [pendingComments, chat]);
+  }, [pendingComments, pendingEdits, pendingDrags, chat]);
+
+  const pendingTotal = pendingComments.length + pendingEdits.size + pendingDrags.length;
 
   return (
     <div className="flex flex-col h-screen">
@@ -182,7 +267,7 @@ export function App() {
           </div>
         )}
         {view === "pending" && (
-          <span className="ml-auto text-[10px] text-muted-foreground">{pendingComments.length} 条</span>
+          <span className="ml-auto text-[10px] text-muted-foreground">{pendingTotal} 条</span>
         )}
       </div>
 
@@ -192,9 +277,21 @@ export function App() {
         {view === "navigator" && (
           <Navigator selection={selection} highlightElement={highlightElement} unhighlightElement={unhighlightElement} selectElement={selectElement} />
         )}
-        {view === "properties" && <PropertiesPanel selection={selection} applyStylePreview={applyStylePreview} />}
+        {view === "properties" && (
+          <PropertiesPanel selection={selection} applyStylePreview={applyStylePreview} onStyleEdit={handleStyleEdit} />
+        )}
         {view === "changes" && <ChangesPanel />}
-        {view === "pending" && <PendingPanel comments={pendingComments} onRemove={handleRemoveComment} onSync={handleSync} />}
+        {view === "pending" && (
+          <PendingPanel
+            comments={pendingComments}
+            edits={Array.from(pendingEdits.values())}
+            drags={pendingDrags}
+            onRemoveComment={handleRemoveComment}
+            onRemoveEdit={handleRemoveEdit}
+            onRemoveDrag={handleRemoveDrag}
+            onSync={handleSync}
+          />
+        )}
       </div>
     </div>
   );

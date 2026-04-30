@@ -101,7 +101,7 @@ export type UpstreamMessage =
   | { type: "ELEMENT_DESELECTED" }
   | { type: "DOM_TREE"; payload: DOMTreeNode[] }
   | { type: "CHANGES_UPDATE"; payload: { changes: StyleChange[]; undoCount: number; redoCount: number } }
-  | { type: "DRAG_MOVE"; payload: { element: string; from: number; to: number } }
+  | { type: "DRAG_MOVE"; payload: { element: ElementSelection; from: number; to: number } }
   | { type: "CONTENT_READY" }
   | { type: "DESIGN_MODE_STATUS"; payload: { active: boolean } }
   | { type: "OPEN_SIDE_PANEL" }
