@@ -119,8 +119,10 @@ ${changeDesc}
 ${body.supplement ? `设计师补充说明：${body.supplement}\n` : ""}
 请根据组件名和源文件定位代码，读取确认后应用修改。`;
 
+    const onProgress = (text: string) => broadcast("agent:progress", { text });
+
     try {
-      const result = await runAgent(clientId, userMessage);
+      const result = await runAgent(clientId, userMessage, onProgress);
       broadcast("agent:done", { success: result.success, filesModified: result.filesModified });
       res.json(result);
     } catch (error) {
@@ -149,8 +151,10 @@ ${componentContext}
 
 请��据需求搜索并修改相关源代码。`;
 
+    const onProgress = (text: string) => broadcast("agent:progress", { text });
+
     try {
-      const result = await runAgent(clientId, userMessage);
+      const result = await runAgent(clientId, userMessage, onProgress);
       broadcast("agent:done", { success: result.success, filesModified: result.filesModified });
       res.json(result);
     } catch (error) {

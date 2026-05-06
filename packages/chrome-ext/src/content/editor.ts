@@ -35,8 +35,11 @@ export function initEditor() {
     .prism-design-drag-mode * {
       cursor: grab !important;
     }
-    .prism-design-drag-over {
+    .prism-design-drag-over-top {
       border-top: 3px solid #6366f1 !important;
+    }
+    .prism-design-drag-over-left {
+      border-left: 3px solid #6366f1 !important;
     }
     .prism-design-dragging {
       opacity: 0.4 !important;
@@ -78,6 +81,27 @@ export function handleElementClick(element: HTMLElement) {
   }
 }
 
+const DRAG_OVER_CLASSES = ["prism-design-drag-over-top", "prism-design-drag-over-left"];
+
+function removeDragOverClass(el: HTMLElement) {
+  el.classList.remove(...DRAG_OVER_CLASSES);
+}
+
+function isHorizontalLayout(parent: HTMLElement): boolean {
+  const style = window.getComputedStyle(parent);
+  const display = style.display;
+  if (display === "flex" || display === "inline-flex") {
+    const dir = style.flexDirection;
+    return dir === "row" || dir === "row-reverse";
+  }
+  if (display === "grid" || display === "inline-grid") {
+    // If grid has multiple columns, treat as horizontal
+    const cols = style.gridTemplateColumns;
+    return cols !== "none" && cols.split(/\s+/).length > 1;
+  }
+  return false;
+}
+
 export function handleElementMouseDown(e: MouseEvent, element: HTMLElement) {
   e.preventDefault();
   const parent = element.parentElement;
@@ -90,6 +114,9 @@ export function handleElementMouseDown(e: MouseEvent, element: HTMLElement) {
   const fromIndex = siblings.indexOf(element);
   element.classList.add("prism-design-dragging");
 
+  const horizontal = isHorizontalLayout(parent);
+  const overClass = horizontal ? "prism-design-drag-over-left" : "prism-design-drag-over-top";
+
   dragState = { element, startY: e.clientY, siblings };
 
   const onMouseMove = (ev: MouseEvent) => {
@@ -98,8 +125,8 @@ export function handleElementMouseDown(e: MouseEvent, element: HTMLElement) {
     if (!hoverEl || hoverEl === element) return;
     const sibling = dragState.siblings.find((s) => s === hoverEl || s.contains(hoverEl));
     if (sibling && sibling !== element) {
-      dragState.siblings.forEach((s) => s.classList.remove("prism-design-drag-over"));
-      sibling.classList.add("prism-design-drag-over");
+      dragState.siblings.forEach((s) => removeDragOverClass(s));
+      sibling.classList.add(overClass);
     }
   };
 
@@ -108,7 +135,7 @@ export function handleElementMouseDown(e: MouseEvent, element: HTMLElement) {
     document.removeEventListener("mouseup", onMouseUp);
     if (!dragState) return;
     element.classList.remove("prism-design-dragging");
-    dragState.siblings.forEach((s) => s.classList.remove("prism-design-drag-over"));
+    dragState.siblings.forEach((s) => removeDragOverClass(s));
     const hoverEl = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement;
     const target = dragState.siblings.find((s) => s === hoverEl || s.contains(hoverEl));
     if (target && target !== element) {

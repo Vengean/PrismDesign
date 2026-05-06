@@ -65,13 +65,17 @@ export default function App() {
       <header className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-sm">
         <div className="mx-auto max-w-7xl flex h-14 items-center justify-between px-6">
           <div className="flex items-center gap-2">
-            <div className="h-6 w-6 rounded-md bg-foreground" />
+            <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 3L21.5 20H2.5L12 3Z" fill="currentColor" />
+              <path d="M12 9L18.5 20H12V9Z" fill="white" fillOpacity="0.25" />
+            </svg>
             <span className="font-semibold">棱镜</span>
           </div>
           <nav className="hidden md:flex items-center gap-6 text-sm">
             <a href="#components" className="text-muted-foreground hover:text-foreground transition-colors">组件</a>
             <a href="#examples" className="text-muted-foreground hover:text-foreground transition-colors">示例</a>
             <a href="#" className="text-muted-foreground hover:text-foreground transition-colors">文档</a>
+            <a href="#community" className="text-muted-foreground hover:text-foreground transition-colors">社区</a>
           </nav>
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon">
@@ -644,6 +648,95 @@ export default function App() {
           </div>
         </section>
       </main>
+
+        {/* Community */}
+        <section id="community" className="py-16 px-6 border-b">
+          <div className="mx-auto max-w-4xl">
+            <div className="mb-10">
+              <h2 className="text-2xl font-bold tracking-tight mb-2">社区</h2>
+              <p className="text-muted-foreground">在这里与来自各地的开发者共同交流组件设计心得、分享实战经验、探讨技术难题，共同推动前端生态的发展。</p>
+            </div>
+
+            {/* Post composer */}
+            <Card className="mb-6">
+              <CardContent className="pt-4">
+                <div className="flex gap-3">
+                  <Avatar className="h-9 w-9 shrink-0">
+                    <AvatarFallback>我</AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 space-y-3">
+                    <Input placeholder="分享你的想法、问题或作品…" />
+                    <div className="flex justify-end">
+                      <Button size="sm">发布</Button>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Post list */}
+            <div className="space-y-4">
+              {[
+                {
+                  avatar: 'ZS', name: '张设计师', time: '2 小时前',
+                  tags: ['分享'],
+                  title: '用棱镜组件库搭了一套后台管理系统',
+                  body: '花了两天时间，基于 Card + Tabs + Switch 等组件搭建了一套后台管理界面，主题切换非常丝滑，强烈推荐！',
+                  likes: 42, comments: 8,
+                },
+                {
+                  avatar: 'LM', name: '李明', time: '5 小时前',
+                  tags: ['问题'],
+                  title: 'Avatar 组件在 Safari 上圆角失效怎么处理？',
+                  body: '发现在 Safari 15 以下 `overflow-hidden` + `rounded-full` 组合会失效，尝试加 `isolate` 没有效果，有遇到类似问题的吗？',
+                  likes: 17, comments: 12,
+                },
+                {
+                  avatar: 'WH', name: '王华', time: '昨天',
+                  tags: ['展示'],
+                  title: '基于棱镜做的暗色主题 Dashboard 截图',
+                  body: '调整了 CSS 变量实现了自定义暗色主题，整体风格偏 Linear 风格，欢迎大家反馈意见。',
+                  likes: 89, comments: 24,
+                },
+              ].map(({ avatar, name, time, tags, title, body, likes, comments }) => (
+                <Card key={title}>
+                  <CardContent className="pt-5">
+                    <div className="flex gap-3">
+                      <Avatar className="h-9 w-9 shrink-0">
+                        <AvatarFallback className="text-xs">{avatar}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <span className="text-sm font-medium">{name}</span>
+                          <span className="text-xs text-muted-foreground">{time}</span>
+                          {tags.map((tag) => (
+                            <Badge key={tag} variant="secondary" className="text-xs px-1.5 py-0 h-5">{tag}</Badge>
+                          ))}
+                        </div>
+                        <p className="text-sm font-semibold mb-1">{title}</p>
+                        <p className="text-sm text-muted-foreground leading-relaxed mb-3">{body}</p>
+                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                          <button className="flex items-center gap-1 hover:text-foreground transition-colors">
+                            <Heart className="h-3.5 w-3.5" />
+                            {likes}
+                          </button>
+                          <button className="flex items-center gap-1 hover:text-foreground transition-colors">
+                            <Mail className="h-3.5 w-3.5" />
+                            {comments} 回复
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            <div className="mt-6 text-center">
+              <Button variant="outline">加载更多</Button>
+            </div>
+          </div>
+        </section>
 
       <footer className="border-t py-8 px-6">
         <div className="mx-auto max-w-7xl flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">

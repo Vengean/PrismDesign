@@ -123,6 +123,7 @@ export type AgentMessage =
 export type AgentEventMessage =
   | { type: "AGENT_STATUS"; payload: { connected: boolean; project?: ProjectInfo } }
   | { type: "AGENT_WORKING"; payload: { working: boolean } }
+  | { type: "AGENT_PROGRESS"; payload: { text: string } }
   | { type: "AGENT_RESULT"; payload: { success: boolean; message: string; filesModified?: string[] } }
   | { type: "AGENT_ERROR"; payload: { message: string } };
 

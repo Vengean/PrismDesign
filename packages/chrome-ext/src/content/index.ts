@@ -198,8 +198,19 @@ function findElementByPath(domPath: string): HTMLElement | null {
 
 // ---- Message handler ----
 
+// Only handle downstream messages meant for content script
+const HANDLED_TYPES = new Set([
+  "DESIGN_MODE_ON", "DESIGN_MODE_OFF", "ENABLE_DRAG_MODE", "DISABLE_DRAG_MODE",
+  "GET_DOM_TREE", "GET_PENDING_CHANGES", "CLEAR_CHANGES",
+  "HIGHLIGHT_ELEMENT", "UNHIGHLIGHT_ELEMENT", "SELECT_ELEMENT",
+  "APPLY_STYLE_PREVIEW", "CLEAR_STYLE_PREVIEW",
+  "SHOW_TOOLBAR", "HIDE_TOOLBAR", "TOOLBAR_DISABLE", "PING",
+]);
+
 chrome.runtime.onMessage.addListener((message: PrismMessage, _sender, sendResponse) => {
-  if (isContextInvalidated()) return;
+  if (isContextInvalidated()) return false;
+  if (!HANDLED_TYPES.has(message.type)) return false; // ignore upstream broadcasts
+
   switch (message.type) {
     case "DESIGN_MODE_ON": enableDesignMode(); sendResponse({ success: true }); break;
     case "DESIGN_MODE_OFF": disableDesignMode(); sendResponse({ success: true }); break;
@@ -287,7 +298,6 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, _sender, sendRespon
       sendResponse({ success: true });
       break;
     case "PING": sendResponse({ active: designModeActive }); break;
-    default: sendResponse({ success: false });
   }
   return true;
 });

@@ -19,15 +19,26 @@ export function useChat() {
     chrome.storage.local.set({ [STORAGE_KEY]: messages });
   }, [messages]);
 
-  // Listen for agent results
+  // Listen for agent progress and results
   useEffect(() => {
     const handler = (message: PrismMessage) => {
+      if (message.type === "AGENT_PROGRESS") {
+        setMessages((prev) => {
+          const updated = [...prev];
+          const lastIdx = updated.findLastIndex((m) => m.role === "ai" && m.content.startsWith("⏳"));
+          if (lastIdx >= 0) {
+            updated[lastIdx] = { ...updated[lastIdx], content: `⏳ ${message.payload.text}` };
+          }
+          return updated;
+        });
+        return;
+      }
       if (message.type === "AGENT_RESULT") {
         setSending(false);
         setMessages((prev) => {
           const updated = [...prev];
           // Replace last "thinking" message
-          const lastIdx = updated.findLastIndex((m) => m.role === "ai" && m.content === "思考中...");
+          const lastIdx = updated.findLastIndex((m) => m.role === "ai" && m.content.startsWith("⏳"));
           if (lastIdx >= 0) {
             updated[lastIdx] = {
               role: "ai",
@@ -49,7 +60,7 @@ export function useChat() {
         setSending(false);
         setMessages((prev) => {
           const updated = [...prev];
-          const lastIdx = updated.findLastIndex((m) => m.role === "ai" && m.content === "思考中...");
+          const lastIdx = updated.findLastIndex((m) => m.role === "ai" && m.content.startsWith("⏳"));
           if (lastIdx >= 0) {
             updated[lastIdx] = { role: "ai", content: `错误: ${message.payload.message}`, timestamp: Date.now() };
           }
@@ -65,7 +76,7 @@ export function useChat() {
     if (!text.trim() || sending) return;
 
     const userMsg: ChatMessage = { role: "user", content: text, timestamp: Date.now() };
-    const thinkingMsg: ChatMessage = { role: "ai", content: "思考中...", timestamp: Date.now() };
+    const thinkingMsg: ChatMessage = { role: "ai", content: "⏳ 思考中...", timestamp: Date.now() };
     setMessages((prev) => [...prev, userMsg, thinkingMsg]);
     setSending(true);
 
@@ -79,7 +90,7 @@ export function useChat() {
       setSending(false);
       setMessages((prev) => {
         const updated = [...prev];
-        const lastIdx = updated.findLastIndex((m) => m.content === "思考中...");
+        const lastIdx = updated.findLastIndex((m) => m.content.startsWith("⏳"));
         if (lastIdx >= 0) updated[lastIdx] = { role: "ai", content: "请求失败。", timestamp: Date.now() };
         return updated;
       });

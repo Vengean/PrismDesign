@@ -81,9 +81,12 @@ function buildInitMessage(userMessage: string): string {
  * Run agent for a specific client.
  * First message includes project context, subsequent messages are user-only.
  */
+export type ProgressCallback = (text: string) => void;
+
 export async function runAgent(
   clientId: string,
-  userMessage: string
+  userMessage: string,
+  onProgress?: ProgressCallback,
 ): Promise<AgentResult> {
   const userSession = getSession(clientId);
   const { session } = userSession;
@@ -114,13 +117,25 @@ export async function runAgent(
       if (isToolUseMessage(msg)) {
         const toolName = getToolName(msg);
         const filePath = getToolFilePath(msg);
-        if (
-          filePath &&
-          (toolName === "Write" || toolName === "Edit") &&
-          !filesModified.includes(filePath)
-        ) {
-          filesModified.push(filePath);
+        if (filePath) {
+          if ((toolName === "Write" || toolName === "Edit") && !filesModified.includes(filePath)) {
+            filesModified.push(filePath);
+          }
+          const shortPath = filePath.split("/").slice(-2).join("/");
+          const TOOL_LABELS: Record<string, string> = {
+            Read: "读取", Write: "写入", Edit: "编辑",
+            Glob: "搜索文件", Grep: "搜索内容", Bash: "执行命令",
+          };
+          onProgress?.(`${TOOL_LABELS[toolName] || toolName} ${shortPath}`);
+        } else if (toolName) {
+          const TOOL_LABELS: Record<string, string> = {
+            Glob: "搜索文件", Grep: "搜索内容", Bash: "执行命令",
+          };
+          onProgress?.(`${TOOL_LABELS[toolName] || toolName}...`);
         }
+      } else if (isTextMessage(msg)) {
+        const text = getTextContent(msg);
+        if (text) onProgress?.(text.length > 80 ? text.slice(0, 80) + "..." : text);
       }
 
       if ("result" in msg) {
@@ -182,17 +197,48 @@ export function closeAllSessions() {
 
 // ---- Helpers ----
 
+/** Get content blocks from an assistant message */
+function getContentBlocks(msg: SDKMessage): any[] {
+  const m = msg as any;
+  if (m.type === "assistant" && m.message?.content) {
+    return Array.isArray(m.message.content) ? m.message.content : [];
+  }
+  return [];
+}
+
 function isToolUseMessage(msg: SDKMessage): boolean {
-  return (
-    (msg as any).type === "tool_use" || (msg as any).subtype === "tool_use"
-  );
+  const m = msg as any;
+  if (m.type === "tool_use" || m.subtype === "tool_use") return true;
+  return getContentBlocks(msg).some((b: any) => b.type === "tool_use");
 }
 
 function getToolName(msg: SDKMessage): string {
-  return (msg as any).name || (msg as any).tool_name || "";
+  const m = msg as any;
+  if (m.name) return m.name;
+  const block = getContentBlocks(msg).find((b: any) => b.type === "tool_use");
+  return block?.name || "";
 }
 
 function getToolFilePath(msg: SDKMessage): string | undefined {
-  const input = (msg as any).input || (msg as any).arguments || {};
-  return input.file_path || input.path || input.filePath;
+  const m = msg as any;
+  const input = m.input || m.arguments || {};
+  if (input.file_path || input.path || input.filePath) {
+    return input.file_path || input.path || input.filePath;
+  }
+  const block = getContentBlocks(msg).find((b: any) => b.type === "tool_use");
+  const blockInput = block?.input || {};
+  return blockInput.file_path || blockInput.path || blockInput.filePath;
+}
+
+function isTextMessage(msg: SDKMessage): boolean {
+  const m = msg as any;
+  if (m.type === "text" || m.subtype === "text") return true;
+  return getContentBlocks(msg).some((b: any) => b.type === "text");
+}
+
+function getTextContent(msg: SDKMessage): string {
+  const m = msg as any;
+  if (m.text) return m.text;
+  const block = getContentBlocks(msg).find((b: any) => b.type === "text");
+  return block?.text || "";
 }

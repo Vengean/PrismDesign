@@ -166,7 +166,8 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, sender, sendRespons
       message.type === "OPEN_NAVIGATOR" ||
       message.type === "OPEN_CHANGES" ||
       message.type === "OPEN_PENDING" ||
-      message.type === "COMMENT_ADDED"
+      message.type === "COMMENT_ADDED" ||
+      message.type === "DRAG_MOVE"
     ) {
       broadcastToSidePanel(message);
     }
@@ -238,6 +239,8 @@ async function handleAgentConnect(url: string) {
       // Forward agent WebSocket events to side panel
       if (eventType === "agent:start") {
         broadcastToSidePanel({ type: "AGENT_WORKING", payload: { working: true } });
+      } else if (eventType === "agent:progress") {
+        broadcastToSidePanel({ type: "AGENT_PROGRESS", payload: { text: (data as any)?.text || "" } });
       } else if (eventType === "agent:done") {
         broadcastToSidePanel({ type: "AGENT_WORKING", payload: { working: false } });
       } else if (eventType === "agent:error") {
