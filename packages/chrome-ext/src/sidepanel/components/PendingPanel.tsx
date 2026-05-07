@@ -71,6 +71,9 @@ function ElementHeader({ el }: { el: ElementSelection }) {
       ) : el.pagePath && el.pagePath !== "/" && (
         <div className="text-[10px] text-muted-foreground font-mono truncate mt-0.5">{el.pagePath}</div>
       )}
+      {el.textContent && (
+        <div className="text-[9px] text-muted-foreground/70 truncate mt-0.5">"{el.textContent}"</div>
+      )}
     </>
   );
 }

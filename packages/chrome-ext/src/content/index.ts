@@ -10,7 +10,7 @@ import {
 } from "./editor.js";
 import { buildDOMTree, resetIdCounter } from "./dom-tree.js";
 import { initKeyboard, destroyKeyboard } from "./keyboard.js";
-import { createToolbar, destroyToolbar, isToolbarElement, setActiveMode, setToolbarDisabled, isToolbarDisabled, triggerMode } from "./toolbar.js";
+import { createToolbar, destroyToolbar, isToolbarElement, setActiveMode, setToolbarDisabled, isToolbarDisabled, triggerMode, updatePendingBadge } from "./toolbar.js";
 import { initCommentPopup, showCommentPopup, hideCommentPopup, destroyCommentPopup, isCommentPopupElement } from "./comment-popup.js";
 import { safeSendMessage, isContextInvalidated, onContextInvalidated } from "./runtime.js";
 import type { PrismMessage } from "../shared/types.js";
@@ -204,7 +204,7 @@ const HANDLED_TYPES = new Set([
   "GET_DOM_TREE", "GET_PENDING_CHANGES", "CLEAR_CHANGES",
   "HIGHLIGHT_ELEMENT", "UNHIGHLIGHT_ELEMENT", "SELECT_ELEMENT",
   "APPLY_STYLE_PREVIEW", "CLEAR_STYLE_PREVIEW",
-  "SHOW_TOOLBAR", "HIDE_TOOLBAR", "TOOLBAR_DISABLE", "PING",
+  "SHOW_TOOLBAR", "HIDE_TOOLBAR", "TOOLBAR_DISABLE", "UPDATE_PENDING_COUNT", "PING",
 ]);
 
 chrome.runtime.onMessage.addListener((message: PrismMessage, _sender, sendResponse) => {
@@ -213,7 +213,7 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, _sender, sendRespon
 
   switch (message.type) {
     case "DESIGN_MODE_ON": enableDesignMode(); sendResponse({ success: true }); break;
-    case "DESIGN_MODE_OFF": disableDesignMode(); sendResponse({ success: true }); break;
+    case "DESIGN_MODE_OFF": disableDesignMode(); setActiveMode(null); sendResponse({ success: true }); break;
     case "ENABLE_DRAG_MODE":
       dragModeActive = true;
       document.body.classList.add("prism-design-drag-mode");
@@ -297,6 +297,10 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, _sender, sendRespon
       }
       sendResponse({ success: true });
       break;
+    case "UPDATE_PENDING_COUNT":
+      updatePendingBadge(message.payload.count);
+      sendResponse({ success: true });
+      break;
     case "PING": sendResponse({ active: designModeActive }); break;
   }
   return true;
@@ -355,5 +359,6 @@ function removeToolbar() {
   toolbarCreated = false;
 }
 
-safeSendMessage({ type: "CONTENT_READY" });
+// Send ready after a short delay so it doesn't interfere with page load
+setTimeout(() => safeSendMessage({ type: "CONTENT_READY" }), 100);
 console.log("[PrismDesign] Content script loaded");

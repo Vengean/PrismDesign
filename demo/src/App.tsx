@@ -73,9 +73,9 @@ export default function App() {
             <span className="font-semibold">棱镜</span>
           </div>
           <nav className="hidden md:flex items-center gap-6 text-sm">
+            <a href="#" className="text-muted-foreground hover:text-foreground transition-colors">文档</a>
             <a href="#components" className="text-muted-foreground hover:text-foreground transition-colors">组件</a>
             <a href="#examples" className="text-muted-foreground hover:text-foreground transition-colors">示例</a>
-            <a href="#" className="text-muted-foreground hover:text-foreground transition-colors">文档</a>
           </nav>
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon">

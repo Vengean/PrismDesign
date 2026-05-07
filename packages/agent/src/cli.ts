@@ -90,10 +90,9 @@ Options:
 
   console.log(`   框架:     ${profile.framework}`);
   console.log(`   语言:     ${profile.language}`);
-  console.log(`   样式:     ${profile.styling.join(", ")}`);
-  console.log(`   组件库:   ${profile.componentLib.join(", ") || "无/自研"}`);
   console.log(`   构建工具: ${profile.buildTool}`);
   console.log(`   源码目录: ${profile.srcDir}`);
+  console.log(`   (组件库、样式方案等由 Agent 首次对话时自动深度扫描)`);
 
   // Step 2: Analyze conventions (uses Agent SDK)
   if (!skipAnalysis) {

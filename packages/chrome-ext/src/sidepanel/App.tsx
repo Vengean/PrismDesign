@@ -70,10 +70,17 @@ export function App() {
     };
   }, []);
 
+  const pendingTotal = pendingComments.length + pendingEdits.size + pendingDrags.length;
+
   // Disable toolbar when AI is working
   useEffect(() => {
     chrome.runtime.sendMessage({ type: "TOOLBAR_DISABLE", payload: { disabled: agent.aiWorking } });
   }, [agent.aiWorking]);
+
+  // Sync pending count badge to toolbar
+  useEffect(() => {
+    chrome.runtime.sendMessage({ type: "UPDATE_PENDING_COUNT", payload: { count: pendingTotal } }).catch(() => {});
+  }, [pendingTotal]);
 
   // Listen for toolbar mode changes and comments
   useEffect(() => {
@@ -142,6 +149,14 @@ export function App() {
     clearSelection();
     setView("navigator");
   };
+
+  const handleBackToChat = useCallback(() => {
+    clearSelection();
+    setView("chat");
+    setIsDragMode(false);
+    // Exit design mode and unhighlight on the page
+    chrome.runtime.sendMessage({ type: "DESIGN_MODE_OFF" }).catch(() => {});
+  }, [clearSelection]);
 
   const handleRemoveComment = useCallback((index: number) => {
     setPendingComments((prev) => prev.filter((_, i) => i !== index));
@@ -243,8 +258,6 @@ export function App() {
     chat.sendMessage(parts.join("\n\n---\n\n"));
   }, [pendingComments, pendingEdits, pendingDrags, chat]);
 
-  const pendingTotal = pendingComments.length + pendingEdits.size + pendingDrags.length;
-
   return (
     <div className="flex flex-col h-screen">
       {/* Header */}
@@ -253,6 +266,14 @@ export function App() {
           <button
             className="flex items-center text-xs text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded hover:bg-muted"
             onClick={handleBack}
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+          </button>
+        )}
+        {(view === "navigator" || view === "pending") && (
+          <button
+            className="flex items-center text-xs text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded hover:bg-muted"
+            onClick={handleBackToChat}
           >
             <ArrowLeft className="h-3.5 w-3.5" />
           </button>

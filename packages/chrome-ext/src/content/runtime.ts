@@ -84,4 +84,9 @@ function connectKeepAlive() {
     markInvalidated();
   }
 }
-connectKeepAlive();
+// Delay keep-alive until page is loaded to avoid interfering with loading indicator
+if (document.readyState === "complete") {
+  connectKeepAlive();
+} else {
+  window.addEventListener("load", () => connectKeepAlive(), { once: true });
+}

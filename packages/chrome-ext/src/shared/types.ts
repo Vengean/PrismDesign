@@ -93,6 +93,7 @@ export type DownstreamMessage =
   | { type: "SHOW_TOOLBAR" }
   | { type: "HIDE_TOOLBAR" }
   | { type: "TOOLBAR_DISABLE"; payload: { disabled: boolean } }
+  | { type: "UPDATE_PENDING_COUNT"; payload: { count: number } }
   | { type: "PING" };
 
 // Upstream: Content Script -> Background -> Side Panel

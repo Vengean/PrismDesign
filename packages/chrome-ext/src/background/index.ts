@@ -225,6 +225,7 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, sender, sendRespons
     case "SHOW_TOOLBAR":
     case "HIDE_TOOLBAR":
     case "TOOLBAR_DISABLE":
+    case "UPDATE_PENDING_COUNT":
     case "PING":
       sendToActiveTab(message).then(sendResponse);
       return true;

@@ -95,13 +95,8 @@ export function scanProject(root: string): ProjectProfile {
 
   if (styling.length === 0) styling.push("plain-css");
 
-  // Component library
+  // Component library — only basic hints; Agent will do deeper scanning
   const componentLib: string[] = [];
-  if (allDeps["antd"] || allDeps["@ant-design/pro-components"]) componentLib.push("antd");
-  if (allDeps["element-plus"]) componentLib.push("element-plus");
-  if (allDeps["@mui/material"]) componentLib.push("material-ui");
-  if (allDeps["@arco-design/web-react"]) componentLib.push("arco-design");
-  if (allDeps["@arco-design/web-vue"]) componentLib.push("arco-design-vue");
 
   // Build tool
   const buildTool = (() => {
