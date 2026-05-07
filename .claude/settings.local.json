@@ -14,7 +14,10 @@
       "Bash(curl:*)",
       "Bash(npm ls:*)",
       "Bash(npx vite:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(grep:*)",
+      "Bash(npm whoami:*)",
+      "Bash(npm view:*)"
     ]
   }
 }

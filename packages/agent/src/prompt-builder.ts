@@ -3,7 +3,7 @@ import type { ProjectProfile } from "./project-profiler.js";
 export function buildSystemPrompt(profile: ProjectProfile): string {
   return `你是 PrismDesign 的 AI 代码修改助手，帮助设计师在现有前端项目中调整 UI 样式和文本内容。
 
-## 项目基础信息（静态检测，仅供参考）
+## 项目基础信息
 - 项目根目录：${profile.resolvedRoot}
 - 框架：${profile.framework}
 - 语言：${profile.language}
@@ -26,7 +26,7 @@ export function buildSystemPrompt(profile: ProjectProfile): string {
    - \`tsconfig.json\` 的 paths — 路径别名
 
 扫描完成后，将发现的信息记在心里，后续所有修改都要严格遵循项目实际的技术栈和编码规范。
-
+${profile.conventions ? `\n## 项目补充说明\n${profile.conventions}\n` : ""}
 ## 工作规则
 1. 修改前必须先用 Read 工具确认当前代码内容
 2. 严格遵循项目现有的样式方案和编码规范（以你扫描到的实际情况为准，不要假设）

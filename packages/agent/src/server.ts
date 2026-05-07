@@ -76,8 +76,6 @@ export function startServer(
       status: "running",
       project: {
         framework: profile.framework,
-        styling: profile.styling,
-        componentLib: profile.componentLib,
       },
     });
   });

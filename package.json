@@ -4,10 +4,10 @@
   "private": true,
   "description": "Visual UI editing tool for designers — peek, poke, and refine live pages with AI",
   "scripts": {
-    "dev": "pnpm --filter demo dev & pnpm --filter @prism-design/agent dev",
-    "dev:agent": "pnpm --filter @prism-design/agent dev",
+    "dev": "pnpm --filter demo dev & pnpm --filter prism-design-agent dev",
+    "dev:agent": "pnpm --filter prism-design-agent dev",
     "dev:demo": "pnpm --filter demo dev",
-    "build:agent": "pnpm --filter @prism-design/agent build",
+    "build:agent": "pnpm --filter prism-design-agent build",
     "build:chrome-ext": "pnpm --filter @prism-design/chrome-ext build",
     "build": "pnpm -r build"
   },

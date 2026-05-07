@@ -3,13 +3,31 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { scanProject, type ProjectProfile } from "./project-profiler.js";
-import { analyzeConventions } from "./convention-analyzer.js";
+import { scanProject } from "./project-profiler.js";
 import { startServer } from "./server.js";
 
-/**
- * Walk up from cwd to find the monorepo root (pnpm runs agent from packages/agent).
- */
+// ── .env loader (lightweight, no dependency) ──
+
+function loadEnvFile(dir: string) {
+  const envPath = path.join(dir, ".env");
+  if (!fs.existsSync(envPath)) return;
+  const lines = fs.readFileSync(envPath, "utf-8").split("\n");
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eqIdx = trimmed.indexOf("=");
+    if (eqIdx < 0) continue;
+    const key = trimmed.slice(0, eqIdx).trim();
+    let val = trimmed.slice(eqIdx + 1).trim();
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1);
+    }
+    if (!process.env[key]) process.env[key] = val;
+  }
+}
+
+// ── Helpers ──
+
 function findProjectRoot(): string {
   let dir = process.cwd();
   while (dir !== path.dirname(dir)) {
@@ -43,40 +61,80 @@ function getLocalIP(): string {
   return "127.0.0.1";
 }
 
+function getArg(args: string[], flag: string): string | undefined {
+  const idx = args.indexOf(flag);
+  return idx !== -1 ? args[idx + 1] : undefined;
+}
+
+// ── Main ──
+
 async function main() {
   const args = process.argv.slice(2);
   const command = args[0];
 
-  if (command !== "start" && command !== undefined) {
+  if (command === "--help" || command === "-h" || (command !== "start" && command !== undefined)) {
     console.log(`
 🎨 PrismDesign Agent
 
 Usage:
-  prism-design start [options]
+  prism-design-agent start [options]
 
 Options:
-  --port <number>    Agent 服务端口 (default: 9527)
-  --project <path>   项目根目录 (default: 自动检测)
-  --skip-analysis    跳过 AI 规范分析，加速启动
+  --port <number>        服务端口 (default: 9527)
+  --project <path>       项目根目录 (default: 自动检测)
+  --api-key <key>        Anthropic API Key (或 ANTHROPIC_API_KEY 环境变量)
+  --api-base-url <url>   API Base URL (或 ANTHROPIC_BASE_URL 环境变量)
+  --model <name>         模型名称 (或 ANTHROPIC_MODEL 环境变量, default: claude-opus-4-6)
+  --system-prompt <file> 自定义 system prompt 文件路径
+
+Environment Variables:
+  ANTHROPIC_API_KEY      API Key
+  ANTHROPIC_BASE_URL     API Base URL (用于代理或兼容接口)
+  ANTHROPIC_MODEL        模型名称
+
+Examples:
+  npx prism-design-agent start
+  npx prism-design-agent start --port 8080
+  npx prism-design-agent start --model claude-sonnet-4-6
+  ANTHROPIC_API_KEY=sk-xxx npx prism-design-agent start
 `);
     process.exit(0);
   }
 
-  // Parse options
-  const portIdx = args.indexOf("--port");
-  const port = portIdx !== -1 ? parseInt(args[portIdx + 1], 10) : 9527;
+  // Load .env files
+  const projectArg = getArg(args, "--project");
+  const projectRoot = projectArg ? path.resolve(projectArg) : findProjectRoot();
+  loadEnvFile(projectRoot);
+  loadEnvFile(process.cwd());
 
-  const projectIdx = args.indexOf("--project");
-  const projectRoot = projectIdx !== -1
-    ? path.resolve(args[projectIdx + 1])
-    : findProjectRoot();
+  // CLI args override env vars
+  const apiKey = getArg(args, "--api-key");
+  if (apiKey) process.env.ANTHROPIC_API_KEY = apiKey;
 
-  const skipAnalysis = args.includes("--skip-analysis");
+  const baseUrl = getArg(args, "--api-base-url");
+  if (baseUrl) process.env.ANTHROPIC_BASE_URL = baseUrl;
 
-  // Step 1: Scan project
+  const model = getArg(args, "--model");
+  if (model) process.env.ANTHROPIC_MODEL = model;
+
+  const port = parseInt(getArg(args, "--port") || "9527", 10);
+
+  // Custom system prompt
+  const promptFile = getArg(args, "--system-prompt");
+  let customPrompt = "";
+  if (promptFile) {
+    const resolved = path.resolve(promptFile);
+    if (!fs.existsSync(resolved)) {
+      console.error(`❌ System prompt 文件不存在: ${resolved}`);
+      process.exit(1);
+    }
+    customPrompt = fs.readFileSync(resolved, "utf-8");
+    console.log(`📄 自定义 system prompt: ${resolved}`);
+  }
+
+  // Scan project
   console.log("🔍 扫描项目...");
-  let profile: ProjectProfile;
-
+  let profile;
   try {
     profile = scanProject(projectRoot);
   } catch (error) {
@@ -84,45 +142,31 @@ Options:
     process.exit(1);
   }
 
-  // Use resolved root (may differ in monorepos)
   const resolvedRoot = profile.resolvedRoot;
-  const cacheFile = path.join(resolvedRoot, ".design-agent-profile.json");
 
   console.log(`   框架:     ${profile.framework}`);
   console.log(`   语言:     ${profile.language}`);
   console.log(`   构建工具: ${profile.buildTool}`);
   console.log(`   源码目录: ${profile.srcDir}`);
-  console.log(`   (组件库、样式方案等由 Agent 首次对话时自动深度扫描)`);
 
-  // Step 2: Analyze conventions (uses Agent SDK)
-  if (!skipAnalysis) {
-    console.log("\n🤖 分析项目编码规范...");
-    try {
-      profile.conventions = await analyzeConventions(resolvedRoot, profile);
-      console.log("\n📋 项目规范:");
-      console.log(profile.conventions);
-    } catch (error) {
-      console.warn(`⚠️  规范分析失败，将使用默认规则: ${error instanceof Error ? error.message : error}`);
-      profile.conventions = "未能自动分析，请遵循项目已有代码风格";
-    }
-  } else {
-    console.log("\n⏭️  跳过规范分析");
-    profile.conventions = "未分析，请遵循项目已有代码风格";
+  if (customPrompt) {
+    profile.conventions = customPrompt;
   }
 
-  // Cache profile
-  fs.writeFileSync(cacheFile, JSON.stringify(profile, null, 2));
-
-  // Step 3: Start server
+  // Start server
   const localIP = getLocalIP();
+  const modelName = process.env.ANTHROPIC_MODEL || "claude-opus-4-6";
 
   console.log("\n" + "=".repeat(50));
-  console.log("  🎨 PrismDesign Agent 准备就绪");
+  console.log("  🎨 PrismDesign Agent");
   console.log("=".repeat(50));
-  console.log(`\n  Agent 服务: http://${localIP}:${port}`);
-  console.log(`  项目目录:   ${resolvedRoot}`);
-  console.log(`\n  👉 请将 Agent 地址发给设计师`);
-  console.log(`     设计师在 Chrome 插件中配置此地址即可开始编辑`);
+  console.log(`\n  服务地址:  http://${localIP}:${port}`);
+  console.log(`  项目目录:  ${resolvedRoot}`);
+  console.log(`  模型:      ${modelName}`);
+  if (process.env.ANTHROPIC_BASE_URL) {
+    console.log(`  API 代理:  ${process.env.ANTHROPIC_BASE_URL}`);
+  }
+  console.log(`\n  👉 在 Chrome 插件中配置服务地址即可开始`);
   console.log("\n" + "=".repeat(50) + "\n");
 
   startServer(resolvedRoot, profile, port);

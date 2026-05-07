@@ -1,15 +1,35 @@
 {
-  "name": "@prism-design/agent",
+  "name": "prism-design-agent",
   "version": "0.1.0",
   "description": "AI agent service for PrismDesign — scans project, receives design edits, modifies source code",
   "type": "module",
+  "license": "MIT",
   "bin": {
-    "prism-design": "./dist/cli.js"
+    "prism-design-agent": "./dist/cli.js"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "dev": "tsx watch src/cli.ts",
+    "dev": "tsx watch src/cli.ts -- start",
     "build": "tsup src/cli.ts --format esm --dts",
-    "start": "node dist/cli.js"
+    "start": "node dist/cli.js start"
+  },
+  "keywords": [
+    "prism-design",
+    "ai",
+    "design",
+    "visual-editing",
+    "agent",
+    "ui",
+    "frontend"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anthropics/prism-design"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.118",

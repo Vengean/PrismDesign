@@ -52,7 +52,7 @@ function getSession(clientId: string): UserSession {
   console.log(`[Agent] 为客户端 ${clientId} 创建新会话`);
 
   const session = unstable_v2_createSession({
-    model: "claude-sonnet-4-6",
+    model: process.env.ANTHROPIC_MODEL || "claude-opus-4-6",
     cwd: projectRoot,
     allowedTools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash"],
     permissionMode: "bypassPermissions",

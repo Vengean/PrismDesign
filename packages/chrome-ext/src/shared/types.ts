@@ -66,8 +66,6 @@ export interface ChatMessage {
 
 export interface ProjectInfo {
   framework: string;
-  styling: string[];
-  componentLib: string[];
 }
 
 // ============================================================
