@@ -8,7 +8,6 @@
     "dev:agent": "pnpm --filter @prism-design/agent dev",
     "dev:demo": "pnpm --filter demo dev",
     "build:agent": "pnpm --filter @prism-design/agent build",
-    "build:devtools": "pnpm --filter @prism-design/devtools build",
     "build:chrome-ext": "pnpm --filter @prism-design/chrome-ext build",
     "build": "pnpm -r build"
   },
