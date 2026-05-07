@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Palette } from "lucide-react";
 import type { ElementSelection } from "../../shared/types.js";
+import { t } from "../../shared/i18n.js";
 
 /* ── color ──────────────────────────────────────────────────────────── */
 
@@ -132,7 +133,7 @@ export function PropertiesPanel({ selection, applyStylePreview, onStyleEdit }: P
   if (!selection) return (
     <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-xs gap-2 py-10">
       <Palette className="h-7 w-7 text-primary/15" />
-      <p className="text-center leading-relaxed text-[11px]">选中页面元素后<br />可在此查看和编辑属性</p>
+      <p className="text-center leading-relaxed text-[11px]">{t("props.empty1")}<br />{t("props.empty2")}</p>
     </div>
   );
 
@@ -182,41 +183,39 @@ export function PropertiesPanel({ selection, applyStylePreview, onStyleEdit }: P
 
       {/* ── 文字 ── */}
       {selection.isTextElement && (<>
-        <SectionTitle>文字</SectionTitle>
-        {/* 字号 + 字重 */}
+        <SectionTitle>{t("props.text")}</SectionTitle>
         <div className="grid grid-cols-2 gap-1.5 mb-1">
-          <SubLabel>字号</SubLabel>
-          <SubLabel>字重</SubLabel>
+          <SubLabel>{t("props.fontSize")}</SubLabel>
+          <SubLabel>{t("props.fontWeight")}</SubLabel>
         </div>
         <div className="grid grid-cols-2 gap-1.5 mb-2">
           <InputField value={n("fontSize")} min={0} max={200} onChange={(v) => put("fontSize", String(v))} />
           <SelectField
             value={String(Math.round(n("fontWeight")))}
             opts={[
-              { v: "300", l: "细体" }, { v: "400", l: "常规" }, { v: "500", l: "中等" },
-              { v: "600", l: "半粗" }, { v: "700", l: "粗体" }, { v: "800", l: "特粗" },
+              { v: "300", l: t("props.weight.light") }, { v: "400", l: t("props.weight.regular") }, { v: "500", l: t("props.weight.medium") },
+              { v: "600", l: t("props.weight.semibold") }, { v: "700", l: t("props.weight.bold") }, { v: "800", l: t("props.weight.extrabold") },
             ]}
             onChange={(v) => put("fontWeight", v)}
           />
         </div>
-        {/* 颜色 */}
-        <div className="mb-1"><SubLabel>颜色</SubLabel></div>
+        <div className="mb-1"><SubLabel>{t("props.color")}</SubLabel></div>
         <ColorField value={g("color")} onChange={(v) => put("color", v)} />
         <Divider />
       </>)}
 
       {/* ── 填充 ── */}
-      <SectionTitle>填充</SectionTitle>
-      <div className="mb-1"><SubLabel>背景色</SubLabel></div>
+      <SectionTitle>{t("props.fill")}</SectionTitle>
+      <div className="mb-1"><SubLabel>{t("props.background")}</SubLabel></div>
       <div><ColorField value={g("backgroundColor")} onChange={(v) => put("backgroundColor", v)} /></div>
 
       <Divider />
 
       {/* ── 外观 ── */}
-      <SectionTitle>外观</SectionTitle>
+      <SectionTitle>{t("props.appearance")}</SectionTitle>
       <div className="grid grid-cols-2 gap-1.5 mb-1">
-        <SubLabel>透明度</SubLabel>
-        <SubLabel>圆角</SubLabel>
+        <SubLabel>{t("props.opacity")}</SubLabel>
+        <SubLabel>{t("props.borderRadius")}</SubLabel>
       </div>
       <div className="grid grid-cols-2 gap-1.5">
         <InputField value={Math.round(n("opacity") * 100)} min={0} max={100} suffix="%" onChange={putOpacity} />
@@ -226,8 +225,8 @@ export function PropertiesPanel({ selection, applyStylePreview, onStyleEdit }: P
       {/* ── 布局 ── */}
       {selection.isFlexContainer && (<>
         <Divider />
-        <SectionTitle>布局</SectionTitle>
-        <div className="mb-1"><SubLabel>间隔</SubLabel></div>
+        <SectionTitle>{t("props.layout")}</SectionTitle>
+        <div className="mb-1"><SubLabel>{t("props.gap")}</SubLabel></div>
         <div className="grid grid-cols-2 gap-1.5">
           <InputField value={n("gap")} min={0} max={999} onChange={(v) => put("gap", String(v))} />
         </div>

@@ -2,6 +2,7 @@ import { useRef, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Send, Trash2, MessageSquare, Plug, Loader2, AlertCircle } from "lucide-react";
+import { t } from "../../shared/i18n.js";
 import type { ChatMessage } from "../../shared/types.js";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -30,7 +31,7 @@ export function ChatPanel({ agent, chat }: { agent: AgentState; chat: ChatState 
     return (
       <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-xs gap-3">
         <Loader2 className="h-6 w-6 animate-spin text-primary" />
-        <p>正在连接 Agent...</p>
+        <p>{t("agent.connecting")}</p>
       </div>
     );
   }
@@ -38,27 +39,27 @@ export function ChatPanel({ agent, chat }: { agent: AgentState; chat: ChatState 
 }
 
 function ConnectionForm({ agent }: { agent: AgentState }) {
-  const [url, setUrl] = useState(agent.agentUrl || "http://localhost:9527");
+  const [url, setUrl] = useState(agent.agentUrl);
 
   return (
     <div className="flex flex-col items-center justify-center h-full px-6 gap-4">
       <div className="text-center space-y-2">
         <Plug className="h-10 w-10 text-primary/30 mx-auto" />
-        <p className="text-sm font-medium">连接 Agent 服务</p>
+        <p className="text-sm font-medium">{t("agent.connectTitle")}</p>
         <p className="text-xs text-muted-foreground leading-relaxed">
-          请输入 Agent 服务地址，连接后即可开始设计编辑。
+          {t("agent.connectDesc")}
         </p>
       </div>
       <div className="w-full space-y-2">
         <Input
-          placeholder="http://localhost:9527"
+          placeholder={agent.agentUrl}
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") agent.connect(url); }}
         />
         <Button className="w-full" onClick={() => agent.connect(url)}>
           <Plug className="h-3.5 w-3.5 mr-1.5" />
-          连接
+          {t("agent.connect")}
         </Button>
         {agent.error && (
           <div className="flex items-start gap-1.5 p-2 rounded-md bg-destructive/10 text-destructive text-xs leading-relaxed">
@@ -96,7 +97,7 @@ function ChatView({ chat }: { chat: ChatState }) {
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-xs gap-2 py-8">
             <MessageSquare className="h-8 w-8 text-primary/30" />
-            <p className="text-center leading-relaxed">描述你想要的修改，<br />AI 会直接修改源代码。</p>
+            <p className="text-center leading-relaxed">{t("chat.empty").split("\n").map((line, i) => <span key={i}>{line}<br /></span>)}</p>
           </div>
         ) : (
           messages.map((msg, i) => (
@@ -121,25 +122,27 @@ function ChatView({ chat }: { chat: ChatState }) {
         )}
       </div>
 
-      <div className="border-t p-2 flex gap-1.5">
+      <div className="border-t p-2 space-y-1.5">
         <textarea
-          className="flex-1 min-h-[36px] max-h-[80px] px-2.5 py-1.5 text-xs border rounded-md resize-none bg-background focus:outline-none focus:ring-1 focus:ring-ring"
-          placeholder="描述修改内容... (Ctrl+Enter 发送)"
+          className="w-full min-h-[60px] max-h-[120px] px-2.5 py-2 text-xs border rounded-md resize-none bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+          placeholder={t("chat.placeholder")}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           disabled={sending}
-          rows={1}
+          rows={3}
         />
-        <div className="flex flex-col gap-1">
-          <Button size="icon" className="h-7 w-7" onClick={handleSend} disabled={sending || !input.trim()}>
-            <Send className="h-3 w-3" />
-          </Button>
+        <div className="flex justify-end gap-1">
           {messages.length > 0 && (
-            <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground" onClick={clearHistory} title="清空历史">
+            <Button size="sm" variant="outline" className="h-7 text-xs px-2.5 gap-1" onClick={clearHistory}>
               <Trash2 className="h-3 w-3" />
+              {t("chat.clearHistory")}
             </Button>
           )}
+          <Button size="sm" className="h-7 text-xs px-3 gap-1" onClick={handleSend} disabled={sending || !input.trim()}>
+            <Send className="h-3 w-3" />
+            {t("chat.send")}
+          </Button>
         </div>
       </div>
     </div>

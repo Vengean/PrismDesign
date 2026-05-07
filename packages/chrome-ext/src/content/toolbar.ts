@@ -2,6 +2,7 @@
  * Floating toolbar — 3 mutually exclusive modes: select, drag, comment.
  * Default: none highlighted. ESC exits all modes.
  */
+import { t as _t } from "./i18n-content.js";
 
 let toolbar: HTMLDivElement | null = null;
 let styleEl: HTMLStyleElement | null = null;
@@ -103,15 +104,15 @@ export function createToolbar(toolbarActions: ToolbarActions) {
   toolbar.innerHTML = `
     <button id="pd-tb-select">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/><path d="M13 13l6 6"/></svg>
-      <span class="pd-tooltip">选择元素<span class="pd-shortcut">${modLabel}E</span></span>
+      <span class="pd-tooltip">${_t("toolbar.select")}<span class="pd-shortcut">${modLabel}E</span></span>
     </button>
     <button id="pd-tb-drag">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 16"/></svg>
-      <span class="pd-tooltip">拖拽排列<span class="pd-shortcut">${modLabel}D</span></span>
+      <span class="pd-tooltip">${_t("toolbar.drag")}<span class="pd-shortcut">${modLabel}D</span></span>
     </button>
     <button id="pd-tb-comment">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-      <span class="pd-tooltip">评论<span class="pd-shortcut">${modLabel}C</span></span>
+      <span class="pd-tooltip">${_t("toolbar.comment")}<span class="pd-shortcut">${modLabel}C</span></span>
     </button>
   `;
   document.body.appendChild(toolbar);

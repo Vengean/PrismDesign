@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { ProjectInfo, PrismMessage } from "../../shared/types.js";
+import { t } from "../../shared/i18n.js";
 
 export function useAgent() {
   const [connected, setConnected] = useState(false);
@@ -7,9 +8,17 @@ export function useAgent() {
   const [error, setError] = useState<string | null>(null);
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [aiWorking, setAiWorking] = useState(false);
-  const [agentUrl, setAgentUrl] = useState("http://localhost:9527");
+  const [agentUrl, setAgentUrl] = useState(() => {
+    // Default to current page's hostname so LAN access works out of the box
+    try {
+      const host = new URL(window.location.href).hostname || "localhost";
+      return `http://${host}:9527`;
+    } catch {
+      return "http://localhost:9527";
+    }
+  });
 
-  // Load saved URL
+  // Load saved URL (overrides default if exists)
   useEffect(() => {
     chrome.storage.local.get("agentUrl", (result) => {
       if (result.agentUrl) setAgentUrl(result.agentUrl);
@@ -52,12 +61,12 @@ export function useAgent() {
       if (!result?.success) {
         setConnecting(false);
         setConnected(false);
-        setError(result?.error || "连接失败，请检查 Agent 服务是否已启动");
+        setError(result?.error || t("agent.connectFailed"));
       }
     } catch {
       setConnecting(false);
       setConnected(false);
-      setError("连接失败，请检查 Agent 服务是否已启动");
+      setError(t("agent.connectFailed"));
     }
   }, []);
 

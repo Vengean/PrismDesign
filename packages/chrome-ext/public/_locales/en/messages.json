@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "Prism",
+    "description": "Extension name"
+  },
+  "extDescription": {
+    "message": "Visual UI editing for designers — click, edit, and refine live pages with AI",
+    "description": "Extension description"
+  }
+}

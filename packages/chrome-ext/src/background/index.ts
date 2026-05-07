@@ -87,7 +87,17 @@ async function handleSidePanelOpen() {
   const state = getTabState(tabId);
   if (!state.connected) {
     const result = await chrome.storage.local.get("agentUrl");
-    const url = result.agentUrl || "http://localhost:9527";
+    let url = result.agentUrl;
+    if (!url) {
+      // Derive default from active tab's hostname so LAN access works
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const host = tab?.url ? new URL(tab.url).hostname : "localhost";
+        url = `http://${host}:9527`;
+      } catch {
+        url = "http://localhost:9527";
+      }
+    }
     await handleAgentConnect(url);
   } else {
     // Already connected — notify side panel of current status

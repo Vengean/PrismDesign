@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "棱镜",
+    "description": "Extension name"
+  },
+  "extDescription": {
+    "message": "面向设计师的可视化 UI 编辑工具 —— 点击、编辑、用 AI 优化页面",
+    "description": "Extension description"
+  }
+}

@@ -159,6 +159,21 @@ export function getComponentChain(element: HTMLElement): string {
   return detail.map((c) => c.name).join(" > ");
 }
 
+/** Collect visible text from child nodes, separated by spaces */
+function collectText(el: HTMLElement): string {
+  const parts: string[] = [];
+  for (const child of el.childNodes) {
+    if (child.nodeType === Node.TEXT_NODE) {
+      const t = (child.textContent || "").trim();
+      if (t) parts.push(t);
+    } else if (child.nodeType === Node.ELEMENT_NODE) {
+      const t = (child as HTMLElement).innerText?.trim();
+      if (t) parts.push(t);
+    }
+  }
+  return parts.join(" ").slice(0, 100);
+}
+
 const TEXT_TAGS = new Set(["span", "p", "h1", "h2", "h3", "h4", "h5", "h6", "a", "label", "strong", "em", "b", "i", "li", "td", "th", "dt", "dd", "figcaption"]);
 
 /** Inspect a DOM element and return full selection info */
@@ -180,7 +195,7 @@ export function inspectElement(element: HTMLElement): ElementSelection {
     domPath: getDomPath(element),
     tagName: tag,
     id: element.id || "",
-    textContent: (element.textContent || "").trim().slice(0, 100),
+    textContent: collectText(element),
     className: typeof element.className === "string" ? element.className : "",
     role: element.getAttribute("role") || "",
     ariaLabel: element.getAttribute("aria-label") || "",

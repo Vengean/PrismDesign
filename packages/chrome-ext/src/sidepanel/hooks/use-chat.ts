@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import type { ChatMessage, PrismMessage } from "../../shared/types.js";
+import { t } from "../../shared/i18n.js";
 
 const STORAGE_KEY = "pd-chat-history";
 
@@ -43,8 +44,8 @@ export function useChat() {
             updated[lastIdx] = {
               role: "ai",
               content: message.payload.success
-                ? message.payload.message || "已完成。"
-                : `错误: ${message.payload.message}`,
+                ? message.payload.message || t("chat.done")
+                : `${t("chat.error")}: ${message.payload.message}`,
               timestamp: Date.now(),
             };
           } else {
@@ -62,7 +63,7 @@ export function useChat() {
           const updated = [...prev];
           const lastIdx = updated.findLastIndex((m) => m.role === "ai" && m.content.startsWith("⏳"));
           if (lastIdx >= 0) {
-            updated[lastIdx] = { role: "ai", content: `错误: ${message.payload.message}`, timestamp: Date.now() };
+            updated[lastIdx] = { role: "ai", content: `${t("chat.error")}: ${message.payload.message}`, timestamp: Date.now() };
           }
           return updated;
         });
@@ -76,7 +77,7 @@ export function useChat() {
     if (!text.trim() || sending) return;
 
     const userMsg: ChatMessage = { role: "user", content: text, timestamp: Date.now() };
-    const thinkingMsg: ChatMessage = { role: "ai", content: "⏳ 思考中...", timestamp: Date.now() };
+    const thinkingMsg: ChatMessage = { role: "ai", content: `⏳ ${t("chat.thinking")}`, timestamp: Date.now() };
     setMessages((prev) => [...prev, userMsg, thinkingMsg]);
     setSending(true);
 
@@ -91,7 +92,7 @@ export function useChat() {
       setMessages((prev) => {
         const updated = [...prev];
         const lastIdx = updated.findLastIndex((m) => m.content.startsWith("⏳"));
-        if (lastIdx >= 0) updated[lastIdx] = { role: "ai", content: "请求失败。", timestamp: Date.now() };
+        if (lastIdx >= 0) updated[lastIdx] = { role: "ai", content: t("chat.requestFailed"), timestamp: Date.now() };
         return updated;
       });
     });

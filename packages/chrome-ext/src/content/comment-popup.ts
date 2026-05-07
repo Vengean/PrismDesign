@@ -1,4 +1,5 @@
 /** Comment popup — shown near an element when user clicks in comment mode */
+import { t } from "./i18n-content.js";
 
 let popup: HTMLDivElement | null = null;
 let styleEl: HTMLStyleElement | null = null;
@@ -82,10 +83,10 @@ export function showCommentPopup(target: HTMLElement, callback: CommentCallback)
   popup = document.createElement("div");
   popup.id = "prism-design-comment-popup";
   popup.innerHTML = `
-    <textarea placeholder="输入评论..." autofocus></textarea>
+    <textarea placeholder="${t("comment.placeholder")}" autofocus></textarea>
     <div class="pd-comment-actions">
-      <button class="pd-comment-cancel">取消</button>
-      <button class="pd-comment-confirm" disabled>确认</button>
+      <button class="pd-comment-cancel">${t("comment.cancel")}</button>
+      <button class="pd-comment-confirm" disabled>${t("comment.confirm")}</button>
     </div>
   `;
   document.body.appendChild(popup);

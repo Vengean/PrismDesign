@@ -7,6 +7,7 @@ import { useChanges } from "../hooks/use-changes";
 import { useAgent } from "../hooks/use-agent";
 import { useChat } from "../hooks/use-chat";
 import type { StyleChange } from "../../shared/types.js";
+import { t } from "../../shared/i18n.js";
 
 function groupChanges(changes: StyleChange[]): Map<string, { label: string; source: string; items: StyleChange[] }> {
   const groups = new Map<string, { label: string; source: string; items: StyleChange[] }>();
@@ -29,17 +30,17 @@ export function ChangesPanel() {
   const handleSync = async () => {
     if (changes.length === 0 || !connected || syncing) return;
     setSyncing(true);
-    addSystemMessage(`正在同步 ${changes.length} 项变更到源码...`);
+    addSystemMessage(t("changes.syncing", { n: changes.length }));
     try {
       const result = await applyChanges(changes);
       if (result?.success) {
-        addSystemMessage(result.message || "同步完成。");
+        addSystemMessage(result.message || t("changes.done"));
         clearAll();
       } else {
-        addSystemMessage(`同步失败: ${result?.message || "未知错误"}`);
+        addSystemMessage(`${t("changes.failed")}: ${result?.message || "unknown error"}`);
       }
     } catch {
-      addSystemMessage("同步请求失败。");
+      addSystemMessage(t("chat.requestFailed"));
     }
     setSyncing(false);
   };
@@ -48,7 +49,7 @@ export function ChangesPanel() {
     return (
       <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-xs gap-2 py-8">
         <ListChecks className="h-8 w-8 text-primary/30" />
-        <p>暂无待同步的变更。</p>
+        <p>{t("changes.empty")}</p>
       </div>
     );
   }
@@ -73,13 +74,13 @@ export function ChangesPanel() {
                 <div key={ci} className="text-[11px]">
                   {c.property === "comment" ? (
                     <span>
-                      <span className="text-muted-foreground">评论: </span>
+                      <span className="text-muted-foreground">{t("changes.commentLabel")}: </span>
                       <span className="text-green-600">{c.newValue}</span>
                     </span>
                   ) : (
                     <span>
                       <span className="text-muted-foreground">{c.property}: </span>
-                      <span className="text-muted-foreground line-through">{c.oldValue || "(空)"}</span>
+                      <span className="text-muted-foreground line-through">{c.oldValue || t("changes.emptyValue")}</span>
                       <span className="text-muted-foreground mx-1">→</span>
                       <span className="text-green-600 font-medium">{c.newValue}</span>
                     </span>
@@ -100,7 +101,7 @@ export function ChangesPanel() {
           disabled={!connected || syncing || aiWorking}
         >
           <Send className="h-3.5 w-3.5 mr-1.5" />
-          {syncing ? "同步中..." : `同步到代码 (${changes.length})`}
+          {syncing ? t("changes.syncingBtn") : `${t("changes.syncBtn")} (${changes.length})`}
           {changes.length > 0 && (
             <Badge variant="secondary" className="ml-1.5 h-4 px-1 text-[9px]">
               {changes.length}
@@ -109,7 +110,7 @@ export function ChangesPanel() {
         </Button>
         <Button variant="outline" size="sm" className="w-full text-destructive" onClick={clearAll}>
           <Trash2 className="h-3 w-3 mr-1" />
-          丢弃所有变更
+          {t("changes.discard")}
         </Button>
       </div>
     </div>

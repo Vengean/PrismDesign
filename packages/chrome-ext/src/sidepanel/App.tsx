@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { ArrowLeft } from "lucide-react";
+import { t } from "../shared/i18n.js";
 import type { PrismMessage } from "../shared/types.js";
 import { useAgent } from "./hooks/use-agent";
 import { useChat } from "./hooks/use-chat";
@@ -15,12 +16,12 @@ import type { PendingComment, PendingEdit, PendingDrag } from "./components/Pend
 
 type ViewType = "chat" | "navigator" | "properties" | "changes" | "pending";
 
-const VIEW_TITLES: Record<ViewType, string> = {
-  chat: "对话",
-  navigator: "导航",
-  properties: "属性",
-  changes: "变更",
-  pending: "待同步",
+const VIEW_TITLE_KEYS: Record<ViewType, string> = {
+  chat: "view.chat",
+  navigator: "view.navigator",
+  properties: "view.properties",
+  changes: "view.changes",
+  pending: "view.pending",
 };
 
 export function App() {
@@ -164,11 +165,11 @@ export function App() {
     if (pendingComments.length === 0 && editsArr.length === 0 && pendingDrags.length === 0) return;
 
     const PROP_LABELS: Record<string, string> = {
-      color: "颜色", backgroundColor: "背景色", "background-color": "背景色",
-      fontSize: "字号", "font-size": "字号",
-      fontWeight: "字重", "font-weight": "字重",
-      opacity: "透明度", borderRadius: "圆角", "border-radius": "圆角",
-      padding: "内边距", margin: "外边距", gap: "间隔",
+      color: t("props.color"), backgroundColor: t("props.background"), "background-color": t("props.background"),
+      fontSize: t("props.fontSize"), "font-size": t("props.fontSize"),
+      fontWeight: t("props.fontWeight"), "font-weight": t("props.fontWeight"),
+      opacity: t("props.opacity"), borderRadius: t("props.borderRadius"), "border-radius": t("props.borderRadius"),
+      padding: t("sync.padding"), margin: t("sync.margin"), gap: t("props.gap"),
     };
 
     function formatElementInfo(el: typeof pendingComments[0]["element"]): string[] {
@@ -178,7 +179,7 @@ export function App() {
 
       lines.push(`**${name}**${el.id ? ` #${el.id}` : ""}${el.tagName !== name ? ` \`<${el.tagName}>\`` : ""}`);
 
-      if (el.pagePath && el.pagePath !== "/") lines.push(`页面: ${el.pagePath}`);
+      if (el.pagePath && el.pagePath !== "/") lines.push(`${t("sync.page")}: ${el.pagePath}`);
 
       if (el.componentChainDetail?.length > 0) {
         const chainStr = el.componentChainDetail.map((item) => {
@@ -189,21 +190,21 @@ export function App() {
           }
           return s;
         }).join(" > ");
-        lines.push(`组件链: ${chainStr}`);
+        lines.push(`${t("sync.chain")}: ${chainStr}`);
       } else if (el.componentChain) {
-        lines.push(`组件链: ${el.componentChain}`);
+        lines.push(`${t("sync.chain")}: ${el.componentChain}`);
       }
 
       if (comp?.sourceFile) {
         let loc = comp.sourceFile;
         if (comp.sourceLine) loc += `:${comp.sourceLine}`;
         if (comp.sourceColumn) loc += `:${comp.sourceColumn}`;
-        lines.push(`源码: ${loc}`);
+        lines.push(`${t("sync.source")}: ${loc}`);
       }
 
       if (el.role) lines.push(`role: ${el.role}`);
       if (el.ariaLabel) lines.push(`aria-label: ${el.ariaLabel}`);
-      if (el.textContent) lines.push(`文本: "${el.textContent.slice(0, 60)}"`);
+      if (el.textContent) lines.push(`${t("sync.text")}: "${el.textContent.slice(0, 60)}"`);
 
       return lines;
     }
@@ -213,10 +214,10 @@ export function App() {
     // Style edits
     for (const edit of editsArr) {
       const lines = formatElementInfo(edit.element);
-      lines.push("修改:");
+      lines.push(`${t("sync.modify")}:`);
       for (const [prop, { oldValue, newValue }] of Object.entries(edit.properties)) {
         const label = PROP_LABELS[prop] || prop;
-        lines.push(`- ${label}: ${oldValue || "(无)"} → ${newValue}`);
+        lines.push(`- ${label}: ${oldValue || t("pending.none")} → ${newValue}`);
       }
       parts.push(lines.join("\n"));
     }
@@ -224,14 +225,14 @@ export function App() {
     // Drag moves
     for (const d of pendingDrags) {
       const lines = formatElementInfo(d.element);
-      lines.push(`移动: 从第 ${d.from + 1} 项 → 第 ${d.to + 1} 项`);
+      lines.push(`${t("sync.move")}: ${t("pending.itemN", { n: d.from + 1 })} → ${t("pending.itemN", { n: d.to + 1 })}`);
       parts.push(lines.join("\n"));
     }
 
     // Comments
     for (const c of pendingComments) {
       const lines = formatElementInfo(c.element);
-      lines.push(`评论: ${c.comment}`);
+      lines.push(`${t("sync.comment")}: ${c.comment}`);
       parts.push(lines.join("\n"));
     }
 
@@ -256,18 +257,18 @@ export function App() {
             <ArrowLeft className="h-3.5 w-3.5" />
           </button>
         )}
-        <span className="font-semibold text-xs">{VIEW_TITLES[view]}</span>
+        <span className="font-semibold text-xs">{t(VIEW_TITLE_KEYS[view])}</span>
         {view === "chat" && (
           <div className="ml-auto">
             {agent.connected
-              ? <div className="w-1.5 h-1.5 rounded-full bg-green-500" title="已连接" />
+              ? <div className="w-1.5 h-1.5 rounded-full bg-green-500" title={t("agent.connected")} />
               : agent.connecting
-                ? <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" title="连接中" />
-                : <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30" title="未连接" />}
+                ? <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" title={t("agent.connecting_short")} />
+                : <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30" title={t("agent.disconnected")} />}
           </div>
         )}
         {view === "pending" && (
-          <span className="ml-auto text-[10px] text-muted-foreground">{pendingTotal} 条</span>
+          <span className="ml-auto text-[10px] text-muted-foreground">{t("pending.count", { n: pendingTotal })}</span>
         )}
       </div>
 

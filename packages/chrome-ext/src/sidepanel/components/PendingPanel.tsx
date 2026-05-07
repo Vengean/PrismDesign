@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Send, Trash2, MessageSquareText, Paintbrush, MoveVertical } from "lucide-react";
 import type { ElementSelection } from "../../shared/types.js";
+import { t } from "../../shared/i18n.js";
 
 export interface PendingComment {
   element: ElementSelection;
@@ -37,13 +38,16 @@ function formatSourceLoc(file?: string, line?: number, col?: number): string | n
   return loc;
 }
 
-const PROP_LABELS: Record<string, string> = {
-  color: "颜色", backgroundColor: "背景色", fontSize: "字号",
-  fontWeight: "字重", opacity: "透明度", borderRadius: "圆角",
-  padding: "内边距", margin: "外边距", gap: "间隔",
-  "font-size": "字号", "background-color": "背景色", "font-weight": "字重",
-  "border-radius": "圆角",
-};
+function getPropLabel(prop: string): string {
+  const map: Record<string, string> = {
+    color: "props.color", backgroundColor: "props.background", fontSize: "props.fontSize",
+    fontWeight: "props.fontWeight", opacity: "props.opacity", borderRadius: "props.borderRadius",
+    padding: "sync.padding", margin: "sync.margin", gap: "props.gap",
+    "font-size": "props.fontSize", "background-color": "props.background", "font-weight": "props.fontWeight",
+    "border-radius": "props.borderRadius",
+  };
+  return map[prop] ? t(map[prop]) : prop;
+}
 
 function ElementHeader({ el }: { el: ElementSelection }) {
   const comp = el.component;
@@ -79,7 +83,7 @@ export function PendingPanel({ comments, edits, drags, onRemoveComment, onRemove
       <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-xs gap-2 py-8">
         <MessageSquareText className="h-8 w-8 text-primary/30" />
         <p className="text-center leading-relaxed">
-          修改元素属性或添加评论后，<br />待同步消息会显示在这里。
+          {t("pending.empty").split("\n").map((line, i) => <span key={i}>{line}<br /></span>)}
         </p>
       </div>
     );
@@ -98,8 +102,8 @@ export function PendingPanel({ comments, edits, drags, onRemoveComment, onRemove
               <div className="mt-1.5 space-y-0.5">
                 {Object.entries(edit.properties).map(([prop, { oldValue, newValue }]) => (
                   <div key={prop} className="text-[10px] text-foreground font-mono">
-                    <span className="text-muted-foreground">{PROP_LABELS[prop] || prop}: </span>
-                    <span className="line-through text-muted-foreground/60">{oldValue || "(无)"}</span>
+                    <span className="text-muted-foreground">{getPropLabel(prop)}: </span>
+                    <span className="line-through text-muted-foreground/60">{oldValue || t("pending.none")}</span>
                     <span className="text-muted-foreground mx-1">&rarr;</span>
                     <span className="text-primary font-medium">{newValue}</span>
                   </div>
@@ -109,7 +113,7 @@ export function PendingPanel({ comments, edits, drags, onRemoveComment, onRemove
             <button
               className="text-muted-foreground/40 hover:text-destructive transition-colors opacity-0 group-hover:opacity-100 shrink-0 mt-0.5"
               onClick={() => onRemoveEdit(edit.element.domPath)}
-              title="删除"
+              title={t("pending.delete")}
             >
               <Trash2 className="h-3 w-3" />
             </button>
@@ -123,16 +127,16 @@ export function PendingPanel({ comments, edits, drags, onRemoveComment, onRemove
             <div className="flex-1 min-w-0">
               <ElementHeader el={d.element} />
               <div className="text-[10px] text-foreground font-mono mt-1.5">
-                <span className="text-muted-foreground">位置: </span>
-                <span className="line-through text-muted-foreground/60">第 {d.from + 1} 项</span>
+                <span className="text-muted-foreground">{t("pending.position")}: </span>
+                <span className="line-through text-muted-foreground/60">{t("pending.itemN", { n: d.from + 1 })}</span>
                 <span className="text-muted-foreground mx-1">&rarr;</span>
-                <span className="text-primary font-medium">第 {d.to + 1} 项</span>
+                <span className="text-primary font-medium">{t("pending.itemN", { n: d.to + 1 })}</span>
               </div>
             </div>
             <button
               className="text-muted-foreground/40 hover:text-destructive transition-colors opacity-0 group-hover:opacity-100 shrink-0 mt-0.5"
               onClick={() => onRemoveDrag(i)}
-              title="删除"
+              title={t("pending.delete")}
             >
               <Trash2 className="h-3 w-3" />
             </button>
@@ -150,7 +154,7 @@ export function PendingPanel({ comments, edits, drags, onRemoveComment, onRemove
             <button
               className="text-muted-foreground/40 hover:text-destructive transition-colors opacity-0 group-hover:opacity-100 shrink-0 mt-0.5"
               onClick={() => onRemoveComment(i)}
-              title="删除"
+              title={t("pending.delete")}
             >
               <Trash2 className="h-3 w-3" />
             </button>
@@ -162,7 +166,7 @@ export function PendingPanel({ comments, edits, drags, onRemoveComment, onRemove
       <div className="border-t p-2">
         <Button className="w-full h-8 text-xs" onClick={onSync}>
           <Send className="h-3 w-3 mr-1.5" />
-          同步 ({totalCount})
+          {t("pending.sync")} ({totalCount})
         </Button>
       </div>
     </div>
