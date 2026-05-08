@@ -1,706 +1,734 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Button } from './components/ui/button'
 import { Badge } from './components/ui/badge'
 import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from './components/ui/card'
 import { Input } from './components/ui/input'
-import { Label } from './components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
-import { Alert, AlertDescription, AlertTitle } from './components/ui/alert'
-import { Avatar, AvatarFallback, AvatarImage } from './components/ui/avatar'
-import { Switch } from './components/ui/switch'
+import { Avatar, AvatarFallback } from './components/ui/avatar'
 import { Separator } from './components/ui/separator'
-import { Checkbox } from './components/ui/checkbox'
 import {
-  Bell,
-  GitFork,
-  Mail,
-  Lock,
-  AlertCircle,
-  CheckCircle,
-  Info,
-  Palette,
-  Layers,
-  Zap,
-  Accessibility,
-  Heart,
-  Star,
+  Phone,
+  PhoneCall,
+  PhoneOff,
+  PhoneMissed,
+  Clock,
+  Users,
+  TrendingUp,
+  TrendingDown,
+  ArrowUpRight,
+  ArrowDownRight,
+  Headphones,
+  BarChart3,
+  Activity,
+  Target,
+  CalendarDays,
+  Download,
+  RefreshCw,
   ChevronRight,
+  UserCheck,
+  Timer,
+  MessageSquareText,
+  Send,
+  Bot,
+  X,
+  Sparkles,
+  User,
 } from 'lucide-react'
 
-const teamMembers = [
-  { name: '张三', role: 'UI Designer', fallback: 'ZS' },
-  { name: '李四', role: 'Frontend Dev', fallback: 'LS' },
-  { name: '王五', role: 'Product Manager', fallback: 'WW' },
+const kpiCards = [
+  {
+    title: '今日外呼总量',
+    value: '3,842',
+    change: '+12.5%',
+    trend: 'up' as const,
+    desc: '较昨日',
+    icon: Phone,
+    iconColor: 'text-blue-600',
+    iconBg: 'bg-blue-50',
+  },
+  {
+    title: '接通率',
+    value: '68.7%',
+    change: '+3.2%',
+    trend: 'up' as const,
+    desc: '较昨日',
+    icon: PhoneCall,
+    iconColor: 'text-green-600',
+    iconBg: 'bg-green-50',
+  },
+  {
+    title: '平均通话时长',
+    value: '4m 32s',
+    change: '-8s',
+    trend: 'down' as const,
+    desc: '较昨日',
+    icon: Timer,
+    iconColor: 'text-orange-600',
+    iconBg: 'bg-orange-50',
+  },
+  {
+    title: '意向客户数',
+    value: '286',
+    change: '+18.3%',
+    trend: 'up' as const,
+    desc: '较昨日',
+    icon: UserCheck,
+    iconColor: 'text-purple-600',
+    iconBg: 'bg-purple-50',
+  },
 ]
 
-const notifications = [
-  { avatar: 'LM', name: '李明', action: '评论了你的文章', time: '刚刚', unread: true },
-  { avatar: 'WH', name: '王华', action: '关注了你', time: '5 分钟前', unread: true },
-  { avatar: 'ZY', name: '赵云', action: '点赞了你的作品', time: '1 小时前', unread: true },
-  { avatar: 'CX', name: '陈鑫', action: '分享了你的设计', time: '2 小时前', unread: false },
-  { avatar: 'SY', name: '孙燕', action: '回复了你的评论', time: '昨天', unread: false },
+const weeklyData = [
+  { day: '周一', calls: 3200, connected: 2180 },
+  { day: '周二', calls: 3580, connected: 2450 },
+  { day: '周三', calls: 2900, connected: 1920 },
+  { day: '周四', calls: 3750, connected: 2600 },
+  { day: '周五', calls: 4100, connected: 2870 },
+  { day: '周六', calls: 1200, connected: 780 },
+  { day: '周日', calls: 800, connected: 520 },
+]
+const maxCalls = Math.max(...weeklyData.map((d) => d.calls))
+
+const callStatusData = [
+  { label: '已接通', count: 2638, percentage: 68.7, color: 'bg-green-500' },
+  { label: '无人接听', count: 654, percentage: 17.0, color: 'bg-orange-500' },
+  { label: '忙线中', count: 312, percentage: 8.1, color: 'bg-yellow-500' },
+  { label: '号码无效', count: 156, percentage: 4.1, color: 'bg-red-500' },
+  { label: '主动挂断', count: 82, percentage: 2.1, color: 'bg-gray-400' },
 ]
 
-const switchItems = ['评论通知', '点赞通知', '系统消息']
-const notificationSettings = [
-  { label: '新评论', desc: '当有人评论你的内容' },
-  { label: '新关注', desc: '当有人关注了你' },
-  { label: '系统通知', desc: '重要的系统更新' },
+const hourlyData = [
+  { hour: '09:00', value: 85 },
+  { hour: '10:00', value: 92 },
+  { hour: '11:00', value: 78 },
+  { hour: '12:00', value: 45 },
+  { hour: '13:00', value: 30 },
+  { hour: '14:00', value: 88 },
+  { hour: '15:00', value: 95 },
+  { hour: '16:00', value: 100 },
+  { hour: '17:00', value: 72 },
+  { hour: '18:00', value: 40 },
+]
+const maxHourly = Math.max(...hourlyData.map((d) => d.value))
+
+const agents = [
+  { name: '王丽娜', fallback: 'WL', calls: 486, connected: 342, rate: 70.4, avgDuration: '4m 48s', intent: 38, status: 'online' },
+  { name: '张明远', fallback: 'ZM', calls: 462, connected: 318, rate: 68.8, avgDuration: '5m 12s', intent: 35, status: 'online' },
+  { name: '李思琪', fallback: 'LS', calls: 445, connected: 312, rate: 70.1, avgDuration: '4m 22s', intent: 33, status: 'busy' },
+  { name: '陈浩然', fallback: 'CH', calls: 428, connected: 289, rate: 67.5, avgDuration: '3m 56s', intent: 30, status: 'online' },
+  { name: '赵雨萱', fallback: 'ZY', calls: 410, connected: 275, rate: 67.1, avgDuration: '4m 05s', intent: 28, status: 'offline' },
+  { name: '刘子轩', fallback: 'LZ', calls: 398, connected: 260, rate: 65.3, avgDuration: '3m 45s', intent: 26, status: 'online' },
+]
+
+const recentCalls = [
+  { customer: '上海鑫达贸易', phone: '138****6721', agent: '王丽娜', duration: '5m 23s', result: '意向', time: '16:42', tag: 'A级' },
+  { customer: '北京中润科技', phone: '159****3348', agent: '张明远', duration: '3m 10s', result: '待跟进', time: '16:38', tag: 'B级' },
+  { customer: '深圳创新材料', phone: '186****9012', agent: '李思琪', duration: '0s', result: '未接通', time: '16:35', tag: '' },
+  { customer: '杭州云数网络', phone: '135****4567', agent: '陈浩然', duration: '6m 45s', result: '意向', time: '16:30', tag: 'A级' },
+  { customer: '广州智联物流', phone: '177****8890', agent: '王丽娜', duration: '2m 08s', result: '拒绝', time: '16:25', tag: '' },
+  { customer: '成都华瑞电子', phone: '150****2234', agent: '赵雨萱', duration: '4m 52s', result: '待跟进', time: '16:20', tag: 'B级' },
+  { customer: '武汉盛世地产', phone: '188****5567', agent: '刘子轩', duration: '1m 30s', result: '拒绝', time: '16:15', tag: '' },
+  { customer: '南京明辉化工', phone: '136****7789', agent: '张明远', duration: '7m 18s', result: '意向', time: '16:10', tag: 'A级' },
+]
+
+const resultBadge: Record<string, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; label: string }> = {
+  '意向': { variant: 'default', label: '意向' },
+  '待跟进': { variant: 'secondary', label: '待跟进' },
+  '未接通': { variant: 'outline', label: '未接通' },
+  '拒绝': { variant: 'destructive', label: '拒绝' },
+}
+
+const statusColor: Record<string, string> = {
+  online: 'bg-green-500',
+  busy: 'bg-yellow-500',
+  offline: 'bg-gray-300',
+}
+
+interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+  time: string
+}
+
+const mockResponses: { keywords: string[]; response: string }[] = [
+  {
+    keywords: ['接通率', '接通'],
+    response: '**今日接通率分析**\n\n当前接通率为 **68.7%**，较昨日提升 3.2 个百分点。\n\n- 上午时段（9:00-12:00）接通率最高，达 **74.2%**\n- 午休时段（12:00-14:00）降至 **52.1%**\n- 下午时段（14:00-18:00）回升至 **69.8%**\n\n建议将重点外呼任务集中在上午时段，可有效提升整体接通率约 5-8%。',
+  },
+  {
+    keywords: ['坐席', '排名', '排行', '绩效', '表现'],
+    response: '**坐席绩效分析**\n\n今日 TOP 3 坐席表现：\n\n1. **王丽娜** — 外呼 486 通，接通率 70.4%，意向客户 38 个\n2. **张明远** — 外呼 462 通，接通率 68.8%，意向客户 35 个\n3. **李思琪** — 外呼 445 通，接通率 70.1%，意向客户 33 个\n\n王丽娜和李思琪的接通率均突破 70%，建议团队学习其话术技巧。刘子轩接通率偏低（65.3%），建议安排针对性培训。',
+  },
+  {
+    keywords: ['意向', '客户', '转化'],
+    response: '**意向客户分析**\n\n今日新增意向客户 **286 个**，较昨日增长 18.3%。\n\n按客户等级分布：\n- A级（高意向）：**68 个**（23.8%）\n- B级（中意向）：**124 个**（43.4%）\n- C级（低意向）：**94 个**（32.8%）\n\n意向转化率为 **7.4%**（286/3842），高于行业平均水平 5.2%。建议优先跟进 A 级客户，48 小时内安排二次回访。',
+  },
+  {
+    keywords: ['趋势', '本周', '周'],
+    response: '**本周外呼趋势分析**\n\n本周工作日外呼总量呈上升趋势：\n\n- 周一：3,200 通（接通率 68.1%）\n- 周二：3,580 通（接通率 68.4%）\n- 周三：2,900 通（接通率 66.2%）⚠️ 低谷\n- 周四：3,750 通（接通率 69.3%）\n- 周五：4,100 通（接通率 70.0%）📈 峰值\n\n周三外呼量下降 19%，主因是 3 名坐席请假。周五表现最佳，建议分析该日话术和名单质量。',
+  },
+  {
+    keywords: ['时段', '时间', '什么时候', '高峰'],
+    response: '**时段效率分析**\n\n今日各时段外呼效率排名：\n\n🔥 **高峰时段**\n- 16:00（活跃度 100）— 外呼量最大\n- 15:00（活跃度 95）\n- 10:00（活跃度 92）\n\n❄️ **低谷时段**\n- 13:00（活跃度 30）— 午休后恢复期\n- 18:00（活跃度 40）— 临近下班\n\n建议：将高价值客户名单安排在 10:00 和 15:00-16:00 拨打，可提升约 12% 的接通率。',
+  },
+  {
+    keywords: ['号码', '无效', '失败', '未接通'],
+    response: '**未接通分析**\n\n今日未接通呼叫共 **1,204 通**（31.3%），具体分布：\n\n- 无人接听：654 通（54.3%）\n- 忙线中：312 通（25.9%）\n- 号码无效：156 通（13.0%）\n- 主动挂断：82 通（6.8%）\n\n号码无效率为 4.1%，较上周的 3.6% 有所上升。建议：\n1. 对名单来源进行质量审查\n2. 无人接听号码在 2 小时后自动加入重拨队列\n3. 忙线号码在 30 分钟后重试',
+  },
+]
+
+function getAIResponse(input: string): string {
+  const lower = input.toLowerCase()
+  for (const { keywords, response } of mockResponses) {
+    if (keywords.some((kw) => lower.includes(kw))) {
+      return response
+    }
+  }
+  return `**分析结果**\n\n根据当前数据，今日外呼总量 **3,842 通**，接通率 **68.7%**，意向客户 **286 个**，整体表现优于昨日。\n\n您可以尝试问我：\n- "分析今日接通率"\n- "坐席绩效排名如何？"\n- "意向客户转化情况"\n- "本周趋势怎么样？"\n- "哪个时段效率最高？"\n- "未接通原因分析"`
+}
+
+function getNow() {
+  const d = new Date()
+  return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`
+}
+
+const initialMessages: ChatMessage[] = [
+  {
+    role: 'assistant',
+    content: '你好！我是数据分析助手，可以帮你分析外呼系统的各项数据指标。\n\n你可以问我关于 **接通率、坐席绩效、意向客户、时段分布** 等问题。',
+    time: '16:40',
+  },
 ]
 
 export default function App() {
-  const [rememberMe, setRememberMe] = useState(false)
-  const [twoFactor, setTwoFactor] = useState(false)
-  const [heroMouse, setHeroMouse] = useState<{ x: number; y: number } | null>(null)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages)
+  const [inputValue, setInputValue] = useState('')
+  const [isTyping, setIsTyping] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, isTyping])
+
+  function handleSend() {
+    const text = inputValue.trim()
+    if (!text || isTyping) return
+
+    const userMsg: ChatMessage = { role: 'user', content: text, time: getNow() }
+    setMessages((prev) => [...prev, userMsg])
+    setInputValue('')
+    setIsTyping(true)
+
+    setTimeout(() => {
+      const aiMsg: ChatMessage = { role: 'assistant', content: getAIResponse(text), time: getNow() }
+      setMessages((prev) => [...prev, aiMsg])
+      setIsTyping(false)
+    }, 800 + Math.random() * 700)
+  }
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Nav */}
+      {/* Header */}
       <header className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-sm">
-        <div className="mx-auto max-w-7xl flex h-14 items-center justify-between px-6">
-          <div className="flex items-center gap-2">
-            <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 3L21.5 20H2.5L12 3Z" fill="currentColor" />
-              <path d="M12 9L18.5 20H12V9Z" fill="white" fillOpacity="0.25" />
-            </svg>
-            <span className="font-semibold">棱镜</span>
+        <div className="mx-auto max-w-[1400px] flex h-14 items-center justify-between px-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <Headphones className="h-4 w-4" />
+            </div>
+            <span className="font-semibold text-lg">外呼数据中心</span>
+            <Badge variant="secondary" className="text-xs">实时</Badge>
           </div>
           <nav className="hidden md:flex items-center gap-6 text-sm">
-            <a href="#" className="text-muted-foreground hover:text-foreground transition-colors">文档</a>
-            <a href="#components" className="text-muted-foreground hover:text-foreground transition-colors">组件</a>
-            <a href="#examples" className="text-muted-foreground hover:text-foreground transition-colors">示例</a>
+            <a href="#" className="text-foreground font-medium">数据看板</a>
+            <a href="#" className="text-muted-foreground hover:text-foreground transition-colors">任务管理</a>
+            <a href="#" className="text-muted-foreground hover:text-foreground transition-colors">客户列表</a>
+            <a href="#" className="text-muted-foreground hover:text-foreground transition-colors">坐席管理</a>
           </nav>
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon">
-              <GitFork className="h-4 w-4" />
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm">
+              <Download className="h-3.5 w-3.5" />
+              导出报表
             </Button>
-            <Button size="sm">快速开始</Button>
+            <Button size="sm">
+              <RefreshCw className="h-3.5 w-3.5" />
+              刷新数据
+            </Button>
           </div>
         </div>
       </header>
 
-      <main>
-        {/* Hero */}
-        <section
-          className="relative py-20 px-6 text-center border-b overflow-hidden"
-          onMouseMove={(e) => {
-            const rect = e.currentTarget.getBoundingClientRect()
-            setHeroMouse({ x: e.clientX - rect.left, y: e.clientY - rect.top })
-          }}
-          onMouseLeave={() => setHeroMouse(null)}
-        >
-          {/* 底层常驻淡灰网格 */}
-          <div
-            className="pointer-events-none absolute inset-0"
-            style={{
-              backgroundImage: `linear-gradient(to right, oklch(0 0 0 / 0.025) 1px, transparent 1px), linear-gradient(to bottom, oklch(0 0 0 / 0.025) 1px, transparent 1px)`,
-              backgroundSize: '40px 40px',
-            }}
-          />
-          {/* 鼠标追踪发光彩色网格（mask 遮罩） */}
-          <div
-            className="pointer-events-none absolute inset-0"
-            style={{
-              backgroundImage: `linear-gradient(to right, oklch(0.62 0.26 270 / 0.28) 1px, transparent 1px), linear-gradient(to bottom, oklch(0.62 0.26 270 / 0.28) 1px, transparent 1px)`,
-              backgroundSize: '40px 40px',
-              opacity: heroMouse ? 1 : 0,
-              transition: 'opacity 0.5s ease',
-              maskImage: heroMouse ? `radial-gradient(320px circle at ${heroMouse.x}px ${heroMouse.y}px, black 0%, transparent 75%)` : 'none',
-              WebkitMaskImage: heroMouse ? `radial-gradient(320px circle at ${heroMouse.x}px ${heroMouse.y}px, black 0%, transparent 75%)` : 'none',
-            }}
-          />
-          <div className="relative mx-auto max-w-3xl">
-            <Badge
-              variant="secondary"
-              className="mb-4 rounded-full px-3 cursor-default select-none transition-all duration-300 hover:scale-110 hover:shadow-md"
-            >
-              开源 · 可定制 · 无障碍访问
-            </Badge>
-            <h1 className="text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl mb-4 bg-gradient-to-br from-foreground via-foreground/90 to-foreground/50 bg-clip-text text-transparent">
-              构建你的组件系统
-            </h1>
-            <p className="text-xl text-muted-foreground mb-8 leading-relaxed">
-              精心设计的组件集合，基于 Radix UI 和 Tailwind CSS 构建。
-              <br />
-              开箱可用，完全可定制，代码归你所有。
+      <main className="mx-auto max-w-[1400px] px-6 py-6 space-y-6">
+        {/* Page Title */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">数据看板</h1>
+            <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1.5">
+              <CalendarDays className="h-3.5 w-3.5" />
+              2026年5月8日 · 数据更新于 16:45
             </p>
-            <div className="flex justify-center gap-4 flex-wrap">
-              <Button size="lg" className="transition-transform duration-200 hover:scale-105 hover:shadow-lg">
-                <Zap className="h-4 w-4" />
-                快速开始
-              </Button>
-              <Button variant="outline" size="lg" className="transition-transform duration-200 hover:scale-105">
-                <GitFork className="h-4 w-4" />
-                GitHub
-              </Button>
-            </div>
-            <div className="mt-10 flex justify-center gap-8 text-sm text-muted-foreground flex-wrap">
-              <span className="flex items-center gap-1.5 cursor-default transition-colors duration-200 hover:text-foreground">
-                <CheckCircle className="h-4 w-4" /> 无需安装包
-              </span>
-              <span className="flex items-center gap-1.5 cursor-default transition-colors duration-200 hover:text-foreground">
-                <CheckCircle className="h-4 w-4" /> 完全可定制
-              </span>
-              <span className="flex items-center gap-1.5 cursor-default transition-colors duration-200 hover:text-foreground">
-                <CheckCircle className="h-4 w-4" /> TypeScript 支持
-              </span>
-            </div>
           </div>
-        </section>
+          <Tabs defaultValue="today">
+            <TabsList>
+              <TabsTrigger value="today">今日</TabsTrigger>
+              <TabsTrigger value="week">本周</TabsTrigger>
+              <TabsTrigger value="month">本月</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
 
-        {/* Features */}
-        <section className="py-14 px-6 border-b bg-muted/30">
-          <div className="mx-auto max-w-7xl grid grid-cols-1 md:grid-cols-3 gap-6">
-            {[
-              { Icon: Layers, title: '组件即代码', desc: '复制代码到你的项目，完全掌控每一行逻辑，而不是依赖黑盒 npm 包。' },
-              { Icon: Palette, title: '主题可定制', desc: '通过 CSS 变量驱动的设计系统，轻松调整颜色、圆角、间距等视觉风格。' },
-              { Icon: Accessibility, title: '无障碍支持', desc: '基于 Radix UI 原语构建，支持屏幕阅读器和键盘导航，让所有用户都能无障碍使用。' },
-            ].map(({ Icon, title, desc }) => (
-              <Card key={title} className="border-0 shadow-none bg-transparent">
-                <CardHeader className="pb-2">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 mb-2">
-                    <Icon className="h-5 w-5 text-primary" />
-                  </div>
-                  <CardTitle className="text-base">{title}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground">{desc}</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </section>
-
-        {/* Component Showcase */}
-        <section id="components" className="py-16 px-6 border-b">
-          <div className="mx-auto max-w-7xl">
-            <div className="mb-10">
-              <h2 className="text-2xl font-bold tracking-tight mb-2">组件展示</h2>
-              <p className="text-muted-foreground">浏览所有可用组件，每个组件都支持多种变体和尺寸。</p>
-            </div>
-
-            {/* Buttons */}
-            <div className="mb-10">
-              <h3 className="text-sm font-semibold mb-4 flex items-center gap-2 text-muted-foreground uppercase tracking-wide">
-                Button
-              </h3>
-              <Card>
-                <CardContent className="pt-6 space-y-5">
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-3 font-medium">变体</p>
-                    <div className="flex flex-wrap gap-3">
-                      <Button>Default</Button>
-                      <Button variant="secondary">Secondary</Button>
-                      <Button variant="destructive">Destructive</Button>
-                      <Button variant="outline">Outline</Button>
-                      <Button variant="ghost">Ghost</Button>
-                      <Button variant="link">Link</Button>
+        {/* KPI Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {kpiCards.map(({ title, value, change, trend, desc, icon: Icon, iconColor, iconBg }) => (
+            <Card key={title}>
+              <CardContent className="pt-6">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">{title}</p>
+                    <p className="text-3xl font-bold tracking-tight">{value}</p>
+                    <div className="flex items-center gap-1 text-xs">
+                      {trend === 'up' ? (
+                        <span className="flex items-center gap-0.5 text-green-600">
+                          <ArrowUpRight className="h-3 w-3" />
+                          {change}
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-0.5 text-orange-600">
+                          <ArrowDownRight className="h-3 w-3" />
+                          {change}
+                        </span>
+                      )}
+                      <span className="text-muted-foreground">{desc}</span>
                     </div>
                   </div>
-                  <Separator />
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-3 font-medium">尺寸</p>
-                    <div className="flex flex-wrap items-center gap-3">
-                      <Button size="sm">Small</Button>
-                      <Button>Default</Button>
-                      <Button size="lg">Large</Button>
-                      <Button size="icon"><Star className="h-4 w-4" /></Button>
-                    </div>
+                  <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${iconBg}`}>
+                    <Icon className={`h-5 w-5 ${iconColor}`} />
                   </div>
-                  <Separator />
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-3 font-medium">带图标</p>
-                    <div className="flex flex-wrap gap-3">
-                      <Button><Mail className="h-4 w-4" /> 发送邮件</Button>
-                      <Button variant="outline"><GitFork className="h-4 w-4" /> 登录 GitHub</Button>
-                      <Button variant="secondary"><Heart className="h-4 w-4" /> 点赞</Button>
-                    </div>
-                  </div>
-                  <Separator />
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-3 font-medium">禁用状态</p>
-                    <div className="flex flex-wrap gap-3">
-                      <Button disabled>Disabled</Button>
-                      <Button variant="outline" disabled>Disabled Outline</Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
 
-            {/* Badge */}
-            <div className="mb-10">
-              <h3 className="text-sm font-semibold mb-4 flex items-center gap-2 text-muted-foreground uppercase tracking-wide">
-                Badge
-              </h3>
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="flex flex-wrap gap-3">
-                    <Badge>Default</Badge>
-                    <Badge variant="secondary">Secondary</Badge>
-                    <Badge variant="destructive">Destructive</Badge>
-                    <Badge variant="outline">Outline</Badge>
-                    <Badge className="gap-1 rounded-full"><Star className="h-3 w-3" /> 精选</Badge>
-                    <Badge variant="secondary" className="gap-1 rounded-full">
-                      <CheckCircle className="h-3 w-3" /> 已完成
-                    </Badge>
-                    <Badge variant="destructive" className="gap-1 rounded-full">
-                      <AlertCircle className="h-3 w-3" /> 错误
-                    </Badge>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Alert */}
-            <div className="mb-10">
-              <h3 className="text-sm font-semibold mb-4 flex items-center gap-2 text-muted-foreground uppercase tracking-wide">
-                Alert
-              </h3>
-              <div className="space-y-3">
-                <Alert>
-                  <Info className="h-4 w-4" />
-                  <AlertTitle>提示信息</AlertTitle>
-                  <AlertDescription>
-                    shadcn/ui 组件不是 npm 包，而是直接复制到项目中的代码。这意味着你拥有完整的控制权。
-                  </AlertDescription>
-                </Alert>
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertTitle>会话已过期</AlertTitle>
-                  <AlertDescription>
-                    你的登录状态已失效，请重新登录以继续使用。
-                  </AlertDescription>
-                </Alert>
+        {/* Charts Row */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Weekly Trend */}
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <BarChart3 className="h-4 w-4 text-muted-foreground" />
+                    近7天外呼趋势
+                  </CardTitle>
+                  <CardDescription>外呼总量与接通量对比</CardDescription>
+                </div>
+                <div className="flex items-center gap-4 text-xs">
+                  <span className="flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-sm bg-primary" />
+                    外呼总量
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-sm bg-primary/40" />
+                    接通量
+                  </span>
+                </div>
               </div>
-            </div>
-
-            {/* Avatar */}
-            <div className="mb-10">
-              <h3 className="text-sm font-semibold mb-4 flex items-center gap-2 text-muted-foreground uppercase tracking-wide">
-                Avatar
-              </h3>
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="flex flex-wrap items-center gap-4">
-                    <Avatar className="h-8 w-8">
-                      <AvatarImage src="https://github.com/shadcn.png" alt="shadcn" />
-                      <AvatarFallback>CN</AvatarFallback>
-                    </Avatar>
-                    <Avatar className="h-10 w-10">
-                      <AvatarImage src="https://github.com/shadcn.png" alt="shadcn" />
-                      <AvatarFallback>CN</AvatarFallback>
-                    </Avatar>
-                    <Avatar className="h-12 w-12">
-                      <AvatarImage src="https://github.com/shadcn.png" alt="shadcn" />
-                      <AvatarFallback>CN</AvatarFallback>
-                    </Avatar>
-                    <Avatar className="h-10 w-10"><AvatarFallback>AB</AvatarFallback></Avatar>
-                    <Avatar className="h-10 w-10"><AvatarFallback>YZ</AvatarFallback></Avatar>
-                    <Avatar className="h-10 w-10 ring-2 ring-primary ring-offset-2">
-                      <AvatarFallback>VIP</AvatarFallback>
-                    </Avatar>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Form Elements */}
-            <div className="mb-10">
-              <h3 className="text-sm font-semibold mb-4 flex items-center gap-2 text-muted-foreground uppercase tracking-wide">
-                表单组件
-              </h3>
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="input-email">邮箱地址</Label>
-                        <Input id="input-email" type="email" placeholder="name@example.com" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="input-password">密码</Label>
-                        <Input id="input-password" type="password" placeholder="输入你的密码" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="input-disabled">禁用状态</Label>
-                        <Input id="input-disabled" placeholder="此输入框已禁用" disabled />
-                      </div>
-                    </div>
-                    <div className="space-y-6">
-                      <div>
-                        <p className="text-sm font-medium mb-3">Checkbox 复选框</p>
-                        <div className="space-y-2.5">
-                          {['接受服务条款', '订阅邮件通知', '记住我的偏好'].map((label) => (
-                            <div key={label} className="flex items-center gap-2">
-                              <Checkbox id={`cb-${label}`} />
-                              <Label htmlFor={`cb-${label}`} className="cursor-pointer font-normal">{label}</Label>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                      <Separator />
-                      <div>
-                        <p className="text-sm font-medium mb-3">Switch 开关</p>
-                        <div className="space-y-3">
-                          {switchItems.map((label) => (
-                            <div key={label} className="flex items-center justify-between">
-                              <Label className="font-normal">{label}</Label>
-                              <Switch />
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Tabs */}
-            <div className="mb-10">
-              <h3 className="text-sm font-semibold mb-4 flex items-center gap-2 text-muted-foreground uppercase tracking-wide">
-                Tabs
-              </h3>
-              <Tabs defaultValue="preview">
-                <TabsList>
-                  <TabsTrigger value="preview">预览</TabsTrigger>
-                  <TabsTrigger value="code">代码</TabsTrigger>
-                  <TabsTrigger value="api">API</TabsTrigger>
-                </TabsList>
-                <TabsContent value="preview">
-                  <Card>
-                    <CardContent className="pt-6">
-                      <p className="text-sm text-muted-foreground mb-4">
-                        Tabs 组件由 Radix UI 提供无障碍支持，通过键盘方向键即可切换标签。
-                      </p>
-                      <div className="flex gap-2 flex-wrap">
-                        <Badge>React</Badge>
-                        <Badge variant="secondary">TypeScript</Badge>
-                        <Badge variant="outline">Tailwind CSS</Badge>
-                        <Badge variant="outline">Radix UI</Badge>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </TabsContent>
-                <TabsContent value="code">
-                  <Card>
-                    <CardContent className="pt-6">
-                      <pre className="text-sm bg-muted rounded-md p-4 overflow-auto text-muted-foreground"><code>{`<Tabs defaultValue="tab1">
-  <TabsList>
-    <TabsTrigger value="tab1">Tab 1</TabsTrigger>
-    <TabsTrigger value="tab2">Tab 2</TabsTrigger>
-  </TabsList>
-  <TabsContent value="tab1">
-    Content 1
-  </TabsContent>
-  <TabsContent value="tab2">
-    Content 2
-  </TabsContent>
-</Tabs>`}</code></pre>
-                    </CardContent>
-                  </Card>
-                </TabsContent>
-                <TabsContent value="api">
-                  <Card>
-                    <CardContent className="pt-6">
-                      <div className="space-y-2 text-sm">
-                        <div className="grid grid-cols-3 gap-4 font-medium text-xs uppercase tracking-wide text-muted-foreground pb-2 border-b">
-                          <span>属性</span>
-                          <span>类型</span>
-                          <span>描述</span>
-                        </div>
-                        {[
-                          ['defaultValue', 'string', '默认激活的标签页'],
-                          ['value', 'string', '受控模式下的当前值'],
-                          ['onValueChange', '(v: string) => void', '值变化时的回调函数'],
-                        ].map(([prop, type, desc]) => (
-                          <div key={prop} className="grid grid-cols-3 gap-4 py-2 border-b border-border/50">
-                            <code className="text-xs font-mono">{prop}</code>
-                            <code className="text-xs text-muted-foreground font-mono">{type}</code>
-                            <span className="text-xs text-muted-foreground">{desc}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </TabsContent>
-              </Tabs>
-            </div>
-
-            {/* Card */}
-            <div className="mb-2">
-              <h3 className="text-sm font-semibold mb-4 flex items-center gap-2 text-muted-foreground uppercase tracking-wide">
-                Card
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>基础卡片</CardTitle>
-                    <CardDescription>卡片是内容分组的基础容器</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-sm text-muted-foreground">
-                      可以在卡片内放置任意内容，包括文字、图片、表单等。
-                    </p>
-                  </CardContent>
-                  <CardFooter>
-                    <Button size="sm" variant="outline" className="w-full">查看详情</Button>
-                  </CardFooter>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <CardTitle>通知设置</CardTitle>
-                      <Badge variant="secondary">3 未读</Badge>
-                    </div>
-                    <CardDescription>管理你的推送通知偏好</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      {switchItems.map((item) => (
-                        <div key={item} className="flex items-center justify-between">
-                          <span className="text-sm">{item}</span>
-                          <Switch />
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle>团队成员</CardTitle>
-                    <CardDescription>当前团队共 {teamMembers.length} 位成员</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      {teamMembers.map(({ name, role, fallback }) => (
-                        <div key={name} className="flex items-center gap-3">
-                          <Avatar className="h-8 w-8">
-                            <AvatarFallback className="text-xs">{fallback}</AvatarFallback>
-                          </Avatar>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{name}</p>
-                            <p className="text-xs text-muted-foreground truncate">{role}</p>
-                          </div>
-                          <Badge variant="outline" className="text-xs shrink-0">查看</Badge>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Best Practice Examples */}
-        <section id="examples" className="py-16 px-6 bg-muted/30 border-b">
-          <div className="mx-auto max-w-7xl">
-            <div className="mb-10">
-              <h2 className="text-2xl font-bold tracking-tight mb-2">最佳实践</h2>
-              <p className="text-muted-foreground">组合多个组件，构建真实场景的 UI 界面。</p>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-              {/* Login Form */}
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">登录表单</p>
-                <Card>
-                  <CardHeader className="space-y-1">
-                    <CardTitle className="text-2xl">登录账户</CardTitle>
-                    <CardDescription>输入你的邮箱和密码以登录</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="login-email">邮箱</Label>
-                      <div className="relative">
-                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input id="login-email" type="email" placeholder="name@example.com" className="pl-9" />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="login-password">密码</Label>
-                        <a href="#" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-                          忘记密码？
-                        </a>
-                      </div>
-                      <div className="relative">
-                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input id="login-password" type="password" placeholder="••••••••" className="pl-9" />
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        id="remember-me"
-                        checked={rememberMe}
-                        onCheckedChange={(v) => setRememberMe(v === true)}
-                      />
-                      <Label htmlFor="remember-me" className="cursor-pointer font-normal text-sm">
-                        记住我
-                      </Label>
-                    </div>
-                  </CardContent>
-                  <CardFooter className="flex flex-col gap-3">
-                    <Button className="w-full">登录</Button>
-                    <Button variant="outline" className="w-full">
-                      <GitFork className="h-4 w-4" />
-                      使用 GitHub 登录
-                    </Button>
-                    <p className="text-center text-xs text-muted-foreground">
-                      还没有账号？
-                      <a href="#" className="underline underline-offset-4 hover:text-foreground">立即注册</a>
-                    </p>
-                  </CardFooter>
-                </Card>
-              </div>
-
-              {/* User Settings */}
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">用户设置</p>
-                <Card>
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center gap-3">
-                      <Avatar className="h-12 w-12">
-                        <AvatarFallback>ZS</AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <CardTitle className="text-base">张设计师</CardTitle>
-                        <CardDescription>designer@example.com</CardDescription>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <Separator />
-                  <CardContent className="pt-4">
-                    <Tabs defaultValue="profile">
-                      <TabsList className="w-full">
-                        <TabsTrigger value="profile" className="flex-1">资料</TabsTrigger>
-                        <TabsTrigger value="notifications" className="flex-1">通知</TabsTrigger>
-                        <TabsTrigger value="security" className="flex-1">安全</TabsTrigger>
-                      </TabsList>
-                      <TabsContent value="profile" className="mt-4 space-y-3">
-                        <div className="space-y-2">
-                          <Label htmlFor="display-name">显示名称</Label>
-                          <Input id="display-name" defaultValue="张设计师" />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="bio">个人简介</Label>
-                          <Input id="bio" placeholder="介绍一下自己..." />
-                        </div>
-                      </TabsContent>
-                      <TabsContent value="notifications" className="mt-4 space-y-3">
-                        {notificationSettings.map(({ label, desc }) => (
-                          <div key={label} className="flex items-center justify-between">
-                            <div>
-                              <p className="text-sm font-medium">{label}</p>
-                              <p className="text-xs text-muted-foreground">{desc}</p>
-                            </div>
-                            <Switch />
-                          </div>
-                        ))}
-                      </TabsContent>
-                      <TabsContent value="security" className="mt-4 space-y-3">
-                        <div className="flex items-center justify-between p-3 border rounded-lg">
-                          <div>
-                            <p className="text-sm font-medium">两步验证</p>
-                            <p className="text-xs text-muted-foreground">使用 Google Authenticator</p>
-                          </div>
-                          <Switch
-                            checked={twoFactor}
-                            onCheckedChange={setTwoFactor}
-                          />
-                        </div>
-                        {twoFactor && (
-                          <Alert>
-                            <CheckCircle className="h-4 w-4" />
-                            <AlertTitle>两步验证已开启</AlertTitle>
-                            <AlertDescription>你的账号安全性已大幅提升。</AlertDescription>
-                          </Alert>
-                        )}
-                      </TabsContent>
-                    </Tabs>
-                  </CardContent>
-                  <CardFooter>
-                    <Button size="sm" className="ml-auto">保存设置</Button>
-                  </CardFooter>
-                </Card>
-              </div>
-
-              {/* Notifications Panel */}
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">通知中心</p>
-                <Card>
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-base flex items-center gap-2">
-                        <Bell className="h-4 w-4" />
-                        通知
-                      </CardTitle>
-                      <Badge>
-                        {notifications.filter((n) => n.unread).length} 条未读
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <Separator />
-                  <CardContent className="p-0">
-                    {notifications.map(({ avatar, name, action, time, unread }) => (
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-end gap-3 h-48">
+                {weeklyData.map(({ day, calls, connected }) => (
+                  <div key={day} className="flex-1 flex flex-col items-center gap-1">
+                    <span className="text-xs font-medium text-muted-foreground">{calls}</span>
+                    <div className="w-full flex gap-1 items-end" style={{ height: '140px' }}>
                       <div
-                        key={name}
-                        className={`flex items-start gap-3 px-4 py-3 hover:bg-muted/50 cursor-pointer transition-colors ${unread ? 'bg-primary/5' : ''}`}
-                      >
-                        <Avatar className="h-8 w-8 mt-0.5 shrink-0">
-                          <AvatarFallback className="text-xs">{avatar}</AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm leading-snug">
-                            <span className="font-medium">{name}</span>
-                            <span className="text-muted-foreground"> {action}</span>
-                          </p>
-                          <p className="text-xs text-muted-foreground mt-0.5">{time}</p>
-                        </div>
-                        {unread && (
-                          <div className="h-2 w-2 rounded-full bg-primary mt-1.5 shrink-0" />
-                        )}
-                      </div>
-                    ))}
-                  </CardContent>
-                  <CardFooter className="pt-3">
-                    <Button variant="ghost" size="sm" className="w-full text-muted-foreground">
-                      查看全部通知
-                      <ChevronRight className="h-3 w-3" />
-                    </Button>
-                  </CardFooter>
-                </Card>
+                        className="flex-1 bg-primary rounded-t-sm transition-all duration-500"
+                        style={{ height: `${(calls / maxCalls) * 100}%` }}
+                      />
+                      <div
+                        className="flex-1 bg-primary/40 rounded-t-sm transition-all duration-500"
+                        style={{ height: `${(connected / maxCalls) * 100}%` }}
+                      />
+                    </div>
+                    <span className="text-xs text-muted-foreground">{day}</span>
+                  </div>
+                ))}
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Call Status Distribution */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Activity className="h-4 w-4 text-muted-foreground" />
+                呼叫状态分布
+              </CardTitle>
+              <CardDescription>今日各状态占比</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Donut visualization */}
+              <div className="flex justify-center">
+                <div className="relative h-32 w-32">
+                  <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90">
+                    {(() => {
+                      let offset = 0
+                      const colors = ['#22c55e', '#f97316', '#eab308', '#ef4444', '#9ca3af']
+                      return callStatusData.map((item, i) => {
+                        const dash = item.percentage * 2.51327
+                        const gap = 251.327 - dash
+                        const el = (
+                          <circle
+                            key={item.label}
+                            cx="50"
+                            cy="50"
+                            r="40"
+                            fill="none"
+                            stroke={colors[i]}
+                            strokeWidth="12"
+                            strokeDasharray={`${dash} ${gap}`}
+                            strokeDashoffset={-offset}
+                          />
+                        )
+                        offset += dash
+                        return el
+                      })
+                    })()}
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <span className="text-2xl font-bold">3,842</span>
+                    <span className="text-xs text-muted-foreground">总呼叫</span>
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-2.5">
+                {callStatusData.map(({ label, count, percentage, color }) => (
+                  <div key={label} className="flex items-center gap-3">
+                    <span className={`h-2.5 w-2.5 rounded-full ${color} shrink-0`} />
+                    <span className="text-sm flex-1">{label}</span>
+                    <span className="text-sm font-medium">{count}</span>
+                    <span className="text-xs text-muted-foreground w-10 text-right">{percentage}%</span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Hourly Activity + Agent Ranking */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Hourly Activity */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Clock className="h-4 w-4 text-muted-foreground" />
+                今日时段分布
+              </CardTitle>
+              <CardDescription>各时段外呼活跃度</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {hourlyData.map(({ hour, value }) => (
+                  <div key={hour} className="flex items-center gap-3">
+                    <span className="text-xs text-muted-foreground w-10 shrink-0">{hour}</span>
+                    <div className="flex-1 h-5 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-primary/70 rounded-full transition-all duration-500"
+                        style={{ width: `${(value / maxHourly) * 100}%` }}
+                      />
+                    </div>
+                    <span className="text-xs font-medium w-6 text-right">{value}</span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Agent Ranking */}
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                    坐席排行榜
+                  </CardTitle>
+                  <CardDescription>按外呼总量排名</CardDescription>
+                </div>
+                <Button variant="ghost" size="sm" className="text-muted-foreground">
+                  查看全部
+                  <ChevronRight className="h-3 w-3" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-1">
+                {/* Table header */}
+                <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr] gap-4 px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  <span>坐席</span>
+                  <span className="text-right">外呼量</span>
+                  <span className="text-right">接通量</span>
+                  <span className="text-right">接通率</span>
+                  <span className="text-right">均时长</span>
+                  <span className="text-right">意向客户</span>
+                </div>
+                <Separator />
+                {agents.map(({ name, fallback, calls, connected, rate, avgDuration, intent, status }, index) => (
+                  <div
+                    key={name}
+                    className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr] gap-4 px-3 py-2.5 rounded-lg hover:bg-muted/50 transition-colors items-center"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-bold text-muted-foreground w-4">{index + 1}</span>
+                      <div className="relative">
+                        <Avatar className="h-8 w-8">
+                          <AvatarFallback className="text-xs">{fallback}</AvatarFallback>
+                        </Avatar>
+                        <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-background ${statusColor[status]}`} />
+                      </div>
+                      <span className="text-sm font-medium">{name}</span>
+                    </div>
+                    <span className="text-sm text-right font-medium">{calls}</span>
+                    <span className="text-sm text-right">{connected}</span>
+                    <span className={`text-sm text-right font-medium ${rate >= 70 ? 'text-green-600' : ''}`}>{rate}%</span>
+                    <span className="text-sm text-right text-muted-foreground">{avgDuration}</span>
+                    <span className="text-sm text-right font-medium">{intent}</span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Summary Stats Row */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {[
+            { label: '外呼任务完成率', value: '92.3%', icon: Target, color: 'text-blue-600' },
+            { label: '今日在线坐席', value: '24 / 30', icon: Headphones, color: 'text-green-600' },
+            { label: '平均等待时长', value: '12s', icon: Clock, color: 'text-orange-600' },
+            { label: '客户满意度', value: '4.6 / 5.0', icon: TrendingUp, color: 'text-purple-600' },
+          ].map(({ label, value, icon: Icon, color }) => (
+            <Card key={label}>
+              <CardContent className="pt-4 pb-4">
+                <div className="flex items-center gap-3">
+                  <Icon className={`h-4 w-4 ${color}`} />
+                  <div>
+                    <p className="text-xs text-muted-foreground">{label}</p>
+                    <p className="text-lg font-bold">{value}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {/* Recent Calls */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Phone className="h-4 w-4 text-muted-foreground" />
+                  最近通话记录
+                </CardTitle>
+                <CardDescription>实时更新的通话流水</CardDescription>
+              </div>
+              <Button variant="outline" size="sm">
+                查看全部
+                <ChevronRight className="h-3 w-3" />
+              </Button>
             </div>
-          </div>
-        </section>
+          </CardHeader>
+          <CardContent>
+            {/* Table header */}
+            <div className="grid grid-cols-[1.5fr_1fr_1fr_0.8fr_0.8fr_0.8fr_0.6fr] gap-4 px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              <span>客户名称</span>
+              <span>联系电话</span>
+              <span>坐席</span>
+              <span>通话时长</span>
+              <span>通话结果</span>
+              <span>客户等级</span>
+              <span className="text-right">时间</span>
+            </div>
+            <Separator />
+            {recentCalls.map(({ customer, phone, agent, duration, result, time, tag }, index) => (
+              <div key={index}>
+                <div className="grid grid-cols-[1.5fr_1fr_1fr_0.8fr_0.8fr_0.8fr_0.6fr] gap-4 px-3 py-3 hover:bg-muted/50 transition-colors items-center">
+                  <span className="text-sm font-medium">{customer}</span>
+                  <span className="text-sm text-muted-foreground font-mono">{phone}</span>
+                  <span className="text-sm">{agent}</span>
+                  <span className="text-sm text-muted-foreground flex items-center gap-1">
+                    {result === '未接通' ? (
+                      <PhoneOff className="h-3 w-3 text-red-400" />
+                    ) : (
+                      <PhoneCall className="h-3 w-3 text-green-500" />
+                    )}
+                    {duration}
+                  </span>
+                  <span>
+                    <Badge variant={resultBadge[result]?.variant ?? 'outline'} className="text-xs">
+                      {result}
+                    </Badge>
+                  </span>
+                  <span>
+                    {tag ? (
+                      <Badge variant={tag === 'A级' ? 'default' : 'secondary'} className="text-xs">
+                        {tag}
+                      </Badge>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">-</span>
+                    )}
+                  </span>
+                  <span className="text-sm text-muted-foreground text-right">{time}</span>
+                </div>
+                {index < recentCalls.length - 1 && <Separator className="opacity-50" />}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
       </main>
 
-      <footer className="border-t py-8 px-6">
-        <div className="mx-auto max-w-7xl flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
+      <footer className="border-t py-6 px-6 mt-6">
+        <div className="mx-auto max-w-[1400px] flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
           <div className="flex items-center gap-2">
-            <div className="h-4 w-4 rounded bg-foreground" />
-            <span>shadcn/ui 组件展示</span>
+            <Headphones className="h-4 w-4" />
+            <span>外呼数据中心 v1.0</span>
           </div>
-          <p>基于 Radix UI + Tailwind CSS 构建 · {new Date().getFullYear()}</p>
-          <div className="flex items-center gap-4">
-            <a href="#" className="hover:text-foreground transition-colors">文档</a>
-            <a href="#" className="hover:text-foreground transition-colors">GitHub</a>
-            <a href="#" className="hover:text-foreground transition-colors">Twitter</a>
-          </div>
+          <p>数据每 5 分钟自动刷新 · {new Date().getFullYear()}</p>
         </div>
       </footer>
+
+      {/* Chat Toggle Button */}
+      {!chatOpen && (
+        <button
+          onClick={() => setChatOpen(true)}
+          className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 active:scale-95"
+        >
+          <MessageSquareText className="h-6 w-6" />
+        </button>
+      )}
+
+      {/* Chat Panel */}
+      <div
+        className={`fixed top-0 right-0 z-50 h-full w-[420px] max-w-full bg-background border-l shadow-2xl flex flex-col transition-transform duration-300 ease-in-out ${chatOpen ? 'translate-x-0' : 'translate-x-full'}`}
+      >
+        {/* Chat Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b bg-background shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
+              <Sparkles className="h-4 w-4 text-primary" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold">数据分析助手</h3>
+              <p className="text-xs text-muted-foreground">基于看板数据智能分析</p>
+            </div>
+          </div>
+          <Button variant="ghost" size="icon" onClick={() => setChatOpen(false)} className="h-8 w-8">
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+
+        {/* Chat Messages */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          {messages.map((msg, i) => (
+            <div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+              <Avatar className="h-8 w-8 shrink-0 mt-0.5">
+                <AvatarFallback className="text-xs">
+                  {msg.role === 'assistant' ? <Bot className="h-4 w-4" /> : <User className="h-4 w-4" />}
+                </AvatarFallback>
+              </Avatar>
+              <div className={`max-w-[85%] space-y-1 ${msg.role === 'user' ? 'items-end' : ''}`}>
+                <div
+                  className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${
+                    msg.role === 'user'
+                      ? 'bg-primary text-primary-foreground rounded-br-md'
+                      : 'bg-muted rounded-bl-md'
+                  }`}
+                  dangerouslySetInnerHTML={{
+                    __html: msg.content
+                      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                      .replace(/\n/g, '<br/>'),
+                  }}
+                />
+                <p className={`text-[10px] text-muted-foreground px-1 ${msg.role === 'user' ? 'text-right' : ''}`}>
+                  {msg.time}
+                </p>
+              </div>
+            </div>
+          ))}
+          {isTyping && (
+            <div className="flex gap-3">
+              <Avatar className="h-8 w-8 shrink-0 mt-0.5">
+                <AvatarFallback className="text-xs">
+                  <Bot className="h-4 w-4" />
+                </AvatarFallback>
+              </Avatar>
+              <div className="bg-muted rounded-2xl rounded-bl-md px-4 py-3">
+                <div className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <span className="h-2 w-2 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="h-2 w-2 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '300ms' }} />
+                </div>
+              </div>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Quick Actions */}
+        <div className="px-5 pb-2 shrink-0">
+          <div className="flex flex-wrap gap-1.5">
+            {['接通率分析', '坐席绩效', '意向客户', '时段分布'].map((label) => (
+              <button
+                key={label}
+                onClick={() => {
+                  if (isTyping) return
+                  setInputValue(label)
+                }}
+                className="text-xs px-2.5 py-1 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Chat Input */}
+        <div className="px-5 py-4 border-t bg-background shrink-0">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              handleSend()
+            }}
+            className="flex items-center gap-2"
+          >
+            <Input
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              placeholder="输入数据分析问题..."
+              className="flex-1"
+              disabled={isTyping}
+            />
+            <Button type="submit" size="icon" disabled={!inputValue.trim() || isTyping} className="shrink-0">
+              <Send className="h-4 w-4" />
+            </Button>
+          </form>
+        </div>
+      </div>
+
+      {/* Overlay */}
+      {chatOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[2px] transition-opacity"
+          onClick={() => setChatOpen(false)}
+        />
+      )}
     </div>
   )
 }
