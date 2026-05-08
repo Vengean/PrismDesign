@@ -1,25 +1,21 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, Layers } from "lucide-react";
 import { t } from "../../shared/i18n.js";
-import { useNavigator } from "../hooks/use-navigator";
-import type { ElementSelection } from "../../shared/types.js";
+import type { ElementSelection, DOMTreeNode } from "../../shared/types.js";
 import { NavigatorNode } from "./NavigatorNode";
 
 interface NavigatorProps {
   selection: ElementSelection | null;
+  tree: DOMTreeNode[];
+  refreshTree: () => void;
   highlightElement: (domPath: string) => void;
   unhighlightElement: () => void;
   selectElement: (domPath: string) => void;
 }
 
-export function Navigator({ selection, highlightElement, unhighlightElement, selectElement }: NavigatorProps) {
-  const { tree, refreshTree } = useNavigator();
+export function Navigator({ selection, tree, refreshTree, highlightElement, unhighlightElement, selectElement }: NavigatorProps) {
   const [filter, setFilter] = useState("");
-
-  useEffect(() => {
-    refreshTree();
-  }, [refreshTree]);
 
   return (
     <div className="flex flex-col h-full">

@@ -6,6 +6,7 @@ import { useAgent } from "./hooks/use-agent";
 import { useChat } from "./hooks/use-chat";
 import { useChanges } from "./hooks/use-changes";
 import { useElement } from "./hooks/use-element";
+import { useNavigator } from "./hooks/use-navigator";
 import { ChatPanel } from "./components/ChatPanel";
 import { Navigator } from "./components/Navigator";
 import { PropertiesPanel } from "./components/PropertiesPanel";
@@ -43,7 +44,13 @@ export function App() {
       if (view === "properties") setView("navigator");
     },
   });
+  const { tree, refreshTree } = useNavigator();
   const changes = useChanges();
+
+  // Refresh tree when entering navigator view
+  useEffect(() => {
+    if (view === "navigator") refreshTree();
+  }, [view, refreshTree]);
 
   // Side panel lifecycle
   useEffect(() => {
@@ -146,7 +153,7 @@ export function App() {
   }, []);
 
   const handleBack = () => {
-    clearSelection();
+    // Don't clear selection — navigator needs it to scroll to the selected node
     setView("navigator");
   };
 
@@ -297,7 +304,7 @@ export function App() {
       <div className="flex-1 min-h-0">
         {view === "chat" && <ChatPanel agent={agent} chat={chat} />}
         {view === "navigator" && (
-          <Navigator selection={selection} highlightElement={highlightElement} unhighlightElement={unhighlightElement} selectElement={selectElement} />
+          <Navigator selection={selection} tree={tree} refreshTree={refreshTree} highlightElement={highlightElement} unhighlightElement={unhighlightElement} selectElement={selectElement} />
         )}
         {view === "properties" && (
           <PropertiesPanel selection={selection} applyStylePreview={applyStylePreview} onStyleEdit={handleStyleEdit} />

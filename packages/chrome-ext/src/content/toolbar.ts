@@ -90,10 +90,13 @@ export function createToolbar(toolbarActions: ToolbarActions) {
       margin-left: 4px;
       font-size: 10px;
     }
-    #prism-design-toolbar button:hover .pd-tooltip {
-      opacity: 1;
+    @media (hover: hover) {
+      #prism-design-toolbar button:hover .pd-tooltip {
+        opacity: 1;
+      }
     }
-    #prism-design-toolbar.pd-disabled button:hover .pd-tooltip {
+    #prism-design-toolbar.pd-disabled button:hover .pd-tooltip,
+    #prism-design-toolbar button.pd-active .pd-tooltip {
       opacity: 0;
     }
     .pd-pending-badge {

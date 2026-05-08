@@ -131,11 +131,16 @@ function getDomPath(element: HTMLElement): string {
   let el: HTMLElement | null = element;
   while (el && el !== document.body) {
     let selector = el.tagName.toLowerCase();
-    if (el.id) {
+    if (el.id && !el.id.startsWith("prism-design-")) {
       selector += `#${el.id}`;
     } else {
       if (el.className && typeof el.className === "string") {
-        const cls = el.className.trim().split(/\s+/).slice(0, 2).join(".");
+        const cls = el.className
+          .trim()
+          .split(/\s+/)
+          .filter((c) => !c.startsWith("prism-design-") && !c.startsWith("css-"))
+          .slice(0, 2)
+          .join(".");
         if (cls) selector += `.${cls}`;
       }
       // Add child index to disambiguate siblings with same tag/class

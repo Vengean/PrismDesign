@@ -46,18 +46,31 @@ function isOurElement(element: HTMLElement): boolean {
 
 // ---- Event handlers ----
 
-function handleMouseMove(e: MouseEvent) {
+function resolveTarget(e: PointerEvent | MouseEvent | TouchEvent): HTMLElement | null {
+  if ("touches" in e && e.touches.length > 0) {
+    return document.elementFromPoint(e.touches[0].clientX, e.touches[0].clientY) as HTMLElement;
+  }
+  if ("clientX" in e) {
+    // Use elementFromPoint for pointer/mouse too — works correctly in DevTools mobile simulation
+    return document.elementFromPoint(e.clientX, e.clientY) as HTMLElement;
+  }
+  return e.target as HTMLElement;
+}
+
+function handleMouseMove(e: PointerEvent | MouseEvent | TouchEvent) {
   if (!designModeActive) return;
-  const target = e.target as HTMLElement;
+  const target = resolveTarget(e);
+  if (!target) return;
   if (isOurElement(target)) return;
   if (target === getActiveElement()) return;
   const info = inspectElement(target);
   showHoverHighlight(target, info.component?.name);
 }
 
-function handleClick(e: MouseEvent) {
+function handleClick(e: PointerEvent | MouseEvent | TouchEvent) {
   if (!designModeActive) return;
-  const target = e.target as HTMLElement;
+  const target = resolveTarget(e);
+  if (!target) return;
   if (isOurElement(target)) return;
   if (target.contentEditable === "true") return;
 
@@ -113,10 +126,13 @@ function enableDesignMode() {
     console.error("[PrismDesign] Init error:", err);
   }
 
-  document.addEventListener("mousemove", handleMouseMove, true);
+  document.addEventListener("pointermove", handleMouseMove as EventListener, true);
   document.addEventListener("click", handleClick, true);
-  document.addEventListener("mousedown", handleMouseDown, true);
-  document.addEventListener("mouseleave", handleMouseLeave, true);
+  document.addEventListener("pointerdown", handleMouseDown as EventListener, true);
+  document.addEventListener("pointerleave", handleMouseLeave, true);
+  // Touch fallback for mobile simulation in DevTools
+  document.addEventListener("touchmove", handleMouseMove as EventListener, true);
+  document.addEventListener("touchend", handleClick as EventListener, true);
 
   initKeyboard({
     plain: { escape: () => exitCurrentMode() },
@@ -139,10 +155,12 @@ function disableDesignMode() {
   dragModeActive = false;
   commentModeActive = false;
 
-  document.removeEventListener("mousemove", handleMouseMove, true);
+  document.removeEventListener("pointermove", handleMouseMove as EventListener, true);
   document.removeEventListener("click", handleClick, true);
-  document.removeEventListener("mousedown", handleMouseDown, true);
-  document.removeEventListener("mouseleave", handleMouseLeave, true);
+  document.removeEventListener("pointerdown", handleMouseDown as EventListener, true);
+  document.removeEventListener("pointerleave", handleMouseLeave, true);
+  document.removeEventListener("touchmove", handleMouseMove as EventListener, true);
+  document.removeEventListener("touchend", handleClick as EventListener, true);
 
   hideHoverHighlight();
   hideSelectHighlight();

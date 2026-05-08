@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ChevronRight, ChevronDown, Dot } from "lucide-react";
 import type { DOMTreeNode } from "../../shared/types.js";
 
@@ -12,9 +12,31 @@ interface Props {
   onSelect: (domPath: string) => void;
 }
 
+/** Check if selectedPath is this node or any descendant */
+function containsSelected(node: DOMTreeNode, selectedPath: string): boolean {
+  if (node.domPath === selectedPath) return true;
+  return node.children.some((c) => containsSelected(c, selectedPath));
+}
+
 export function NavigatorNode({ node, depth, filter, selectedPath, onHover, onUnhover, onSelect }: Props) {
-  const [expanded, setExpanded] = useState(depth < 3);
   const isSelected = selectedPath === node.domPath;
+  const hasSelectedDescendant = selectedPath ? containsSelected(node, selectedPath) : false;
+
+  const [expanded, setExpanded] = useState(depth < 3 || hasSelectedDescendant);
+  const rowRef = useRef<HTMLDivElement>(null);
+
+  // Auto-expand when a descendant is selected
+  useEffect(() => {
+    if (hasSelectedDescendant) setExpanded(true);
+  }, [hasSelectedDescendant]);
+
+  // Scroll selected node into view
+  useEffect(() => {
+    if (isSelected && rowRef.current) {
+      rowRef.current.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [isSelected]);
+
   const label = node.componentName || node.tagName;
   const cls = node.className?.split(" ")[0];
 
@@ -29,6 +51,7 @@ export function NavigatorNode({ node, depth, filter, selectedPath, onHover, onUn
   return (
     <div>
       <div
+        ref={rowRef}
         className={`flex items-center gap-0.5 py-[3px] pr-2 cursor-default text-[11px] rounded-sm mx-1 transition-colors
           ${isSelected ? "bg-primary/10 text-primary" : "hover:bg-muted"}`}
         style={{ paddingLeft: depth * 14 + 4 }}
