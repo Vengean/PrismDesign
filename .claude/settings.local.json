@@ -18,7 +18,8 @@
       "Bash(grep:*)",
       "Bash(npm whoami:*)",
       "Bash(npm view:*)",
-      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\('scripts',{}\\), indent=2\\)\\)\")"
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\('scripts',{}\\), indent=2\\)\\)\")",
+      "Bash(python3 make_ppt.py)"
     ]
   }
 }
