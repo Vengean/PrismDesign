@@ -1,6 +1,6 @@
 {
   "name": "prism-design-agent",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "AI agent service for PrismDesign — scans project, receives design edits, modifies source code",
   "type": "module",
   "license": "MIT",

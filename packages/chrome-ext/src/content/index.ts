@@ -222,7 +222,7 @@ const HANDLED_TYPES = new Set([
   "GET_DOM_TREE", "GET_PENDING_CHANGES", "CLEAR_CHANGES",
   "HIGHLIGHT_ELEMENT", "UNHIGHLIGHT_ELEMENT", "SELECT_ELEMENT",
   "APPLY_STYLE_PREVIEW", "CLEAR_STYLE_PREVIEW",
-  "SHOW_TOOLBAR", "HIDE_TOOLBAR", "TOOLBAR_DISABLE", "UPDATE_PENDING_COUNT", "PING",
+  "SHOW_TOOLBAR", "HIDE_TOOLBAR", "TOOLBAR_DISABLE", "UPDATE_PENDING_COUNT", "RELOAD_IF_STATIC", "PING",
 ]);
 
 chrome.runtime.onMessage.addListener((message: PrismMessage, _sender, sendResponse) => {
@@ -317,6 +317,13 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, _sender, sendRespon
       break;
     case "UPDATE_PENDING_COUNT":
       updatePendingBadge(message.payload.count);
+      sendResponse({ success: true });
+      break;
+    case "RELOAD_IF_STATIC":
+      // Static HTML pages (file://) have no dev server / HMR, so reload manually
+      if (location.protocol === "file:") {
+        location.reload();
+      }
       sendResponse({ success: true });
       break;
     case "PING": sendResponse({ active: designModeActive }); break;

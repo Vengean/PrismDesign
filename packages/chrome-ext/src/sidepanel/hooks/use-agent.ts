@@ -31,12 +31,21 @@ export function useAgent() {
     const handler = (message: PrismMessage) => {
       switch (message.type) {
         case "AGENT_STATUS":
+          // Auto-connect "connecting" broadcast
+          if (message.payload.connecting) {
+            setConnecting(true);
+            connectingRef.current = true;
+            setError(null);
+            if (message.payload.agentUrl) setAgentUrl(message.payload.agentUrl);
+            break;
+          }
           // Ignore "disconnected" broadcasts while we're actively connecting
-          // (e.g. from tab activation race)
-          if (!message.payload.connected && connectingRef.current) break;
+          // (e.g. from tab activation race) — unless it carries an error
+          if (!message.payload.connected && connectingRef.current && !message.payload.error) break;
           setConnected(message.payload.connected);
           setConnecting(false);
           connectingRef.current = false;
+          if (message.payload.error) setError(message.payload.error);
           if (message.payload.project) setProject(message.payload.project as ProjectInfo);
           break;
         case "AGENT_WORKING":

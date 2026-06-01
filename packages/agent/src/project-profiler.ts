@@ -46,8 +46,18 @@ function findAppInMonorepo(root: string): string | null {
 
 export function scanProject(root: string): ProjectProfile {
   const pkgPath = path.join(root, "package.json");
+
+  // Static HTML project — no package.json
   if (!fs.existsSync(pkgPath)) {
-    throw new Error(`未找到 package.json: ${pkgPath}`);
+    console.log("   📄 静态 HTML 项目（无 package.json）");
+    return {
+      resolvedRoot: path.resolve(root),
+      framework: "unknown",
+      language: "javascript",
+      buildTool: "unknown",
+      srcDir: ".",
+      conventions: "",
+    };
   }
 
   const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));

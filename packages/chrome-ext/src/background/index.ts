@@ -25,7 +25,7 @@ async function ensureContentScript(tabId: number) {
 
 // Re-inject content script after extension reload/update
 chrome.runtime.onInstalled.addListener(async () => {
-  const tabs = await chrome.tabs.query({ url: ["http://*/*", "https://*/*"] });
+  const tabs = await chrome.tabs.query({ url: ["http://*/*", "https://*/*", "file:///*"] });
   for (const tab of tabs) {
     if (tab.id) ensureContentScript(tab.id);
   }
@@ -92,13 +92,25 @@ async function handleSidePanelOpen() {
       // Derive default from active tab's hostname so LAN access works
       try {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        const host = tab?.url ? new URL(tab.url).hostname : "localhost";
-        url = `http://${host}:9527`;
+        const host = tab?.url ? new URL(tab.url).hostname : "";
+        url = `http://${host || "localhost"}:9527`;
       } catch {
         url = "http://localhost:9527";
       }
     }
-    await handleAgentConnect(url);
+    // Notify side panel that auto-connect is starting
+    broadcastToSidePanel({
+      type: "AGENT_STATUS",
+      payload: { connected: false, connecting: true, agentUrl: url },
+    });
+    const connectResult = await handleAgentConnect(url);
+    if (!connectResult.success) {
+      // Broadcast failure so side panel shows the error immediately
+      broadcastToSidePanel({
+        type: "AGENT_STATUS",
+        payload: { connected: false, connecting: false, error: connectResult.error },
+      });
+    }
   } else {
     // Already connected — notify side panel of current status
     broadcastToSidePanel({
@@ -254,6 +266,8 @@ async function handleAgentConnect(url: string) {
         broadcastToSidePanel({ type: "AGENT_PROGRESS", payload: { text: (data as any)?.text || "" } });
       } else if (eventType === "agent:done") {
         broadcastToSidePanel({ type: "AGENT_WORKING", payload: { working: false } });
+        // Reload static pages (file://) since they have no HMR/dev server
+        sendToActiveTab({ type: "RELOAD_IF_STATIC" } as PrismMessage);
       } else if (eventType === "agent:error") {
         broadcastToSidePanel({ type: "AGENT_ERROR", payload: { message: String(data) } });
       } else if (eventType === "connection_lost") {

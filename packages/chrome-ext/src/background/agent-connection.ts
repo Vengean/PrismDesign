@@ -24,7 +24,7 @@ export async function connectAgent(
   // Test connection with timeout
   let res: Response;
   try {
-    res = await fetch(`${url}/api/status`, { signal: AbortSignal.timeout(5000) });
+    res = await fetch(`${url}/api/status`, { signal: AbortSignal.timeout(3000) });
   } catch (err) {
     state.agentUrl = null;
     if (err instanceof DOMException && err.name === "TimeoutError") {
