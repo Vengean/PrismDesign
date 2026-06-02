@@ -2,429 +2,795 @@
 <html lang="zh">
 <head>
 <meta charset="UTF-8">
-<title>新研发工作流</title>
+<title>PrismDesign · 新研发工作流</title>
 <style>
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-:root {
-  --blue:   #4A6CF7; --green: #10B981; --amber: #F59E0B;
-  --purple: #8B5CF6; --red:   #E11D48;
-  --bg:     #0D0F1A; --card: rgba(255,255,255,.045);
-  --border: rgba(255,255,255,.09); --muted: #55566A;
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --bg:#FAFAF9;
+  --surface:#FFFFFF;
+  --surface-2:#F5F5F4;
+  --surface-3:#F0EFEC;
+  --border:#E7E5E4;
+  --border-mid:#D6D3D1;
+  --ink:#0C0A09;
+  --ink-2:#292524;
+  --ink-3:#57534E;
+  --muted:#A8A29E;
+  --blue:#2563EB;
+  --blue-soft:#EFF6FF;
+  --blue-line:#BFDBFE;
+  --green:#047857;
+  --green-soft:#ECFDF5;
+  --green-line:#A7F3D0;
+  --amber:#B45309;
+  --amber-soft:#FEF3C7;
+  --amber-line:#FCD34D;
+  --violet:#6D28D9;
+  --violet-soft:#F5F3FF;
+  --violet-line:#DDD6FE;
 }
-html, body { width:100%; height:100%; background:var(--bg);
-  font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
-  color:#E2E2EE; overflow:hidden; }
 
-/* ── Engine ── */
-.deck { width:100vw; height:100vh; position:relative; }
-.slide { position:absolute; inset:0; display:none; flex-direction:column;
-  padding:44px 64px 36px; }
-.slide.active { display:flex; }
-
-/* ── Header ── */
-.hd { flex-shrink:0; margin-bottom:24px; }
-.hd-label { font-size:11px; letter-spacing:3px; text-transform:uppercase;
-  color:var(--muted); margin-bottom:8px; }
-.hd-title { font-size:28px; font-weight:800; color:#fff; line-height:1.2; }
-.hd-title em { font-style:normal; color:var(--blue); }
-.hd-sub { font-size:13px; color:var(--muted); margin-top:5px; }
-
-/* ── Chip ── */
-.chip { display:inline-flex; align-items:center; gap:6px;
-  padding:6px 13px; border-radius:20px; font-size:12px; font-weight:600;
-  border:1px solid; white-space:nowrap; }
-.chip.blue   { color:var(--blue);   border-color:rgba(74,108,247,.35); background:rgba(74,108,247,.1); }
-.chip.green  { color:var(--green);  border-color:rgba(16,185,129,.35); background:rgba(16,185,129,.1); }
-.chip.amber  { color:var(--amber);  border-color:rgba(245,158,11,.35);  background:rgba(245,158,11,.1); }
-.chip.purple { color:var(--purple); border-color:rgba(139,92,246,.35); background:rgba(139,92,246,.1); }
-.chip.gray   { color:var(--muted);  border-color:rgba(255,255,255,.1);  background:rgba(255,255,255,.04); }
-
-/* ── Navigation ── */
-.dots { position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
-  display:flex; gap:8px; z-index:99; }
-.dot { width:6px; height:6px; border-radius:3px; background:#222;
-  cursor:pointer; transition:all .3s; }
-.dot.on { width:22px; background:var(--blue); }
-.pg { position:fixed; top:0; left:0; height:2px;
-  background:linear-gradient(90deg,var(--blue),var(--green)); transition:width .3s; }
-.cnt { position:fixed; bottom:24px; right:48px;
-  font-size:11px; color:var(--muted); }
-
-/* ══════════════════════════════════════
-   S1  Cover
-══════════════════════════════════════ */
-#s1 { justify-content:center;
-  background:radial-gradient(ellipse 55% 70% at 75% 50%,rgba(74,108,247,.1),transparent 65%); }
-.cv-kicker { font-size:11px; letter-spacing:4px; text-transform:uppercase;
-  color:var(--blue); font-weight:700; margin-bottom:20px; }
-.cv-title { font-size:56px; font-weight:900; color:#fff; line-height:1.08;
-  margin-bottom:18px; }
-.cv-title em { font-style:normal; color:var(--blue); }
-.cv-sub { font-size:16px; color:var(--muted); max-width:480px;
-  line-height:1.7; margin-bottom:36px; }
-.cv-tags { display:flex; gap:10px; flex-wrap:wrap; }
-
-/* ══════════════════════════════════════
-   S2  Workflow — pipeline diagram
-══════════════════════════════════════ */
-.pipeline { flex:1; display:flex; align-items:stretch; gap:0; min-height:0; }
-
-.ph { flex:1; display:flex; flex-direction:column; align-items:center; gap:14px; }
-.ph-hd {
-  width:100%; border-radius:10px; padding:14px 10px;
-  text-align:center; font-size:14px; font-weight:800; color:#fff;
-  letter-spacing:.3px;
+html,body{
+  width:100%;height:100%;
+  background:var(--bg);
+  color:var(--ink);
+  font-family:'Inter',-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
+  font-feature-settings:'tnum','ss01';
+  -webkit-font-smoothing:antialiased;
+  overflow:hidden;
 }
-.ph-hd.blue   { background:rgba(74,108,247,.22);  border:1px solid rgba(74,108,247,.4);  }
-.ph-hd.green  { background:rgba(16,185,129,.22);  border:1px solid rgba(16,185,129,.4);  }
-.ph-hd.amber  { background:rgba(245,158,11,.22);   border:1px solid rgba(245,158,11,.4);  }
-.ph-hd.purple { background:rgba(139,92,246,.22);  border:1px solid rgba(139,92,246,.4);  }
-.ph-num { font-size:22px; display:block; margin-bottom:4px; }
 
-.ph-chips { display:flex; flex-direction:column; gap:8px; width:100%; }
-.ph-chips .chip { justify-content:center; width:100%; font-size:12px; padding:8px 10px; }
-
-.ph-arrow { display:flex; flex-direction:column; align-items:center;
-  justify-content:flex-start; padding-top:56px; flex-shrink:0; }
-.ph-arrow span { font-size:22px; color:var(--muted); line-height:1; }
-.ph-arrow small { font-size:10px; color:var(--muted); margin-top:4px;
-  white-space:nowrap; }
-
-/* ══════════════════════════════════════
-   S3  ER diagram — hub
-══════════════════════════════════════ */
-.hub-wrap { flex:1; display:flex; align-items:center; gap:0; min-height:0; }
-
-.hub-source {
-  flex-shrink:0; width:200px;
-  display:flex; flex-direction:column; align-items:center; gap:10px;
+/* ── Background grid (very subtle) ─────────────────── */
+body::before{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);
+  background-size:48px 48px;
+  background-position:-1px -1px;
+  opacity:.35;
+  mask-image:radial-gradient(ellipse 80% 70% at 50% 50%,#000 40%,transparent 100%);
 }
-.hub-src-box {
-  width:160px; height:160px; border-radius:16px;
-  background:rgba(74,108,247,.15); border:2px solid rgba(74,108,247,.5);
-  display:flex; flex-direction:column; align-items:center; justify-content:center;
-  gap:8px;
-}
-.hub-src-box .icon { font-size:36px; }
-.hub-src-box .label { font-size:15px; font-weight:800; color:#fff; }
-.hub-src-box .sublabel { font-size:11px; color:var(--blue); }
 
-.hub-line {
-  flex-shrink:0; height:2px; width:60px;
-  background:linear-gradient(90deg,rgba(74,108,247,.6),rgba(74,108,247,.1));
-  position:relative;
-}
-.hub-line::after { content:'›'; position:absolute; right:-8px; top:-11px;
-  font-size:22px; color:rgba(74,108,247,.6); }
+/* ── Engine ─────────────────────────────────────────── */
+.deck{width:100vw;height:100vh;position:relative;z-index:1}
+.slide{position:absolute;inset:0;display:none;flex-direction:column;padding:48px 64px 64px}
+.slide.active{display:flex}
 
-.hub-outputs {
-  flex:1; display:grid; grid-template-columns:1fr 1fr 1fr;
-  grid-template-rows:1fr 1fr; gap:12px; min-height:0;
+/* ── Header ─────────────────────────────────────────── */
+.hd{flex-shrink:0;margin-bottom:32px;display:flex;justify-content:space-between;align-items:flex-end}
+.hd-tag{
+  display:inline-flex;align-items:center;gap:10px;font-size:13px;font-weight:600;letter-spacing:2.5px;
+  color:var(--blue);margin-bottom:14px;text-transform:uppercase;
 }
-.hub-out {
-  border-radius:10px; border:1px solid var(--border);
-  background:var(--card); display:flex; align-items:center; gap:10px;
-  padding:14px 16px;
-}
-.hub-out-icon { font-size:20px; flex-shrink:0; }
-.hub-out-text { font-size:12.5px; font-weight:700; color:#fff; line-height:1.4; }
-.hub-out-text small { display:block; font-size:11px; color:var(--muted);
-  font-weight:400; margin-top:2px; }
+.hd-tag::before{content:'';width:32px;height:1.5px;background:var(--blue)}
+.hd-title{font-size:44px;font-weight:700;color:var(--ink);line-height:1.12;letter-spacing:-0.025em}
+.hd-title em{font-style:normal;color:var(--blue)}
+.hd-sub{font-size:18px;color:var(--ink-3);margin-top:12px;line-height:1.55;max-width:880px;font-weight:400}
+.hd-r{font-size:13px;color:var(--muted);text-align:right;line-height:1.7;letter-spacing:1px}
+.hd-r b{display:block;color:var(--ink-2);font-weight:700;letter-spacing:1.5px;font-size:14px;margin-bottom:2px}
 
-.hub-bottom { flex-shrink:0; margin-top:20px;
-  display:flex; gap:10px; align-items:center; }
-
-/* Schema-Driven steps (below hub) */
-.sdr-flow { flex-shrink:0; margin-top:20px;
-  display:flex; align-items:center; gap:0; }
-.sdr-step {
-  display:flex; align-items:center; gap:8px;
-  padding:10px 16px; border-radius:8px;
-  background:var(--card); border:1px solid var(--border);
-  font-size:12px; font-weight:600; color:#fff; white-space:nowrap;
+/* ── Chip ───────────────────────────────────────────── */
+.chip{
+  display:inline-flex;align-items:center;gap:7px;
+  padding:8px 14px;border-radius:6px;font-size:14px;font-weight:500;
+  background:var(--surface);border:1px solid var(--border);color:var(--ink-2);
+  white-space:nowrap;line-height:1.2;
 }
-.sdr-step .sn {
-  width:20px; height:20px; border-radius:50%; background:var(--blue);
-  color:#fff; font-size:11px; font-weight:800;
-  display:flex; align-items:center; justify-content:center; flex-shrink:0;
-}
-.sdr-arr { font-size:14px; color:var(--muted); padding:0 8px; flex-shrink:0; }
+.chip.blue{color:var(--blue);background:var(--blue-soft);border-color:var(--blue-line)}
+.chip.green{color:var(--green);background:var(--green-soft);border-color:var(--green-line)}
+.chip.amber{color:var(--amber);background:var(--amber-soft);border-color:var(--amber-line)}
+.chip.violet{color:var(--violet);background:var(--violet-soft);border-color:var(--violet-line)}
+.chip.ghost{background:transparent;color:var(--ink-3);border-color:var(--border-mid)}
 
-/* ══════════════════════════════════════
-   S4  Architecture
-══════════════════════════════════════ */
-.arch { flex:1; display:flex; align-items:stretch; gap:0; min-height:0; }
+/* ── Icon ───────────────────────────────────────────── */
+.ico{width:18px;height:18px;flex-shrink:0;stroke:currentColor;stroke-width:1.6;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.ico-sm{width:14px;height:14px}
 
-.arch-block {
-  flex:1; border-radius:12px; border:1px solid var(--border);
-  background:var(--card); display:flex; flex-direction:column;
-  overflow:hidden; position:relative;
-}
-.arch-block::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; }
-.arch-block.blue::before   { background:var(--blue); }
-.arch-block.green::before  { background:var(--green); }
-.arch-block.amber::before  { background:var(--amber); }
-.arch-block.navy::before   { background:#3B4FBF; }
-.arch-block.blue  { background:rgba(74,108,247,.06); }
-.arch-block.green { background:rgba(16,185,129,.06); }
-.arch-block.amber { background:rgba(245,158,11,.06);  }
-.arch-block.navy  { background:rgba(30,40,100,.2); }
+/* ── Navigation ─────────────────────────────────────── */
+.dots{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);display:flex;gap:7px;z-index:99}
+.dot{width:28px;height:3px;background:var(--border-mid);cursor:pointer;transition:all .25s;border-radius:2px}
+.dot.on{background:var(--blue);width:42px}
+.pg{position:fixed;top:0;left:0;height:2px;background:var(--blue);transition:width .3s;z-index:99}
+.cnt{position:fixed;bottom:16px;right:32px;font-size:12px;color:var(--muted);z-index:99;letter-spacing:1.5px;font-weight:500}
+.brand{position:fixed;bottom:16px;left:32px;font-size:12px;color:var(--muted);z-index:99;letter-spacing:1.5px;font-weight:500}
+.brand b{color:var(--ink-2);font-weight:700}
 
-.arch-hd {
-  padding:16px 18px 12px; font-size:15px; font-weight:800; color:#fff;
-  border-bottom:1px solid var(--border);
+/* ═══════════════════════════════════════════════════════
+   SLIDE 1 — Cover
+═══════════════════════════════════════════════════════ */
+#s1{padding:0 72px;justify-content:center}
+.cv{display:grid;grid-template-columns:1.05fr 1fr;gap:56px;align-items:center;max-width:1440px;margin:0 auto;width:100%}
+.cv-kicker{
+  display:inline-flex;align-items:center;gap:14px;font-size:14px;letter-spacing:3.5px;
+  color:var(--blue);font-weight:600;margin-bottom:36px;text-transform:uppercase;
 }
-.arch-hd small { display:block; font-size:11px; font-weight:400;
-  color:var(--muted); margin-top:3px; }
-.arch-body { padding:16px 18px; display:flex; flex-direction:column;
-  gap:9px; flex:1; }
-.arch-tag {
-  display:flex; align-items:center; gap:8px;
-  padding:8px 12px; border-radius:8px;
-  background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.07);
-  font-size:12px; color:#C0C0D0; font-weight:500;
-}
-.arch-tag .ti { font-size:15px; }
-.arch-tag b { color:#fff; font-weight:700; }
+.cv-kicker::before{content:'';width:40px;height:1.5px;background:var(--blue)}
+.cv-title{font-size:88px;font-weight:800;color:var(--ink);line-height:1.02;letter-spacing:-0.04em;margin-bottom:32px}
+.cv-title em{font-style:normal;color:var(--blue)}
+.cv-sub{font-size:22px;color:var(--ink-2);line-height:1.6;margin-bottom:48px;max-width:640px;font-weight:400}
+.cv-tags{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:56px}
+.cv-tags .chip{font-size:15px;padding:9px 16px}
+.cv-meta{display:grid;grid-template-columns:repeat(3,auto);gap:48px;border-top:1px solid var(--border);padding-top:28px;width:fit-content}
+.cv-meta-i{font-size:13px;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase;font-weight:600}
+.cv-meta-i b{display:block;font-size:18px;color:var(--ink);font-weight:700;margin-top:8px;letter-spacing:-0.01em;text-transform:none}
+.cv-art{display:flex;justify-content:center;align-items:center}
+.cv-art svg{width:100%;max-width:580px;height:auto;display:block}
 
-.arch-conn {
-  display:flex; flex-direction:column; align-items:center; justify-content:center;
-  padding:0 10px; flex-shrink:0; gap:6px;
+/* ═══════════════════════════════════════════════════════
+   SLIDE 2 — Workflow Pipeline
+═══════════════════════════════════════════════════════ */
+.flow{flex:1;display:flex;flex-direction:column;min-height:0;gap:24px}
+.flow-stage-axis{position:relative;display:grid;grid-template-columns:repeat(5,1fr);column-gap:18px;flex-shrink:0}
+.fsa-line{position:absolute;left:0;right:0;top:26px;height:1.5px;background:var(--border-mid);z-index:0}
+.fsa-i{position:relative;display:flex;flex-direction:column;align-items:center;gap:14px;z-index:1}
+.fsa-num{
+  width:52px;height:52px;border-radius:50%;background:var(--surface);
+  border:2px solid var(--border-mid);color:var(--ink-3);
+  font-size:20px;font-weight:700;display:flex;align-items:center;justify-content:center;
+  font-variant-numeric:tabular-nums;
 }
-.arch-conn span { font-size:20px; color:var(--muted); }
-.arch-conn small { font-size:10px; color:var(--muted); text-align:center;
-  white-space:nowrap; line-height:1.4; }
+.fsa-i.blue   .fsa-num{border-color:var(--blue);color:var(--blue);background:var(--blue-soft)}
+.fsa-i.green  .fsa-num{border-color:var(--green);color:var(--green);background:var(--green-soft)}
+.fsa-i.amber  .fsa-num{border-color:var(--amber);color:var(--amber);background:var(--amber-soft)}
+.fsa-i.violet .fsa-num{border-color:var(--violet);color:var(--violet);background:var(--violet-soft)}
+.fsa-i.slate  .fsa-num{border-color:#475569;color:#475569;background:#F1F5F9}
+.fsa-name{font-size:18px;font-weight:700;color:var(--ink);letter-spacing:-0.01em;text-align:center}
+.fsa-role{font-size:12.5px;color:var(--ink-3);letter-spacing:.2px;text-align:center}
 
-.arch-foot { flex-shrink:0; margin-top:16px;
-  padding:12px 18px; border-radius:8px;
-  background:rgba(74,108,247,.07); border:1px solid rgba(74,108,247,.15);
-  font-size:12px; color:var(--muted); text-align:center; }
-.arch-foot b { color:var(--blue); }
+.flow-cards{flex:1;display:grid;grid-template-columns:repeat(5,1fr);column-gap:18px;min-height:0}
+.fc{
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  display:flex;flex-direction:column;overflow:hidden;
+}
+.fc-hd{
+  padding:16px 20px;font-size:13px;color:var(--ink-3);letter-spacing:1.2px;
+  border-bottom:1px solid var(--border);background:var(--surface-2);
+  display:flex;justify-content:space-between;align-items:center;
+}
+.fc-hd b{color:var(--ink-2);font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:1.4px}
+.fc-body{padding:16px 16px;flex:1;display:flex;flex-direction:column;justify-content:space-around;gap:6px}
+.fc-row{
+  display:flex;align-items:flex-start;gap:10px;font-size:14px;color:var(--ink-2);
+  line-height:1.35;
+}
+.fc-row .ico{margin-top:2px;color:var(--ink-3);width:18px;height:18px}
+.fc-row b{color:var(--ink);font-weight:700;font-size:15px;display:block;margin-bottom:2px}
+.fc-row small{display:block;font-size:12.5px;color:var(--muted);margin-top:2px;line-height:1.35}
+.fc-hd b{font-size:12px}
+.fc-hd span{font-size:11px}
+
+.flow-foot{
+  flex-shrink:0;padding:18px 24px;
+  background:var(--surface);border:1.5px dashed var(--border-mid);border-radius:10px;
+  display:flex;align-items:center;justify-content:space-between;gap:24px;font-size:15px;color:var(--ink-3);
+}
+.flow-foot b{color:var(--ink);font-weight:700}
+.flow-foot-l{display:flex;align-items:center;gap:14px}
+.flow-foot-l .ico{width:22px;height:22px}
+.flow-foot-r{display:flex;align-items:center;gap:10px;color:var(--blue);font-weight:600;font-size:15px}
+.flow-foot-r .ico{width:20px;height:20px}
+
+/* ── Workflow flowchart (clean node + arrow) ──────────── */
+.wf{flex:1;display:flex;align-items:stretch;min-height:0}
+.wf-node{
+  flex:1;background:var(--surface);border:1px solid var(--border);border-radius:16px;
+  border-top:4px solid var(--border-mid);
+  padding:30px 22px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;
+  justify-content:flex-start;
+}
+.wf-node.blue   {border-top-color:var(--blue)}
+.wf-node.violet {border-top-color:var(--violet)}
+.wf-node.green  {border-top-color:var(--green)}
+.wf-node.amber  {border-top-color:var(--amber)}
+.wf-node.slate  {border-top-color:#475569}
+.wf-step{font-size:12px;font-weight:700;letter-spacing:2.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.wf-ic{
+  width:60px;height:60px;border-radius:16px;display:flex;align-items:center;justify-content:center;
+  background:var(--surface-2);border:1px solid var(--border);color:var(--ink-3);margin-top:2px;
+}
+.wf-ic .ico{width:30px;height:30px}
+.wf-node.blue   .wf-ic{background:var(--blue-soft);border-color:var(--blue-line);color:var(--blue)}
+.wf-node.violet .wf-ic{background:var(--violet-soft);border-color:var(--violet-line);color:var(--violet)}
+.wf-node.green  .wf-ic{background:var(--green-soft);border-color:var(--green-line);color:var(--green)}
+.wf-node.amber  .wf-ic{background:var(--amber-soft);border-color:var(--amber-line);color:var(--amber)}
+.wf-node.slate  .wf-ic{background:#F1F5F9;border-color:#CBD5E1;color:#475569}
+.wf-title{font-size:22px;font-weight:700;color:var(--ink);letter-spacing:-0.015em;margin-top:4px}
+.wf-role{
+  font-size:12px;font-weight:700;letter-spacing:1.2px;color:var(--ink-3);text-transform:uppercase;
+  padding:4px 12px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);
+}
+.wf-desc{font-size:15px;color:var(--ink-3);line-height:1.5;margin-top:6px;max-width:230px}
+.wf-arrow{
+  flex-shrink:0;width:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+}
+.wf-arrow .ico{width:30px;height:30px;color:var(--border-mid)}
+.wf-arrow-lb{
+  font-size:12px;font-weight:600;letter-spacing:.3px;color:var(--blue);text-align:center;line-height:1.3;
+  background:var(--blue-soft);border:1px solid var(--blue-line);border-radius:6px;padding:4px 8px;
+}
+
+/* ═══════════════════════════════════════════════════════
+   SLIDE 3 — Schema Hub
+═══════════════════════════════════════════════════════ */
+.hub{flex:1;display:grid;grid-template-columns:440px 1fr;gap:32px;min-height:0}
+
+.hub-src{
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  display:flex;flex-direction:column;overflow:hidden;
+}
+.hub-src-hd{
+  padding:14px 18px;background:#1E293B;color:#F1F5F9;
+  display:flex;align-items:center;justify-content:space-between;
+  font-size:14px;font-family:'SF Mono','Menlo',monospace;letter-spacing:.5px;
+}
+.hub-src-hd .dots3{display:flex;gap:7px}
+.hub-src-hd .dots3 i{width:11px;height:11px;border-radius:50%;background:#475569;display:block}
+.hub-src-code{
+  flex:1;padding:22px 24px;background:#0F172A;color:#E2E8F0;
+  font-family:'SF Mono','Menlo','Cascadia Code',monospace;font-size:15.5px;line-height:1.85;
+  overflow:hidden;
+}
+.hub-src-code .k{color:#C4B5FD}
+.hub-src-code .s{color:#86EFAC}
+.hub-src-code .n{color:#FCA5A5}
+.hub-src-code .c{color:#64748B;font-style:italic}
+.hub-src-code .t{color:#7DD3FC}
+.hub-src-code .p{color:#94A3B8}
+
+.hub-out-wrap{display:flex;flex-direction:column;gap:18px;min-height:0}
+.hub-grid{flex:1;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:1fr 1fr;gap:14px;min-height:0}
+.hub-out{
+  background:var(--surface);border:1px solid var(--border);border-radius:10px;
+  padding:20px 22px;display:flex;flex-direction:column;gap:10px;position:relative;
+  justify-content:center;
+}
+.hub-out::before{content:'';position:absolute;left:0;top:18px;bottom:18px;width:3px;border-radius:3px;background:var(--blue)}
+.hub-out:nth-child(1)::before{background:var(--blue)}
+.hub-out:nth-child(2)::before{background:#3B82F6}
+.hub-out:nth-child(3)::before{background:#0EA5E9}
+.hub-out:nth-child(4)::before{background:var(--green)}
+.hub-out:nth-child(5)::before{background:#0D9488}
+.hub-out:nth-child(6)::before{background:#7C3AED}
+.hub-out-hd{display:flex;align-items:center;gap:10px;font-size:17px;font-weight:700;color:var(--ink);letter-spacing:-0.01em}
+.hub-out-hd .ico{color:var(--ink-2);width:20px;height:20px}
+.hub-out-tag{font-size:12px;color:var(--muted);letter-spacing:1px;margin-left:auto;font-variant-numeric:tabular-nums;font-weight:600;text-transform:uppercase}
+.hub-out-sub{font-size:14.5px;color:var(--ink-3);line-height:1.5}
+
+.hub-flow{
+  flex-shrink:0;background:var(--surface);border:1px solid var(--border);border-radius:10px;
+  padding:18px 22px;display:flex;align-items:center;gap:0;overflow-x:auto;
+}
+.hub-flow-i{display:flex;align-items:center;gap:11px;font-size:15px;color:var(--ink-2);white-space:nowrap;flex-shrink:0}
+.hub-flow-i b{font-weight:700;color:var(--ink)}
+.hub-flow-n{
+  width:26px;height:26px;border-radius:50%;background:var(--blue-soft);color:var(--blue);
+  border:1.5px solid var(--blue-line);font-size:13.5px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums;
+}
+.hub-flow-arr{margin:0 18px;color:var(--border-mid);font-size:18px;flex-shrink:0}
+
+/* ═══════════════════════════════════════════════════════
+   SLIDE 4 — Architecture
+═══════════════════════════════════════════════════════ */
+.arch{flex:1;display:grid;grid-template-columns:1fr 36px 1fr 36px 1fr 36px 1fr;gap:0;align-items:stretch;min-height:0}
+
+.arch-col{
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  display:flex;flex-direction:column;overflow:hidden;
+}
+.arch-col-hd{
+  padding:18px 20px 14px;border-bottom:1px solid var(--border);
+  position:relative;background:var(--surface-2);
+}
+.arch-col-hd::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
+.arch-col.blue   .arch-col-hd::before{background:var(--blue)}
+.arch-col.green  .arch-col-hd::before{background:var(--green)}
+.arch-col.amber  .arch-col-hd::before{background:var(--amber)}
+.arch-col.dark   .arch-col-hd::before{background:#475569}
+.arch-col-hd h4{font-size:20px;font-weight:700;color:var(--ink);letter-spacing:-0.015em}
+.arch-col-hd small{display:block;font-size:13px;color:var(--ink-3);margin-top:5px;font-weight:500;letter-spacing:.3px}
+.arch-col-body{padding:14px 14px;display:flex;flex-direction:column;gap:8px;flex:1;justify-content:space-around}
+.arch-row{
+  display:flex;align-items:flex-start;gap:12px;
+  padding:12px 14px;border-radius:8px;background:var(--bg);border:1px solid var(--border);
+  font-size:14.5px;color:var(--ink-2);line-height:1.4;
+}
+.arch-row .ico{margin-top:2px;color:var(--ink-3);width:18px;height:18px}
+.arch-row b{color:var(--ink);font-weight:700;display:block;margin-bottom:3px;font-size:15px}
+.arch-row small{font-size:13px;color:var(--muted);line-height:1.35}
+
+.arch-conn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px}
+.arch-conn-line{width:2px;height:42px;background:linear-gradient(180deg,transparent,var(--border-mid),transparent)}
+.arch-conn-arrow{position:relative;width:100%;display:flex;align-items:center;justify-content:center;color:var(--ink-2);width:20px;height:20px}
+.arch-conn-label{
+  font-size:11px;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase;
+  font-weight:700;writing-mode:vertical-rl;text-orientation:mixed;
+  transform:rotate(180deg);padding:6px 0;
+}
+
+.arch-foot{
+  flex-shrink:0;margin-top:22px;display:flex;align-items:center;justify-content:space-between;
+  padding:16px 24px;background:#0F172A;border-radius:10px;color:#CBD5E1;
+  font-family:'SF Mono','Menlo',monospace;font-size:15.5px;
+}
+.arch-foot-cmd{display:flex;align-items:center;gap:14px}
+.arch-foot-cmd .prompt{color:#7DD3FC;font-size:17px}
+.arch-foot-cmd b{color:#F1F5F9;font-weight:600}
+.arch-foot-meta{display:flex;gap:22px;font-size:13.5px;color:#94A3B8;font-family:'Inter',sans-serif;font-weight:500}
+.arch-foot-meta span{display:flex;align-items:center;gap:7px}
+.arch-foot-meta i{width:7px;height:7px;border-radius:50%;background:#10B981;display:inline-block}
+
+/* ═══════════════════════════════════════════════════════
+   SLIDE 3 — Entity Map screenshot
+═══════════════════════════════════════════════════════ */
+.ent{flex:1;display:flex;flex-direction:column;gap:18px;min-height:0}
+.ent-shot{
+  flex:1;background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  display:flex;flex-direction:column;overflow:hidden;min-height:0;
+  box-shadow:0 8px 30px rgba(12,10,9,.06);
+}
+.ent-bar{
+  flex-shrink:0;padding:11px 16px;background:#1E293B;color:#CBD5E1;
+  display:flex;align-items:center;gap:14px;
+  font-size:13px;font-family:'SF Mono','Menlo',monospace;letter-spacing:.5px;
+}
+.ent-bar .dots3{display:flex;gap:7px}
+.ent-bar .dots3 i{width:11px;height:11px;border-radius:50%;background:#475569;display:block}
+.ent-bar .url{
+  flex:1;background:#0F172A;border-radius:6px;padding:5px 12px;color:#94A3B8;
+  display:flex;align-items:center;gap:8px;
+}
+.ent-bar .url .ico{width:13px;height:13px;color:#64748B}
+.ent-bar .tag{color:#10B981;display:flex;align-items:center;gap:6px;font-weight:600}
+.ent-bar .tag i{width:7px;height:7px;border-radius:50%;background:#10B981;display:block}
+.ent-img{flex:1;min-height:0;background:#FAFAF9;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.ent-img img{width:100%;height:100%;object-fit:contain;display:block}
+.ent-legend{
+  flex-shrink:0;display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  padding:14px 22px;background:var(--surface);border:1px solid var(--border);border-radius:10px;
+  font-size:14px;color:var(--ink-3);
+}
+.ent-legend .lg{display:flex;align-items:center;gap:9px;font-weight:500}
+.ent-legend .lg b{color:var(--ink);font-weight:700}
+.ent-legend .sw{width:26px;height:16px;border-radius:4px;flex-shrink:0;border:2px solid}
+.ent-legend .sw.new{border-color:var(--blue);background:var(--blue-soft)}
+.ent-legend .sw.chg{border-color:var(--green);background:var(--green-soft)}
+.ent-legend .sw.line{border:none;background:none;position:relative;width:26px}
+.ent-legend .sw.line::after{content:'';position:absolute;left:0;right:0;top:50%;height:2px;background:var(--border-mid)}
+.ent-legend .sep{width:1px;height:20px;background:var(--border);margin:0 4px}
+.ent-legend .note{margin-left:auto;color:var(--muted);font-size:13px}
+
+/* ═══════════════════════════════════════════════════════
+   SLIDE 5 — Demo video
+═══════════════════════════════════════════════════════ */
+.vid{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;gap:0}
+.vid-frame{
+  background:#0F172A;border:1px solid var(--border);border-radius:14px;overflow:hidden;
+  box-shadow:0 18px 50px rgba(12,10,9,.18);
+  display:flex;flex-direction:column;max-height:100%;max-width:100%;
+}
+.vid-bar{
+  flex-shrink:0;padding:11px 16px;background:#1E293B;color:#CBD5E1;
+  display:flex;align-items:center;gap:14px;
+  font-size:13px;font-family:'SF Mono','Menlo',monospace;letter-spacing:.5px;
+}
+.vid-bar .dots3{display:flex;gap:7px}
+.vid-bar .dots3 i{width:11px;height:11px;border-radius:50%;background:#475569;display:block}
+.vid-bar .tag{margin-left:auto;color:#10B981;display:flex;align-items:center;gap:6px;font-weight:600}
+.vid-bar .tag i{width:7px;height:7px;border-radius:50%;background:#10B981;display:block}
+.vid-frame video{display:block;max-height:calc(100vh - 230px);max-width:100%;background:#000}
 </style>
 </head>
 <body>
 
+<!-- ═════ Icon Sprite ═════ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-db" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <ellipse cx="12" cy="5" rx="8" ry="2.5"/><path d="M4 5v14c0 1.4 3.6 2.5 8 2.5s8-1.1 8-2.5V5"/><path d="M4 12c0 1.4 3.6 2.5 8 2.5s8-1.1 8-2.5"/>
+    </symbol>
+    <symbol id="i-code" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+    </symbol>
+    <symbol id="i-type" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 6h14M12 6v14"/>
+    </symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z"/>
+    </symbol>
+    <symbol id="i-form" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h6M7 13h10M7 17h4"/>
+    </symbol>
+    <symbol id="i-list" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>
+    </symbol>
+    <symbol id="i-test" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9 2v6L4 18a3 3 0 0 0 3 4h10a3 3 0 0 0 3-4l-5-10V2"/><path d="M8 2h8"/>
+    </symbol>
+    <symbol id="i-pen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/>
+    </symbol>
+    <symbol id="i-palette" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="13.5" cy="6.5" r="1"/><circle cx="17.5" cy="10.5" r="1"/><circle cx="8.5" cy="7.5" r="1"/><circle cx="6.5" cy="12.5" r="1"/>
+      <path d="M12 2a10 10 0 0 0 0 20c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1-.23-.27-.39-.62-.39-1 0-.83.67-1.5 1.5-1.5H16a5 5 0 0 0 5-5c0-4.97-4.5-9-10-9z"/>
+    </symbol>
+    <symbol id="i-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+    </symbol>
+    <symbol id="i-target" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>
+    </symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+    </symbol>
+    <symbol id="i-cursor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 3l7.07 17 2.51-7.39L20 10z"/>
+    </symbol>
+    <symbol id="i-toolbar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="2" y="8" width="20" height="8" rx="2"/><path d="M7 12h.01M11 12h.01M15 12h.01"/>
+    </symbol>
+    <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>
+    </symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="m18.5 2.5 3 3L12 15l-4 1 1-4z"/>
+    </symbol>
+    <symbol id="i-plug" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9 2v6M15 2v6M6 8h12v3a6 6 0 0 1-6 6 6 6 0 0 1-6-6V8zM12 17v5"/>
+    </symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>
+    </symbol>
+    <symbol id="i-schema" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+      <path d="M10 6.5h4M6.5 10v4M14 17.5h-4"/>
+    </symbol>
+    <symbol id="i-component" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="m2 17 10 5 10-5M2 12l10 5 10-5"/>
+    </symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+    </symbol>
+    <symbol id="i-git" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="9" r="2"/><path d="M6 8v8M18 11v1a5 5 0 0 1-5 5h-1"/>
+    </symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+    </symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 12h14M13 6l6 6-6 6"/>
+    </symbol>
+    <symbol id="i-arrow-bi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M7 7l-4 5 4 5M3 12h18M17 7l4 5-4 5"/>
+    </symbol>
+    <symbol id="i-loop" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+    </symbol>
+  </defs>
+</svg>
+
 <div class="pg" id="pg"></div>
 <div class="dots" id="dots"></div>
+<div class="brand"><b>PRISM</b>DESIGN</div>
 <div class="cnt" id="cnt"></div>
 
 <div class="deck">
 
 <!-- ════════════════════════════════════
-     SLIDE 1  Cover
+     SLIDE 1 · Cover
 ════════════════════════════════════ -->
 <section class="slide active" id="s1">
-  <div class="cv-kicker">PrismDesign  ·  新研发工作流</div>
-  <h1 class="cv-title">以<em>代码</em>为中心<br>的协作范式</h1>
-  <p class="cv-sub">Schema 驱动全栈生成，棱镜让每个角色<br>直接作用于同一份源码。</p>
-  <div class="cv-tags">
-    <span class="chip blue">Schema-Driven</span>
-    <span class="chip green">ER 图 × AI Coding</span>
-    <span class="chip amber">棱镜可视化协作</span>
-    <span class="chip purple">Harness Engineering</span>
+  <div class="cv">
+    <div class="cv-l">
+      <div class="cv-kicker">PrismDesign · 新研发工作流</div>
+      <h1 class="cv-title">以<em>代码</em>为中心<br>的协作范式</h1>
+      <p class="cv-sub">让产品、设计、开发、AI 直接作用于同一份源码 —— Schema 驱动全栈生成，棱镜让一切修改都成为可追溯的代码变更。</p>
+      <div class="cv-tags">
+        <span class="chip blue">Schema-Driven</span>
+        <span class="chip green">ER · AI Coding</span>
+        <span class="chip amber">棱镜协作</span>
+        <span class="chip violet">Harness Engineering</span>
+      </div>
+      <div class="cv-meta">
+        <div class="cv-meta-i">Format<b>Keynote · 5 张</b></div>
+        <div class="cv-meta-i">Audience<b>研发团队</b></div>
+        <div class="cv-meta-i">Version<b>v2.0 / 2026</b></div>
+      </div>
+    </div>
+
+    <div class="cv-art">
+      <!-- Prism splitting white light into the four-track spectrum -->
+      <svg viewBox="0 0 480 360" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="lg-blue"   x1="0" x2="1"><stop offset="0" stop-color="#2563EB" stop-opacity="0"/><stop offset="1" stop-color="#2563EB"/></linearGradient>
+          <linearGradient id="lg-green"  x1="0" x2="1"><stop offset="0" stop-color="#047857" stop-opacity="0"/><stop offset="1" stop-color="#047857"/></linearGradient>
+          <linearGradient id="lg-amber"  x1="0" x2="1"><stop offset="0" stop-color="#B45309" stop-opacity="0"/><stop offset="1" stop-color="#B45309"/></linearGradient>
+          <linearGradient id="lg-violet" x1="0" x2="1"><stop offset="0" stop-color="#6D28D9" stop-opacity="0"/><stop offset="1" stop-color="#6D28D9"/></linearGradient>
+          <linearGradient id="lg-white"  x1="0" x2="1"><stop offset="0" stop-color="#0C0A09" stop-opacity="0"/><stop offset="1" stop-color="#0C0A09"/></linearGradient>
+        </defs>
+
+        <!-- Frame -->
+        <rect x="0.5" y="0.5" width="479" height="359" fill="none" stroke="#E7E5E4"/>
+
+        <!-- Coord ticks -->
+        <g stroke="#E7E5E4" stroke-width="1">
+          <line x1="20"  y1="180" x2="26"  y2="180"/>
+          <line x1="454" y1="180" x2="460" y2="180"/>
+        </g>
+
+        <!-- Incoming white-light beam -->
+        <line x1="30" y1="180" x2="195" y2="180" stroke="url(#lg-white)" stroke-width="2.5"/>
+        <text x="34" y="168" fill="#A8A29E" font-size="13" font-weight="600" font-family="Inter, sans-serif" letter-spacing="2.5">SOURCE</text>
+        <text x="34" y="202" fill="#0C0A09" font-size="15" font-weight="600" font-family="Inter, sans-serif">schema.ts</text>
+
+        <!-- Prism triangle -->
+        <polygon points="225,110 275,250 175,250" fill="#FAFAF9" stroke="#0C0A09" stroke-width="2"/>
+        <text x="225" y="284" text-anchor="middle" fill="#0C0A09" font-size="14" font-weight="700" letter-spacing="2" font-family="Inter, sans-serif">PRISM</text>
+
+        <!-- Refracted rays -->
+        <line x1="240" y1="195" x2="450" y2="80"  stroke="url(#lg-blue)"   stroke-width="2.5"/>
+        <line x1="245" y1="210" x2="450" y2="140" stroke="url(#lg-green)"  stroke-width="2.5"/>
+        <line x1="250" y1="225" x2="450" y2="220" stroke="url(#lg-amber)"  stroke-width="2.5"/>
+        <line x1="255" y1="240" x2="450" y2="300" stroke="url(#lg-violet)" stroke-width="2.5"/>
+
+        <!-- Ray endpoints -->
+        <g font-family="Inter, sans-serif" font-size="15">
+          <circle cx="450" cy="80"  r="4" fill="#2563EB"/><text x="438" y="77" text-anchor="end" fill="#2563EB" font-weight="700">产品需求</text><text x="438" y="93" text-anchor="end" fill="#A8A29E" font-size="12">PM annotates</text>
+          <circle cx="450" cy="140" r="4" fill="#047857"/><text x="438" y="137" text-anchor="end" fill="#047857" font-weight="700">设计样式</text><text x="438" y="153" text-anchor="end" fill="#A8A29E" font-size="12">Designer tunes</text>
+          <circle cx="450" cy="220" r="4" fill="#B45309"/><text x="438" y="217" text-anchor="end" fill="#B45309" font-weight="700">业务逻辑</text><text x="438" y="233" text-anchor="end" fill="#A8A29E" font-size="12">Dev codes</text>
+          <circle cx="450" cy="300" r="4" fill="#6D28D9"/><text x="438" y="297" text-anchor="end" fill="#6D28D9" font-weight="700">AI Agent</text><text x="438" y="313" text-anchor="end" fill="#A8A29E" font-size="12">Generates / fixes</text>
+        </g>
+
+        <!-- Grid corners -->
+        <g fill="#A8A29E" font-family="Inter, sans-serif" font-size="11" font-weight="600" letter-spacing="2.5">
+          <text x="20"  y="22">01 / 05</text>
+          <text x="460" y="22"  text-anchor="end">COVER</text>
+          <text x="20"  y="345">FIG · 棱镜分光示意</text>
+          <text x="460" y="345" text-anchor="end">PRISMDESIGN</text>
+        </g>
+      </svg>
+    </div>
   </div>
 </section>
 
 <!-- ════════════════════════════════════
-     SLIDE 2  完整研发工作流
+     SLIDE 2 · Pipeline
 ════════════════════════════════════ -->
 <section class="slide" id="s2">
   <div class="hd">
-    <div class="hd-label">新研发工作流</div>
-    <div class="hd-title">完整项目研发周期</div>
-    <div class="hd-sub">所有角色围绕同一份代码协作，消除多次反复对齐</div>
+    <div>
+      <div class="hd-tag">Demo-First 工作流</div>
+      <div class="hd-title">从需求到上线的<em>五个阶段</em></div>
+      <div class="hd-sub">业务先用 AI 把需求做成可跑的 demo，schema 与实体图自动同步 —— demo 即上线代码，唯一的接缝是「mock 数据 → 真实数据」。</div>
+    </div>
+    <div class="hd-r"><b>02 / 05</b>WORKFLOW</div>
   </div>
 
-  <div class="pipeline">
+  <div class="flow">
+    <div class="wf">
+      <div class="wf-node blue">
+        <div class="wf-step">STEP 01</div>
+        <div class="wf-ic"><svg class="ico"><use href="#i-chat"/></svg></div>
+        <div class="wf-title">业务出 demo</div>
+        <div class="wf-role">业务 + AI</div>
+        <div class="wf-desc">描述需求，AI 读真实源码直接实现，mock 数据驱动可跑</div>
+      </div>
 
-    <div class="ph">
-      <div class="ph-hd blue"><span class="ph-num">①</span>Schema 设计</div>
-      <div class="ph-chips">
-        <span class="chip blue">ER 图</span>
-        <span class="chip blue">schema.ts</span>
-        <span class="chip blue">CLAUDE.md</span>
-        <span class="chip blue">Drizzle ORM</span>
+      <div class="wf-arrow">
+        <div class="wf-arrow-lb">可跑 demo</div>
+        <svg class="ico"><use href="#i-arrow"/></svg>
+      </div>
+
+      <div class="wf-node violet">
+        <div class="wf-step">STEP 02</div>
+        <div class="wf-ic"><svg class="ico"><use href="#i-schema"/></svg></div>
+        <div class="wf-title">Schema 同步</div>
+        <div class="wf-role">Harness Hook</div>
+        <div class="wf-desc">新实体写入 schema.ts，实体图自动更新并高亮变更</div>
+      </div>
+
+      <div class="wf-arrow">
+        <div class="wf-arrow-lb">实体图 diff</div>
+        <svg class="ico"><use href="#i-arrow"/></svg>
+      </div>
+
+      <div class="wf-node green">
+        <div class="wf-step">STEP 03</div>
+        <div class="wf-ic"><svg class="ico"><use href="#i-palette"/></svg></div>
+        <div class="wf-title">设计调优</div>
+        <div class="wf-role">设计师</div>
+        <div class="wf-desc">在可跑的 demo 上直接调视觉与交互，所见即代码</div>
+      </div>
+
+      <div class="wf-arrow">
+        <div class="wf-arrow-lb">UI 定稿</div>
+        <svg class="ico"><use href="#i-arrow"/></svg>
+      </div>
+
+      <div class="wf-node amber">
+        <div class="wf-step">STEP 04</div>
+        <div class="wf-ic"><svg class="ico"><use href="#i-user"/></svg></div>
+        <div class="wf-title">三方评审</div>
+        <div class="wf-role">PM · 研发 · 设计</div>
+        <div class="wf-desc">demo + 实体图 diff 作共同界面，通过即进开发</div>
+      </div>
+
+      <div class="wf-arrow">
+        <div class="wf-arrow-lb">评审通过</div>
+        <svg class="ico"><use href="#i-arrow"/></svg>
+      </div>
+
+      <div class="wf-node slate">
+        <div class="wf-step">STEP 05</div>
+        <div class="wf-ic"><svg class="ico"><use href="#i-bolt"/></svg></div>
+        <div class="wf-title">接真实数据 · 上线</div>
+        <div class="wf-role">后台 + Harness</div>
+        <div class="wf-desc">补后端接口，mock → 真实数据，测试部署发布</div>
       </div>
     </div>
 
-    <div class="ph-arrow"><span>→</span></div>
-
-    <div class="ph">
-      <div class="ph-hd green"><span class="ph-num">②</span>AI 全栈生成</div>
-      <div class="ph-chips">
-        <span class="chip green">DB 迁移 SQL</span>
-        <span class="chip green">API endpoints</span>
-        <span class="chip green">TypeScript 类型</span>
-        <span class="chip green">前端组件</span>
+    <div class="flow-foot">
+      <div class="flow-foot-l">
+        <svg class="ico" style="color:var(--ink-2)"><use href="#i-loop"/></svg>
+        <span><b>核心倒置 ·</b>&nbsp; schema.ts 不是输入，而是 demo 的副产物；demo 一次做成、评审在 mock 态完成，全程不重写。</span>
+      </div>
+      <div class="flow-foot-r">
+        <span>Demo = 上线代码 · 接缝 = mock → 真实数据</span>
+        <svg class="ico"><use href="#i-arrow"/></svg>
       </div>
     </div>
-
-    <div class="ph-arrow"><span>→</span></div>
-
-    <div class="ph">
-      <div class="ph-hd amber"><span class="ph-num">③</span>棱镜协作</div>
-      <div class="ph-chips">
-        <span class="chip amber">PM 标注需求</span>
-        <span class="chip amber">设计师调样式</span>
-        <span class="chip amber">AI Agent 修码</span>
-        <span class="chip amber">HMR 热更新</span>
-      </div>
-    </div>
-
-    <div class="ph-arrow"><span>→</span></div>
-
-    <div class="ph">
-      <div class="ph-hd purple"><span class="ph-num">④</span>Harness &amp; 上线</div>
-      <div class="ph-chips">
-        <span class="chip purple">tsc --noEmit</span>
-        <span class="chip purple">ESLint auto-fix</span>
-        <span class="chip purple">git diff → 更新 ER 图</span>
-        <span class="chip purple">Code Review</span>
-      </div>
-    </div>
-
   </div>
 </section>
 
 <!-- ════════════════════════════════════
-     SLIDE 3  ER 图在 AI Coding 中的使用
+     SLIDE 3 · Schema Hub
 ════════════════════════════════════ -->
 <section class="slide" id="s3">
   <div class="hd">
-    <div class="hd-label">Schema-Driven</div>
-    <div class="hd-title">ER 图在 <em>AI Coding</em> 中的使用</div>
-    <div class="hd-sub">一张 schema 驱动全栈生成，是 AI 能处理的最高信噪比上下文</div>
+    <div>
+      <div class="hd-tag">Entity Map · 评审锚点</div>
+      <div class="hd-title">数据模型变更，<em>一眼可见</em></div>
+      <div class="hd-sub">AI 落地需求时同步产出 entity-map.html，新增 / 变更实体自动高亮 —— 三方评审基于同一张可 diff 的实体图，而非各自脑补。</div>
+    </div>
+    <div class="hd-r"><b>03 / 05</b>ENTITY MAP</div>
   </div>
 
-  <div class="hub-wrap">
-    <!-- Source -->
-    <div class="hub-source">
-      <div class="hub-src-box">
-        <div class="icon">📐</div>
-        <div class="label">schema.ts</div>
-        <div class="sublabel">ER 图 / CLAUDE.md</div>
+  <div class="ent">
+    <div class="ent-shot">
+      <div class="ent-bar">
+        <div class="dots3"><i></i><i></i><i></i></div>
+        <div class="url"><svg class="ico"><use href="#i-schema"/></svg>entity-map.html</div>
+        <span class="tag"><i></i>Harness Hook · 自动同步</span>
       </div>
+      <div class="ent-img"><img src="er.png" alt="entity-map 实体关系图，新增与变更实体高亮"></div>
     </div>
 
-    <div class="hub-line"></div>
-
-    <!-- Outputs -->
-    <div class="hub-outputs">
-      <div class="hub-out">
-        <div class="hub-out-icon">🗄️</div>
-        <div class="hub-out-text">DB 迁移 SQL<small>Drizzle / Prisma</small></div>
-      </div>
-      <div class="hub-out">
-        <div class="hub-out-icon">🔷</div>
-        <div class="hub-out-text">TypeScript 类型<small>前后端零转换共享</small></div>
-      </div>
-      <div class="hub-out">
-        <div class="hub-out-icon">⚡</div>
-        <div class="hub-out-text">API endpoints<small>CRUD + validation</small></div>
-      </div>
-      <div class="hub-out">
-        <div class="hub-out-icon">🧩</div>
-        <div class="hub-out-text">前端表单组件<small>字段 / 校验 / 关联</small></div>
-      </div>
-      <div class="hub-out">
-        <div class="hub-out-icon">📋</div>
-        <div class="hub-out-text">列表 / 详情页<small>展示字段自动对齐</small></div>
-      </div>
-      <div class="hub-out">
-        <div class="hub-out-icon">🧪</div>
-        <div class="hub-out-text">Mock 测试数据<small>符合约束自动生成</small></div>
-      </div>
+    <div class="ent-legend">
+      <span class="lg"><span class="sw new"></span><b>蓝框</b>本次新增实体</span>
+      <span class="sep"></span>
+      <span class="lg"><span class="sw chg"></span><b>绿框</b>字段 / 关系变更</span>
+      <span class="sep"></span>
+      <span class="lg"><span class="sw line"></span><b>连线</b>外键关联</span>
+      <span class="sep"></span>
+      <span class="lg"><svg class="ico" style="width:18px;height:18px;color:var(--ink-3)"><use href="#i-list"/></svg><b>左栏</b>全量实体索引</span>
+      <span class="note">截图来自 demo 同步生成的 entity-map.html</span>
     </div>
-  </div>
-
-  <!-- Schema-Driven workflow steps -->
-  <div class="sdr-flow">
-    <div class="sdr-step"><span class="sn">1</span>设计 ER 图</div>
-    <div class="sdr-arr">→</div>
-    <div class="sdr-step"><span class="sn">2</span>写入 CLAUDE.md</div>
-    <div class="sdr-arr">→</div>
-    <div class="sdr-step"><span class="sn">3</span>AI 生成 TS 类型</div>
-    <div class="sdr-arr">→</div>
-    <div class="sdr-step"><span class="sn">4</span>AI 生成 API + 组件</div>
-    <div class="sdr-arr">→</div>
-    <div class="sdr-step"><span class="sn">5</span>变更先改 schema</div>
-    <div class="sdr-arr">→</div>
-    <div class="sdr-step"><span class="sn">6</span>AI 同步更新各层</div>
   </div>
 </section>
 
 <!-- ════════════════════════════════════
-     SLIDE 4  棱镜实现方案
+     SLIDE 4 · Architecture
 ════════════════════════════════════ -->
 <section class="slide" id="s4">
   <div class="hd">
-    <div class="hd-label">PrismDesign</div>
-    <div class="hd-title">棱镜<em>实现方案</em></div>
-    <div class="hd-sub">Chrome 插件 + AI Agent，通过 WebSocket 协同，直接读写源代码</div>
+    <div>
+      <div class="hd-tag">实现方案</div>
+      <div class="hd-title">棱镜<em>实现方案</em></div>
+      <div class="hd-sub">Chrome 插件 + AI Agent 服务，两个组件协同工作 —— 浏览器中的操作即代码变更。</div>
+    </div>
+    <div class="hd-r"><b>04 / 05</b>ARCHITECTURE</div>
   </div>
 
   <div class="arch">
 
-    <div class="arch-block blue">
-      <div class="arch-hd">用户<small>三个角色</small></div>
-      <div class="arch-body">
-        <div class="arch-tag"><span class="ti">📌</span><div><b>产品经理</b><br>点击元素标注需求</div></div>
-        <div class="arch-tag"><span class="ti">🎨</span><div><b>设计师</b><br>可视化调整样式</div></div>
-        <div class="arch-tag"><span class="ti">💻</span><div><b>前端开发</b><br>补充业务逻辑</div></div>
+    <div class="arch-col blue">
+      <div class="arch-col-hd"><h4>用户</h4><small>三类协作角色</small></div>
+      <div class="arch-col-body">
+        <div class="arch-row"><svg class="ico"><use href="#i-target"/></svg><div><b>产品经理</b><small>标注需求 · 评论元素</small></div></div>
+        <div class="arch-row"><svg class="ico"><use href="#i-palette"/></svg><div><b>设计师</b><small>可视化调整样式</small></div></div>
+        <div class="arch-row"><svg class="ico"><use href="#i-code"/></svg><div><b>前端开发</b><small>补充业务逻辑</small></div></div>
       </div>
     </div>
 
     <div class="arch-conn">
-      <span>→</span>
-      <small>Content<br>Script</small>
+      <div class="arch-conn-line"></div>
+      <svg class="ico arch-conn-arrow"><use href="#i-arrow"/></svg>
+      <div class="arch-conn-label">浏览器操作</div>
+      <div class="arch-conn-line"></div>
     </div>
 
-    <div class="arch-block green">
-      <div class="arch-hd">Chrome 插件<small>注入运行中的页面</small></div>
-      <div class="arch-body">
-        <div class="arch-tag"><span class="ti">🔲</span><div><b>浮动工具栏</b></div></div>
-        <div class="arch-tag"><span class="ti">🖱️</span><div><b>元素选中 / 检测</b></div></div>
-        <div class="arch-tag"><span class="ti">🖊️</span><div><b>评论标注</b></div></div>
-        <div class="arch-tag"><span class="ti">💬</span><div><b>聊天 &amp; 待同步面板</b></div></div>
+    <div class="arch-col green">
+      <div class="arch-col-hd"><h4>Chrome 插件</h4><small>Content Script 注入页面</small></div>
+      <div class="arch-col-body">
+        <div class="arch-row"><svg class="ico"><use href="#i-toolbar"/></svg><div><b>浮动工具栏</b></div></div>
+        <div class="arch-row"><svg class="ico"><use href="#i-cursor"/></svg><div><b>元素选中与检测</b></div></div>
+        <div class="arch-row"><svg class="ico"><use href="#i-edit"/></svg><div><b>属性编辑面板</b></div></div>
+        <div class="arch-row"><svg class="ico"><use href="#i-pen"/></svg><div><b>评论标注</b></div></div>
+        <div class="arch-row"><svg class="ico"><use href="#i-chat"/></svg><div><b>聊天面板</b></div></div>
       </div>
     </div>
 
     <div class="arch-conn">
-      <span>⇄</span>
-      <small>WebSocket</small>
+      <div class="arch-conn-line"></div>
+      <svg class="ico arch-conn-arrow"><use href="#i-arrow-bi"/></svg>
+      <div class="arch-conn-label">WebSocket</div>
+      <div class="arch-conn-line"></div>
     </div>
 
-    <div class="arch-block amber">
-      <div class="arch-hd">AI Agent 服务<small>本地运行，读写源码</small></div>
-      <div class="arch-body">
-        <div class="arch-tag"><span class="ti">🔍</span><div><b>项目扫描</b> + 上下文构建</div></div>
-        <div class="arch-tag"><span class="ti">✏️</span><div><b>代码搜索与读写</b></div></div>
-        <div class="arch-tag"><span class="ti">🔌</span><div><b>MCP / Skill 扩展</b></div></div>
-        <div class="arch-tag"><span class="ti">♻️</span><div><b>HMR 联动 / 静态 reload</b></div></div>
+    <div class="arch-col amber">
+      <div class="arch-col-hd"><h4>AI Agent 服务</h4><small>本地读写源码</small></div>
+      <div class="arch-col-body">
+        <div class="arch-row"><svg class="ico"><use href="#i-search"/></svg><div><b>项目扫描</b></div></div>
+        <div class="arch-row"><svg class="ico"><use href="#i-schema"/></svg><div><b>上下文构建</b></div></div>
+        <div class="arch-row"><svg class="ico"><use href="#i-edit"/></svg><div><b>代码搜索与读写</b></div></div>
+        <div class="arch-row"><svg class="ico"><use href="#i-refresh"/></svg><div><b>HMR 热更新联动</b></div></div>
+        <div class="arch-row"><svg class="ico"><use href="#i-plug"/></svg><div><b>MCP / Skill 扩展</b></div></div>
       </div>
     </div>
 
     <div class="arch-conn">
-      <span>→</span>
-      <small>读写文件</small>
+      <div class="arch-conn-line"></div>
+      <svg class="ico arch-conn-arrow"><use href="#i-arrow"/></svg>
+      <div class="arch-conn-label">读写代码</div>
+      <div class="arch-conn-line"></div>
     </div>
 
-    <div class="arch-block navy">
-      <div class="arch-hd">源代码仓库<small>唯一的 Source of Truth</small></div>
-      <div class="arch-body">
-        <div class="arch-tag"><span class="ti">📐</span><div><b>schema.ts</b> / ER 图</div></div>
-        <div class="arch-tag"><span class="ti">🧩</span><div><b>组件库</b> / 设计 Token</div></div>
-        <div class="arch-tag"><span class="ti">📂</span><div><b>业务代码</b></div></div>
-        <div class="arch-tag"><span class="ti">🌿</span><div><b>Git</b> 可追溯 / 可回滚</div></div>
+    <div class="arch-col dark">
+      <div class="arch-col-hd"><h4>项目源代码</h4><small>Source of Truth</small></div>
+      <div class="arch-col-body">
+        <div class="arch-row"><svg class="ico"><use href="#i-component"/></svg><div><b>组件库</b></div></div>
+        <div class="arch-row"><svg class="ico"><use href="#i-palette"/></svg><div><b>设计规范 / Token</b></div></div>
+        <div class="arch-row"><svg class="ico"><use href="#i-folder"/></svg><div><b>业务代码</b></div></div>
+        <div class="arch-row"><svg class="ico"><use href="#i-git"/></svg><div><b>Git 版本管理</b></div></div>
       </div>
     </div>
 
   </div>
 
   <div class="arch-foot">
-    <b>npx prism-design-agent start --api-key sk-xxx</b>
-    &nbsp;·&nbsp; 支持 React / Vue / 静态 HTML &nbsp;·&nbsp;
-    修改完成后 <b>HMR 自动刷新</b>，所见即代码
+    <div class="arch-foot-cmd">
+      <svg class="ico" style="width:20px;height:20px;color:#7DD3FC"><use href="#i-plug"/></svg>
+      <b>插件通过 Content Script 注入页面，实现元素选中、高亮、属性编辑；源代码变更后 HMR 热更新自动刷新页面</b>
+    </div>
+    <div class="arch-foot-meta">
+      <span><i></i> React / Vue / 静态 HTML</span>
+      <span><i></i> HMR 自动刷新</span>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════
+     SLIDE 5 · Demo Video
+════════════════════════════════════ -->
+<section class="slide" id="s5">
+  <div class="hd">
+    <div>
+      <div class="hd-tag">Live Demo</div>
+      <div class="hd-title">插件<em>实操演示</em></div>
+      <div class="hd-sub">在运行中的页面里标注需求、调样式、改代码 —— 即改即看，所见即代码。</div>
+    </div>
+    <div class="hd-r"><b>05 / 05</b>DEMO</div>
+  </div>
+
+  <div class="vid">
+    <div class="vid-frame">
+      <div class="vid-bar">
+        <div class="dots3"><i></i><i></i><i></i></div>
+        <span>PrismDesign · 录屏演示</span>
+        <span class="tag"><i></i>所见即代码</span>
+      </div>
+      <video src="demo.mp4" controls playsinline preload="metadata"></video>
+    </div>
   </div>
 </section>
 
@@ -453,7 +819,7 @@ function go(n) {
   slides[cur].classList.add('active');
   dotsEl.children[cur].classList.add('on');
   pgEl.style.width = ((cur+1)/N*100)+'%';
-  cntEl.textContent = (cur+1)+' / '+N;
+  cntEl.textContent = String(cur+1).padStart(2,'0') + ' / ' + String(N).padStart(2,'0');
 }
 go(0);
 
