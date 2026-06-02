@@ -23,7 +23,8 @@
       "Bash(python3:*)",
       "Bash(npm publish:*)",
       "Bash(npm update:*)",
-      "Bash(npx tsup:*)"
+      "Bash(npx tsup:*)",
+      "Bash(pip3 list:*)"
     ]
   }
 }

@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>新研发工作流</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --blue:   #4A6CF7; --green: #10B981; --amber: #F59E0B;
+  --purple: #8B5CF6; --red:   #E11D48;
+  --bg:     #0D0F1A; --card: rgba(255,255,255,.045);
+  --border: rgba(255,255,255,.09); --muted: #55566A;
+}
+html, body { width:100%; height:100%; background:var(--bg);
+  font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
+  color:#E2E2EE; overflow:hidden; }
+
+/* ── Engine ── */
+.deck { width:100vw; height:100vh; position:relative; }
+.slide { position:absolute; inset:0; display:none; flex-direction:column;
+  padding:44px 64px 36px; }
+.slide.active { display:flex; }
+
+/* ── Header ── */
+.hd { flex-shrink:0; margin-bottom:24px; }
+.hd-label { font-size:11px; letter-spacing:3px; text-transform:uppercase;
+  color:var(--muted); margin-bottom:8px; }
+.hd-title { font-size:28px; font-weight:800; color:#fff; line-height:1.2; }
+.hd-title em { font-style:normal; color:var(--blue); }
+.hd-sub { font-size:13px; color:var(--muted); margin-top:5px; }
+
+/* ── Chip ── */
+.chip { display:inline-flex; align-items:center; gap:6px;
+  padding:6px 13px; border-radius:20px; font-size:12px; font-weight:600;
+  border:1px solid; white-space:nowrap; }
+.chip.blue   { color:var(--blue);   border-color:rgba(74,108,247,.35); background:rgba(74,108,247,.1); }
+.chip.green  { color:var(--green);  border-color:rgba(16,185,129,.35); background:rgba(16,185,129,.1); }
+.chip.amber  { color:var(--amber);  border-color:rgba(245,158,11,.35);  background:rgba(245,158,11,.1); }
+.chip.purple { color:var(--purple); border-color:rgba(139,92,246,.35); background:rgba(139,92,246,.1); }
+.chip.gray   { color:var(--muted);  border-color:rgba(255,255,255,.1);  background:rgba(255,255,255,.04); }
+
+/* ── Navigation ── */
+.dots { position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+  display:flex; gap:8px; z-index:99; }
+.dot { width:6px; height:6px; border-radius:3px; background:#222;
+  cursor:pointer; transition:all .3s; }
+.dot.on { width:22px; background:var(--blue); }
+.pg { position:fixed; top:0; left:0; height:2px;
+  background:linear-gradient(90deg,var(--blue),var(--green)); transition:width .3s; }
+.cnt { position:fixed; bottom:24px; right:48px;
+  font-size:11px; color:var(--muted); }
+
+/* ══════════════════════════════════════
+   S1  Cover
+══════════════════════════════════════ */
+#s1 { justify-content:center;
+  background:radial-gradient(ellipse 55% 70% at 75% 50%,rgba(74,108,247,.1),transparent 65%); }
+.cv-kicker { font-size:11px; letter-spacing:4px; text-transform:uppercase;
+  color:var(--blue); font-weight:700; margin-bottom:20px; }
+.cv-title { font-size:56px; font-weight:900; color:#fff; line-height:1.08;
+  margin-bottom:18px; }
+.cv-title em { font-style:normal; color:var(--blue); }
+.cv-sub { font-size:16px; color:var(--muted); max-width:480px;
+  line-height:1.7; margin-bottom:36px; }
+.cv-tags { display:flex; gap:10px; flex-wrap:wrap; }
+
+/* ══════════════════════════════════════
+   S2  Workflow — pipeline diagram
+══════════════════════════════════════ */
+.pipeline { flex:1; display:flex; align-items:stretch; gap:0; min-height:0; }
+
+.ph { flex:1; display:flex; flex-direction:column; align-items:center; gap:14px; }
+.ph-hd {
+  width:100%; border-radius:10px; padding:14px 10px;
+  text-align:center; font-size:14px; font-weight:800; color:#fff;
+  letter-spacing:.3px;
+}
+.ph-hd.blue   { background:rgba(74,108,247,.22);  border:1px solid rgba(74,108,247,.4);  }
+.ph-hd.green  { background:rgba(16,185,129,.22);  border:1px solid rgba(16,185,129,.4);  }
+.ph-hd.amber  { background:rgba(245,158,11,.22);   border:1px solid rgba(245,158,11,.4);  }
+.ph-hd.purple { background:rgba(139,92,246,.22);  border:1px solid rgba(139,92,246,.4);  }
+.ph-num { font-size:22px; display:block; margin-bottom:4px; }
+
+.ph-chips { display:flex; flex-direction:column; gap:8px; width:100%; }
+.ph-chips .chip { justify-content:center; width:100%; font-size:12px; padding:8px 10px; }
+
+.ph-arrow { display:flex; flex-direction:column; align-items:center;
+  justify-content:flex-start; padding-top:56px; flex-shrink:0; }
+.ph-arrow span { font-size:22px; color:var(--muted); line-height:1; }
+.ph-arrow small { font-size:10px; color:var(--muted); margin-top:4px;
+  white-space:nowrap; }
+
+/* ══════════════════════════════════════
+   S3  ER diagram — hub
+══════════════════════════════════════ */
+.hub-wrap { flex:1; display:flex; align-items:center; gap:0; min-height:0; }
+
+.hub-source {
+  flex-shrink:0; width:200px;
+  display:flex; flex-direction:column; align-items:center; gap:10px;
+}
+.hub-src-box {
+  width:160px; height:160px; border-radius:16px;
+  background:rgba(74,108,247,.15); border:2px solid rgba(74,108,247,.5);
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:8px;
+}
+.hub-src-box .icon { font-size:36px; }
+.hub-src-box .label { font-size:15px; font-weight:800; color:#fff; }
+.hub-src-box .sublabel { font-size:11px; color:var(--blue); }
+
+.hub-line {
+  flex-shrink:0; height:2px; width:60px;
+  background:linear-gradient(90deg,rgba(74,108,247,.6),rgba(74,108,247,.1));
+  position:relative;
+}
+.hub-line::after { content:'›'; position:absolute; right:-8px; top:-11px;
+  font-size:22px; color:rgba(74,108,247,.6); }
+
+.hub-outputs {
+  flex:1; display:grid; grid-template-columns:1fr 1fr 1fr;
+  grid-template-rows:1fr 1fr; gap:12px; min-height:0;
+}
+.hub-out {
+  border-radius:10px; border:1px solid var(--border);
+  background:var(--card); display:flex; align-items:center; gap:10px;
+  padding:14px 16px;
+}
+.hub-out-icon { font-size:20px; flex-shrink:0; }
+.hub-out-text { font-size:12.5px; font-weight:700; color:#fff; line-height:1.4; }
+.hub-out-text small { display:block; font-size:11px; color:var(--muted);
+  font-weight:400; margin-top:2px; }
+
+.hub-bottom { flex-shrink:0; margin-top:20px;
+  display:flex; gap:10px; align-items:center; }
+
+/* Schema-Driven steps (below hub) */
+.sdr-flow { flex-shrink:0; margin-top:20px;
+  display:flex; align-items:center; gap:0; }
+.sdr-step {
+  display:flex; align-items:center; gap:8px;
+  padding:10px 16px; border-radius:8px;
+  background:var(--card); border:1px solid var(--border);
+  font-size:12px; font-weight:600; color:#fff; white-space:nowrap;
+}
+.sdr-step .sn {
+  width:20px; height:20px; border-radius:50%; background:var(--blue);
+  color:#fff; font-size:11px; font-weight:800;
+  display:flex; align-items:center; justify-content:center; flex-shrink:0;
+}
+.sdr-arr { font-size:14px; color:var(--muted); padding:0 8px; flex-shrink:0; }
+
+/* ══════════════════════════════════════
+   S4  Architecture
+══════════════════════════════════════ */
+.arch { flex:1; display:flex; align-items:stretch; gap:0; min-height:0; }
+
+.arch-block {
+  flex:1; border-radius:12px; border:1px solid var(--border);
+  background:var(--card); display:flex; flex-direction:column;
+  overflow:hidden; position:relative;
+}
+.arch-block::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; }
+.arch-block.blue::before   { background:var(--blue); }
+.arch-block.green::before  { background:var(--green); }
+.arch-block.amber::before  { background:var(--amber); }
+.arch-block.navy::before   { background:#3B4FBF; }
+.arch-block.blue  { background:rgba(74,108,247,.06); }
+.arch-block.green { background:rgba(16,185,129,.06); }
+.arch-block.amber { background:rgba(245,158,11,.06);  }
+.arch-block.navy  { background:rgba(30,40,100,.2); }
+
+.arch-hd {
+  padding:16px 18px 12px; font-size:15px; font-weight:800; color:#fff;
+  border-bottom:1px solid var(--border);
+}
+.arch-hd small { display:block; font-size:11px; font-weight:400;
+  color:var(--muted); margin-top:3px; }
+.arch-body { padding:16px 18px; display:flex; flex-direction:column;
+  gap:9px; flex:1; }
+.arch-tag {
+  display:flex; align-items:center; gap:8px;
+  padding:8px 12px; border-radius:8px;
+  background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.07);
+  font-size:12px; color:#C0C0D0; font-weight:500;
+}
+.arch-tag .ti { font-size:15px; }
+.arch-tag b { color:#fff; font-weight:700; }
+
+.arch-conn {
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  padding:0 10px; flex-shrink:0; gap:6px;
+}
+.arch-conn span { font-size:20px; color:var(--muted); }
+.arch-conn small { font-size:10px; color:var(--muted); text-align:center;
+  white-space:nowrap; line-height:1.4; }
+
+.arch-foot { flex-shrink:0; margin-top:16px;
+  padding:12px 18px; border-radius:8px;
+  background:rgba(74,108,247,.07); border:1px solid rgba(74,108,247,.15);
+  font-size:12px; color:var(--muted); text-align:center; }
+.arch-foot b { color:var(--blue); }
+</style>
+</head>
+<body>
+
+<div class="pg" id="pg"></div>
+<div class="dots" id="dots"></div>
+<div class="cnt" id="cnt"></div>
+
+<div class="deck">
+
+<!-- ════════════════════════════════════
+     SLIDE 1  Cover
+════════════════════════════════════ -->
+<section class="slide active" id="s1">
+  <div class="cv-kicker">PrismDesign  ·  新研发工作流</div>
+  <h1 class="cv-title">以<em>代码</em>为中心<br>的协作范式</h1>
+  <p class="cv-sub">Schema 驱动全栈生成，棱镜让每个角色<br>直接作用于同一份源码。</p>
+  <div class="cv-tags">
+    <span class="chip blue">Schema-Driven</span>
+    <span class="chip green">ER 图 × AI Coding</span>
+    <span class="chip amber">棱镜可视化协作</span>
+    <span class="chip purple">Harness Engineering</span>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════
+     SLIDE 2  完整研发工作流
+════════════════════════════════════ -->
+<section class="slide" id="s2">
+  <div class="hd">
+    <div class="hd-label">新研发工作流</div>
+    <div class="hd-title">完整项目研发周期</div>
+    <div class="hd-sub">所有角色围绕同一份代码协作，消除多次反复对齐</div>
+  </div>
+
+  <div class="pipeline">
+
+    <div class="ph">
+      <div class="ph-hd blue"><span class="ph-num">①</span>Schema 设计</div>
+      <div class="ph-chips">
+        <span class="chip blue">ER 图</span>
+        <span class="chip blue">schema.ts</span>
+        <span class="chip blue">CLAUDE.md</span>
+        <span class="chip blue">Drizzle ORM</span>
+      </div>
+    </div>
+
+    <div class="ph-arrow"><span>→</span></div>
+
+    <div class="ph">
+      <div class="ph-hd green"><span class="ph-num">②</span>AI 全栈生成</div>
+      <div class="ph-chips">
+        <span class="chip green">DB 迁移 SQL</span>
+        <span class="chip green">API endpoints</span>
+        <span class="chip green">TypeScript 类型</span>
+        <span class="chip green">前端组件</span>
+      </div>
+    </div>
+
+    <div class="ph-arrow"><span>→</span></div>
+
+    <div class="ph">
+      <div class="ph-hd amber"><span class="ph-num">③</span>棱镜协作</div>
+      <div class="ph-chips">
+        <span class="chip amber">PM 标注需求</span>
+        <span class="chip amber">设计师调样式</span>
+        <span class="chip amber">AI Agent 修码</span>
+        <span class="chip amber">HMR 热更新</span>
+      </div>
+    </div>
+
+    <div class="ph-arrow"><span>→</span></div>
+
+    <div class="ph">
+      <div class="ph-hd purple"><span class="ph-num">④</span>Harness &amp; 上线</div>
+      <div class="ph-chips">
+        <span class="chip purple">tsc --noEmit</span>
+        <span class="chip purple">ESLint auto-fix</span>
+        <span class="chip purple">git diff → 更新 ER 图</span>
+        <span class="chip purple">Code Review</span>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ════════════════════════════════════
+     SLIDE 3  ER 图在 AI Coding 中的使用
+════════════════════════════════════ -->
+<section class="slide" id="s3">
+  <div class="hd">
+    <div class="hd-label">Schema-Driven</div>
+    <div class="hd-title">ER 图在 <em>AI Coding</em> 中的使用</div>
+    <div class="hd-sub">一张 schema 驱动全栈生成，是 AI 能处理的最高信噪比上下文</div>
+  </div>
+
+  <div class="hub-wrap">
+    <!-- Source -->
+    <div class="hub-source">
+      <div class="hub-src-box">
+        <div class="icon">📐</div>
+        <div class="label">schema.ts</div>
+        <div class="sublabel">ER 图 / CLAUDE.md</div>
+      </div>
+    </div>
+
+    <div class="hub-line"></div>
+
+    <!-- Outputs -->
+    <div class="hub-outputs">
+      <div class="hub-out">
+        <div class="hub-out-icon">🗄️</div>
+        <div class="hub-out-text">DB 迁移 SQL<small>Drizzle / Prisma</small></div>
+      </div>
+      <div class="hub-out">
+        <div class="hub-out-icon">🔷</div>
+        <div class="hub-out-text">TypeScript 类型<small>前后端零转换共享</small></div>
+      </div>
+      <div class="hub-out">
+        <div class="hub-out-icon">⚡</div>
+        <div class="hub-out-text">API endpoints<small>CRUD + validation</small></div>
+      </div>
+      <div class="hub-out">
+        <div class="hub-out-icon">🧩</div>
+        <div class="hub-out-text">前端表单组件<small>字段 / 校验 / 关联</small></div>
+      </div>
+      <div class="hub-out">
+        <div class="hub-out-icon">📋</div>
+        <div class="hub-out-text">列表 / 详情页<small>展示字段自动对齐</small></div>
+      </div>
+      <div class="hub-out">
+        <div class="hub-out-icon">🧪</div>
+        <div class="hub-out-text">Mock 测试数据<small>符合约束自动生成</small></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Schema-Driven workflow steps -->
+  <div class="sdr-flow">
+    <div class="sdr-step"><span class="sn">1</span>设计 ER 图</div>
+    <div class="sdr-arr">→</div>
+    <div class="sdr-step"><span class="sn">2</span>写入 CLAUDE.md</div>
+    <div class="sdr-arr">→</div>
+    <div class="sdr-step"><span class="sn">3</span>AI 生成 TS 类型</div>
+    <div class="sdr-arr">→</div>
+    <div class="sdr-step"><span class="sn">4</span>AI 生成 API + 组件</div>
+    <div class="sdr-arr">→</div>
+    <div class="sdr-step"><span class="sn">5</span>变更先改 schema</div>
+    <div class="sdr-arr">→</div>
+    <div class="sdr-step"><span class="sn">6</span>AI 同步更新各层</div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════
+     SLIDE 4  棱镜实现方案
+════════════════════════════════════ -->
+<section class="slide" id="s4">
+  <div class="hd">
+    <div class="hd-label">PrismDesign</div>
+    <div class="hd-title">棱镜<em>实现方案</em></div>
+    <div class="hd-sub">Chrome 插件 + AI Agent，通过 WebSocket 协同，直接读写源代码</div>
+  </div>
+
+  <div class="arch">
+
+    <div class="arch-block blue">
+      <div class="arch-hd">用户<small>三个角色</small></div>
+      <div class="arch-body">
+        <div class="arch-tag"><span class="ti">📌</span><div><b>产品经理</b><br>点击元素标注需求</div></div>
+        <div class="arch-tag"><span class="ti">🎨</span><div><b>设计师</b><br>可视化调整样式</div></div>
+        <div class="arch-tag"><span class="ti">💻</span><div><b>前端开发</b><br>补充业务逻辑</div></div>
+      </div>
+    </div>
+
+    <div class="arch-conn">
+      <span>→</span>
+      <small>Content<br>Script</small>
+    </div>
+
+    <div class="arch-block green">
+      <div class="arch-hd">Chrome 插件<small>注入运行中的页面</small></div>
+      <div class="arch-body">
+        <div class="arch-tag"><span class="ti">🔲</span><div><b>浮动工具栏</b></div></div>
+        <div class="arch-tag"><span class="ti">🖱️</span><div><b>元素选中 / 检测</b></div></div>
+        <div class="arch-tag"><span class="ti">🖊️</span><div><b>评论标注</b></div></div>
+        <div class="arch-tag"><span class="ti">💬</span><div><b>聊天 &amp; 待同步面板</b></div></div>
+      </div>
+    </div>
+
+    <div class="arch-conn">
+      <span>⇄</span>
+      <small>WebSocket</small>
+    </div>
+
+    <div class="arch-block amber">
+      <div class="arch-hd">AI Agent 服务<small>本地运行，读写源码</small></div>
+      <div class="arch-body">
+        <div class="arch-tag"><span class="ti">🔍</span><div><b>项目扫描</b> + 上下文构建</div></div>
+        <div class="arch-tag"><span class="ti">✏️</span><div><b>代码搜索与读写</b></div></div>
+        <div class="arch-tag"><span class="ti">🔌</span><div><b>MCP / Skill 扩展</b></div></div>
+        <div class="arch-tag"><span class="ti">♻️</span><div><b>HMR 联动 / 静态 reload</b></div></div>
+      </div>
+    </div>
+
+    <div class="arch-conn">
+      <span>→</span>
+      <small>读写文件</small>
+    </div>
+
+    <div class="arch-block navy">
+      <div class="arch-hd">源代码仓库<small>唯一的 Source of Truth</small></div>
+      <div class="arch-body">
+        <div class="arch-tag"><span class="ti">📐</span><div><b>schema.ts</b> / ER 图</div></div>
+        <div class="arch-tag"><span class="ti">🧩</span><div><b>组件库</b> / 设计 Token</div></div>
+        <div class="arch-tag"><span class="ti">📂</span><div><b>业务代码</b></div></div>
+        <div class="arch-tag"><span class="ti">🌿</span><div><b>Git</b> 可追溯 / 可回滚</div></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="arch-foot">
+    <b>npx prism-design-agent start --api-key sk-xxx</b>
+    &nbsp;·&nbsp; 支持 React / Vue / 静态 HTML &nbsp;·&nbsp;
+    修改完成后 <b>HMR 自动刷新</b>，所见即代码
+  </div>
+</section>
+
+</div>
+
+<script>
+const slides = [...document.querySelectorAll('.slide')];
+const N = slides.length;
+let cur = 0;
+const dotsEl = document.getElementById('dots');
+const pgEl   = document.getElementById('pg');
+const cntEl  = document.getElementById('cnt');
+
+slides.forEach((_, i) => {
+  const d = document.createElement('div');
+  d.className = 'dot' + (i===0?' on':'');
+  d.onclick = () => go(i);
+  dotsEl.appendChild(d);
+});
+
+function go(n) {
+  if (n < 0 || n >= N) return;
+  slides[cur].classList.remove('active');
+  dotsEl.children[cur].classList.remove('on');
+  cur = n;
+  slides[cur].classList.add('active');
+  dotsEl.children[cur].classList.add('on');
+  pgEl.style.width = ((cur+1)/N*100)+'%';
+  cntEl.textContent = (cur+1)+' / '+N;
+}
+go(0);
+
+document.addEventListener('keydown', e => {
+  if (e.key==='ArrowRight'||e.key==='ArrowDown'||e.key===' ') go(cur+1);
+  if (e.key==='ArrowLeft' ||e.key==='ArrowUp')                go(cur-1);
+});
+let tx=0;
+document.addEventListener('touchstart', e => tx=e.touches[0].clientX);
+document.addEventListener('touchend',   e => {
+  const d = e.changedTouches[0].clientX - tx;
+  if (Math.abs(d)>50) go(d<0?cur+1:cur-1);
+});
+</script>
+</body>
+</html>
