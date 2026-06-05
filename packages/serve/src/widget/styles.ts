@@ -56,8 +56,8 @@ export const WIDGET_CSS = `
   position: fixed;
   bottom: 84px;
   right: 24px;
-  width: 380px;
-  height: 480px;
+  width: 400px;
+  height: 520px;
   background: #ffffff;
   border-radius: 12px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.06);
@@ -87,32 +87,14 @@ export const WIDGET_CSS = `
   height: 42px;
   border-bottom: 1px solid #e5e7eb;
   flex-shrink: 0;
-  gap: 2px;
+  gap: 8px;
 }
 .prism-header .title {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 700;
   color: #6366f1;
   margin-right: auto;
-}
-.prism-tab-btn {
-  padding: 6px 10px;
-  font-size: 12px;
-  font-weight: 500;
-  color: #6b7280;
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
-  font-family: inherit;
-}
-.prism-tab-btn:hover {
-  color: #374151;
-}
-.prism-tab-btn.active {
-  color: #6366f1;
-  border-bottom-color: #6366f1;
+  letter-spacing: 0.5px;
 }
 .prism-close-btn {
   width: 28px;
@@ -125,7 +107,6 @@ export const WIDGET_CSS = `
   align-items: center;
   justify-content: center;
   color: #9ca3af;
-  margin-left: 4px;
   transition: background 0.15s, color 0.15s;
 }
 .prism-close-btn:hover {
@@ -133,25 +114,7 @@ export const WIDGET_CSS = `
   color: #374151;
 }
 
-/* ── Panel Body ── */
-.prism-body {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-.prism-tab-content {
-  flex: 1;
-  min-height: 0;
-  display: none;
-  flex-direction: column;
-}
-.prism-tab-content.active {
-  display: flex;
-}
-
-/* ── Chat ── */
+/* ── Chat Messages ── */
 .chat-messages {
   flex: 1;
   overflow-y: auto;
@@ -198,8 +161,7 @@ export const WIDGET_CSS = `
   border-bottom-left-radius: 4px;
 }
 .chat-msg.ai.thinking {
-  color: #9ca3af;
-  font-style: italic;
+  color: #6b7280;
 }
 .chat-msg .ai-label {
   font-size: 10px;
@@ -208,7 +170,32 @@ export const WIDGET_CSS = `
   margin-bottom: 2px;
 }
 
-/* Chat markdown */
+/* ── Chat: progress step ── */
+.chat-msg .progress-text {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+/* ── Chat: comment tags in user message ── */
+.chat-msg .comment-tag-display {
+  display: inline-block;
+  background: #f0edff;
+  border: 1px solid #c7d2fe;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: #4f46e5;
+  margin: 2px 2px 2px 0;
+  line-height: 1.4;
+}
+.chat-msg .comment-tag-display .tag-target {
+  font-weight: 600;
+  font-family: 'SF Mono', Monaco, monospace;
+}
+
+/* ── Chat markdown ── */
 .chat-msg h1, .chat-msg h2, .chat-msg h3, .chat-msg h4 {
   font-weight: 600;
   margin: 6px 0 4px;
@@ -255,16 +242,100 @@ export const WIDGET_CSS = `
   margin: 4px 0;
 }
 
-/* Chat Input */
+/* ── Input Area ── */
 .chat-input-area {
-  padding: 8px 12px;
   border-top: 1px solid #e5e7eb;
-  display: flex;
-  gap: 8px;
-  align-items: flex-end;
   flex-shrink: 0;
 }
-.chat-input-area textarea {
+
+/* ── Comment Tags Row ── */
+.comment-tags-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 12px 0;
+  min-height: 0;
+}
+.comment-tags-row:empty {
+  display: none;
+}
+.comment-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: #ede9fe;
+  border: 1px solid #c7d2fe;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: #4f46e5;
+  cursor: default;
+  max-width: 200px;
+  position: relative;
+  transition: background 0.15s;
+}
+.comment-tag:hover {
+  background: #e0e7ff;
+}
+.comment-tag .tag-target {
+  font-weight: 600;
+  font-family: 'SF Mono', Monaco, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.comment-tag .tag-close {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(79, 70, 229, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 10px;
+  color: #6366f1;
+  line-height: 1;
+}
+.comment-tag .tag-close:hover {
+  background: rgba(79, 70, 229, 0.3);
+}
+
+/* ── Tooltip ── */
+.comment-tooltip {
+  position: fixed;
+  background: #1e1e2e;
+  color: #e2e8f0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  max-width: 260px;
+  z-index: 2147483647;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+  word-break: break-word;
+}
+.comment-tooltip .tt-target {
+  font-weight: 600;
+  color: #a5b4fc;
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 11px;
+}
+.comment-tooltip .tt-text {
+  margin-top: 4px;
+  color: #cbd5e1;
+}
+
+/* ── Input Row ── */
+.chat-input-row {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  padding: 8px 12px;
+}
+.chat-input-row textarea {
   flex: 1;
   min-height: 36px;
   max-height: 80px;
@@ -280,11 +351,34 @@ export const WIDGET_CSS = `
   color: #1a1a1a;
   background: #fff;
 }
-.chat-input-area textarea:focus {
+.chat-input-row textarea:focus {
   border-color: #6366f1;
 }
-.chat-input-area textarea::placeholder {
+.chat-input-row textarea::placeholder {
   color: #9ca3af;
+}
+.comment-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: none;
+  border: 1px solid #d1d5db;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #6b7280;
+  transition: all 0.15s;
+}
+.comment-btn:hover {
+  border-color: #6366f1;
+  color: #6366f1;
+}
+.comment-btn.active {
+  background: #6366f1;
+  border-color: #6366f1;
+  color: white;
 }
 .chat-send-btn {
   width: 36px;
@@ -307,11 +401,13 @@ export const WIDGET_CSS = `
   background: #c7c8cc;
   cursor: not-allowed;
 }
+
+/* ── Chat toolbar (clear) ── */
 .chat-toolbar {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  padding: 0 12px 4px;
+  padding: 0 12px 2px;
 }
 .chat-clear-btn {
   font-size: 11px;
@@ -328,116 +424,6 @@ export const WIDGET_CSS = `
   background: #fef2f2;
 }
 
-/* ── Comments ── */
-.comment-toolbar {
-  padding: 10px 12px;
-  border-bottom: 1px solid #e5e7eb;
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
-}
-.comment-add-btn, .comment-sync-btn {
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 500;
-  border-radius: 6px;
-  border: 1px solid #d1d5db;
-  background: white;
-  cursor: pointer;
-  font-family: inherit;
-  transition: all 0.15s;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.comment-add-btn:hover {
-  border-color: #6366f1;
-  color: #6366f1;
-}
-.comment-add-btn.active {
-  background: #6366f1;
-  color: white;
-  border-color: #6366f1;
-}
-.comment-sync-btn {
-  margin-left: auto;
-  background: #6366f1;
-  color: white;
-  border-color: #6366f1;
-}
-.comment-sync-btn:hover {
-  background: #4f46e5;
-}
-.comment-sync-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.comment-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 8px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.comment-list::-webkit-scrollbar {
-  width: 4px;
-}
-.comment-list::-webkit-scrollbar-thumb {
-  background: #d1d5db;
-  border-radius: 2px;
-}
-.comment-empty {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #9ca3af;
-  font-size: 12px;
-  text-align: center;
-  padding: 20px;
-}
-.comment-item {
-  padding: 8px 10px;
-  background: #f9fafb;
-  border-radius: 8px;
-  border: 1px solid #e5e7eb;
-}
-.comment-item-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 4px;
-}
-.comment-item-target {
-  font-size: 11px;
-  font-weight: 500;
-  color: #6366f1;
-  font-family: 'SF Mono', Monaco, monospace;
-}
-.comment-item-delete {
-  width: 22px;
-  height: 22px;
-  border-radius: 4px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #9ca3af;
-  transition: all 0.15s;
-}
-.comment-item-delete:hover {
-  background: #fef2f2;
-  color: #ef4444;
-}
-.comment-item-text {
-  font-size: 12px;
-  color: #374151;
-  line-height: 1.5;
-}
-
 /* ── Spinner ── */
 @keyframes prism-spin {
   to { transform: rotate(360deg); }
@@ -450,7 +436,6 @@ export const WIDGET_CSS = `
   border-top-color: #6366f1;
   border-radius: 50%;
   animation: prism-spin 0.6s linear infinite;
-  margin-right: 6px;
-  vertical-align: middle;
+  flex-shrink: 0;
 }
 `;

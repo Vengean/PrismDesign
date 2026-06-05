@@ -1,7 +1,5 @@
 const zh: Record<string, string> = {
-  "panel.title": "PrismDesign",
-  "tab.chat": "对话",
-  "tab.comments": "评论",
+  "panel.title": "棱镜",
   "chat.empty": "发送消息与 AI 对话，描述你想要的修改",
   "chat.placeholder": "描述你想要的修改...",
   "chat.send": "发送",
@@ -10,21 +8,14 @@ const zh: Record<string, string> = {
   "chat.error": "出错了",
   "chat.clearHistory": "清空",
   "chat.requestFailed": "请求失败，请检查 Agent 连接",
-  "comment.add": "添加评论",
-  "comment.stop": "停止标注",
+  "comment.tooltip": "添加评论",
   "comment.placeholder": "输入评论...",
   "comment.cancel": "取消",
   "comment.confirm": "确认",
-  "comment.sync": "同步到 Agent",
-  "comment.syncing": "同步中...",
-  "comment.empty": "点击「添加评论」在页面元素上标注",
-  "comment.delete": "删除",
 };
 
 const en: Record<string, string> = {
-  "panel.title": "PrismDesign",
-  "tab.chat": "Chat",
-  "tab.comments": "Comments",
+  "panel.title": "棱镜",
   "chat.empty": "Send a message to chat with AI about design changes",
   "chat.placeholder": "Describe the changes you want...",
   "chat.send": "Send",
@@ -33,15 +24,10 @@ const en: Record<string, string> = {
   "chat.error": "Error",
   "chat.clearHistory": "Clear",
   "chat.requestFailed": "Request failed, check Agent connection",
-  "comment.add": "Add Comment",
-  "comment.stop": "Stop",
+  "comment.tooltip": "Add comment",
   "comment.placeholder": "Enter comment...",
   "comment.cancel": "Cancel",
   "comment.confirm": "Confirm",
-  "comment.sync": "Sync to Agent",
-  "comment.syncing": "Syncing...",
-  "comment.empty": "Click \"Add Comment\" to annotate page elements",
-  "comment.delete": "Delete",
 };
 
 const locale = navigator.language.startsWith("zh") ? "zh" : "en";

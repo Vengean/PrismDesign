@@ -2,8 +2,7 @@ import { WIDGET_CSS } from "./styles.js";
 import { ICON_PRISM } from "./icons.js";
 import { AgentClient } from "./agent-client.js";
 import { createPanel } from "./panel.js";
-import { createChatTab } from "./chat.js";
-import { createCommentTab } from "./comment.js";
+import { createChat } from "./chat.js";
 
 declare global {
   interface Window {
@@ -14,7 +13,7 @@ declare global {
 function init() {
   const config = window.__PRISM_DESIGN__;
   if (!config) {
-    console.warn("[PrismDesign] Missing window.__PRISM_DESIGN__ config");
+    console.warn("[棱镜] Missing window.__PRISM_DESIGN__ config");
     return;
   }
 
@@ -37,43 +36,14 @@ function init() {
   const fab = document.createElement("button");
   fab.className = "prism-fab";
   fab.innerHTML = ICON_PRISM;
-
-  const badge = document.createElement("span");
-  badge.className = "badge";
-  badge.style.display = "none";
-  fab.appendChild(badge);
-
   fab.onclick = () => panel.toggle();
   shadow.appendChild(fab);
 
   // ── Panel ──
   const panel = createPanel(shadow);
 
-  // ── Chat tab ──
-  const chatTab = createChatTab(panel.getTabContainer("chat"), agentClient);
-
-  // ── Comment tab ──
-  const commentTab = createCommentTab(panel.getTabContainer("comments"), agentClient, shadow);
-
-  // ── Badge management ──
-  function updateBadge() {
-    const chatUnread = chatTab.getUnreadCount();
-    const commentCount = commentTab.getCommentCount();
-    const total = chatUnread + commentCount;
-    if (total > 0 && !panel.isVisible()) {
-      badge.textContent = String(total);
-      badge.style.display = "flex";
-    } else {
-      badge.style.display = "none";
-    }
-  }
-
-  chatTab.onUnreadChange(updateBadge);
-  commentTab.onCountChange(updateBadge);
-  panel.onVisibilityChange(updateBadge);
-
-  // Connect WebSocket for real-time updates
-  agentClient.connectWebSocket(() => {});
+  // ── Chat (the only view) ──
+  createChat(panel.getBody(), agentClient, shadow);
 }
 
 // Wait for DOM ready
