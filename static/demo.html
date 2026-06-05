@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PrismDesign Serve Demo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f8fafc;
+      color: #1e293b;
+      line-height: 1.6;
+    }
+    .header {
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: white;
+      padding: 40px 24px;
+      text-align: center;
+    }
+    .header h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+    .header p { font-size: 14px; opacity: 0.85; }
+    .container { max-width: 800px; margin: 0 auto; padding: 24px; }
+    .card {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      padding: 24px;
+      margin-bottom: 16px;
+    }
+    .card h2 { font-size: 18px; font-weight: 600; margin-bottom: 8px; color: #6366f1; }
+    .card p { font-size: 14px; color: #64748b; }
+    .btn {
+      display: inline-block;
+      padding: 10px 20px;
+      background: #6366f1;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      cursor: pointer;
+      margin-top: 12px;
+    }
+    .btn:hover { background: #4f46e5; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .stat { text-align: center; padding: 20px; }
+    .stat .number { font-size: 32px; font-weight: 700; color: #6366f1; }
+    .stat .label { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+    .footer { text-align: center; padding: 24px; color: #94a3b8; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>PrismDesign Demo</h1>
+    <p>右下角的按钮就是内嵌 Widget —— 点击展开，试试对话和评论功能</p>
+  </div>
+
+  <div class="container">
+    <div class="card">
+      <h2>欢迎体验</h2>
+      <p>这是一个用于测试 PrismDesign Serve 的静态页面。你可以点击右下角的浮动按钮，打开 Widget 面板，使用对话或评论功能。</p>
+      <button class="btn">示例按钮</button>
+    </div>
+
+    <div class="grid">
+      <div class="card stat">
+        <div class="number">5</div>
+        <div class="label">组件数量</div>
+      </div>
+      <div class="card stat">
+        <div class="number">3</div>
+        <div class="label">页面数量</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>功能说明</h2>
+      <p><strong>对话：</strong>在 Chat 面板中输入修改需求，AI 会自动修改源代码。</p>
+      <p style="margin-top: 8px;"><strong>评论：</strong>切换到 Comments 面板，点击「添加评论」后在页面元素上标注意见，然后同步给 AI。</p>
+    </div>
+  </div>
+
+  <div class="footer">PrismDesign Serve Demo &copy; 2026</div>
+</body>
+</html>
