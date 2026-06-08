@@ -1,0 +1,92 @@
+# prism-design-serve
+
+Lightweight static file server with built-in PrismDesign AI widget — comment on elements and chat with AI to modify your source code directly, no Chrome extension required.
+
+## Quick Start
+
+```bash
+npx prism-design-serve --dir ./dist --open
+```
+
+A floating button appears on the page. Click it to open the AI chat panel, describe changes or annotate elements, and the AI modifies your source files automatically.
+
+## Installation
+
+```bash
+npm install -g prism-design-serve
+```
+
+Or as a dev dependency:
+
+```bash
+npm install -D prism-design-serve
+```
+
+Add to `package.json`:
+
+```json
+{
+  "scripts": {
+    "design": "prism-design-serve --dir ./dist --open"
+  }
+}
+```
+
+## How It Works
+
+1. Serves your static HTML files with an injected AI widget
+2. Launches a `prism-design-agent` subprocess to handle AI code modifications
+3. You comment on page elements or describe changes in the chat panel
+4. The AI agent reads your source code, applies modifications, and the page reloads automatically
+
+## Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--dir <path>` | Static file directory | Current directory |
+| `--port <number>` | HTTP server port | `3000` |
+| `--agent-port <number>` | Agent service port | `9527` |
+| `--no-agent` | Serve files only, no AI agent | `false` |
+| `--api-key <key>` | Anthropic API Key (forwarded to agent) | `$ANTHROPIC_API_KEY` |
+| `--api-base-url <url>` | Custom API base URL | `$ANTHROPIC_BASE_URL` |
+| `--model <name>` | Model name (forwarded to agent) | `claude-sonnet-4-20250514` |
+| `--open` | Open browser on start | `false` |
+
+## Configuration
+
+### API Key (required)
+
+```bash
+# Environment variable
+export ANTHROPIC_API_KEY=sk-ant-xxx
+prism-design-serve --dir ./dist
+
+# CLI argument
+prism-design-serve --dir ./dist --api-key sk-ant-xxx
+
+# .env file in project root
+echo "ANTHROPIC_API_KEY=sk-ant-xxx" >> .env
+prism-design-serve --dir ./dist
+```
+
+### API Proxy
+
+```bash
+prism-design-serve --dir ./dist --api-base-url https://your-proxy.com/v1
+```
+
+## Features
+
+- **Comment Mode** — Click the comment button, select a page element, type your feedback. The AI knows exactly which element you're referring to.
+- **Chat Mode** — Describe changes in natural language. The widget collects the page's DOM structure automatically to help the AI locate the right code.
+- **Auto Reload** — After the AI modifies files, the page reloads to reflect changes. Chat history is preserved across reloads.
+- **Zero Config** — No build step or framework integration needed. Works with any static HTML.
+
+## Requirements
+
+- Node.js >= 18
+- `prism-design-agent` (installed automatically as a peer dependency, or globally)
+
+## License
+
+MIT

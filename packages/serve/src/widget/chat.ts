@@ -3,6 +3,7 @@ import { t } from "./i18n.js";
 import { renderMarkdown } from "./markdown.js";
 import type { AgentClient } from "./agent-client.js";
 import { showCommentMode, type CommentInfo } from "./comment.js";
+import { collectPageContext, serializeDomTree } from "./dom-context.js";
 
 const STORAGE_KEY = "prism-chat-history";
 
@@ -208,46 +209,46 @@ export function createChat(
     }
 
     for (const msg of messages) {
-      const el = document.createElement("div");
-      el.className = `chat-msg ${msg.role}${msg.content.startsWith("⏳") ? " thinking" : ""}`;
+      // Outer row: flex container with avatar (for AI) or right-aligned (for user)
+      const row = document.createElement("div");
+      row.className = `chat-msg-row ${msg.role}`;
 
       if (msg.role === "ai") {
-        const label = document.createElement("div");
-        label.className = "ai-label";
-        label.textContent = "AI";
-        el.appendChild(label);
+        const avatar = document.createElement("div");
+        avatar.className = "ai-avatar";
+        avatar.textContent = "AI";
+        row.appendChild(avatar);
       }
 
-      const body = document.createElement("div");
+      const bubble = document.createElement("div");
+      bubble.className = `chat-msg ${msg.role}${msg.content.startsWith("⏳") ? " thinking" : ""}`;
 
       if (msg.role === "ai" && msg.content.startsWith("⏳")) {
-        // Thinking / progress message
         const progressContent = msg.content.slice(2).trim();
-        body.innerHTML = `<div class="progress-text"><span class="prism-spinner"></span><span>${escapeHtml(progressContent)}</span></div>`;
+        bubble.innerHTML = `<div class="progress-text"><span class="prism-spinner"></span><span>${escapeHtml(progressContent)}</span></div>`;
       } else if (msg.role === "ai") {
-        body.innerHTML = renderMarkdown(msg.content);
+        bubble.innerHTML = renderMarkdown(msg.content);
       } else {
-        // User message — may contain comment tags
         if (msg.comments && msg.comments.length > 0) {
           for (const c of msg.comments) {
             const tagEl = document.createElement("span");
             tagEl.className = "comment-tag-display";
             tagEl.innerHTML =
               `<span class="tag-target">&lt;${escapeHtml(c.target)}&gt;</span> ${escapeHtml(c.text)}`;
-            body.appendChild(tagEl);
+            bubble.appendChild(tagEl);
           }
           if (msg.content) {
             const textNode = document.createElement("div");
             textNode.style.marginTop = "4px";
             textNode.textContent = msg.content;
-            body.appendChild(textNode);
+            bubble.appendChild(textNode);
           }
         } else {
-          body.textContent = msg.content;
+          bubble.textContent = msg.content;
         }
       }
-      el.appendChild(body);
-      messagesEl.appendChild(el);
+      row.appendChild(bubble);
+      messagesEl.appendChild(row);
     }
 
     messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -267,13 +268,24 @@ export function createChat(
     sending = true;
     sendBtn.disabled = true;
 
+    // Collect page DOM context for the agent
+    const pageCtx = collectPageContext();
+    const domTreeText = serializeDomTree(pageCtx.domTree);
+
     // Build the message for the agent
     let agentMessage = "";
     const savedComments = [...commentTags];
 
     if (hasComments) {
-      const lines = commentTags.map((c) => `- <${c.target}>: "${c.text}"`);
-      agentMessage = `设计师对页面元素的评审意见：\n\n${lines.join("\n")}`;
+      const lines = commentTags.map((c) => {
+        let line = `- <${c.target}>`;
+        if (c.componentName) line += ` [组件: ${c.componentName}]`;
+        if (c.textContent) line += ` (文本: "${c.textContent}")`;
+        if (c.domPath) line += `\n  DOM路径: ${c.domPath}`;
+        line += `\n  评论: "${c.text}"`;
+        return line;
+      });
+      agentMessage = `设计师对页面元素的评审意见：\n\n${lines.join("\n\n")}`;
       if (text) {
         agentMessage += `\n\n补充说明：${text}`;
       }
@@ -281,6 +293,9 @@ export function createChat(
     } else {
       agentMessage = text;
     }
+
+    // Append page context
+    agentMessage += `\n\n--- 页面上下文 ---\n页面路径: ${pageCtx.pagePath}\n页面标题: ${pageCtx.pageTitle}\nDOM 结构:\n${domTreeText}`;
 
     // Build display content for the user message
     const displayContent = text;
@@ -310,11 +325,13 @@ export function createChat(
     renderTags();
     autoResize();
 
-    // WebSocket for progress
+    // WebSocket for progress — also accumulate text for fallback result
     const thinkingIdx = messages.length - 1;
+    let lastProgressText = "";
     const ws = agentClient.connectWebSocket((type, data: any) => {
       if (type === "agent:progress") {
         const progressText = data.text || t("chat.thinking");
+        lastProgressText = progressText;
         messages[thinkingIdx] = {
           ...messages[thinkingIdx],
           content: `⏳ ${progressText}`,
@@ -323,17 +340,29 @@ export function createChat(
       }
     });
 
+    console.log("[PrismDesign] 发送给 Agent 的消息:", agentMessage);
+
+    let hasFileChanges = false;
     try {
       const result = await agentClient.chat(agentMessage, {
-        pagePath: location.pathname,
+        pagePath: pageCtx.pagePath,
         components: [],
       });
+      console.log("[PrismDesign] Agent 返回结果:", result);
+
+      hasFileChanges = (result.filesModified?.length ?? 0) > 0;
+
+      // Use result.message; if empty, fall back to last progress text
+      let responseContent = "";
+      if (result.success) {
+        responseContent = result.message || lastProgressText || t("chat.done");
+      } else {
+        responseContent = `${t("chat.error")}: ${result.message}`;
+      }
 
       messages[thinkingIdx] = {
         role: "ai",
-        content: result.success
-          ? result.message || t("chat.done")
-          : `${t("chat.error")}: ${result.message}`,
+        content: responseContent,
         timestamp: Date.now(),
       };
     } catch {
@@ -348,6 +377,11 @@ export function createChat(
       sendBtn.disabled = false;
       saveHistory();
       render();
+
+      // If agent modified files, reload page to reflect changes
+      if (hasFileChanges) {
+        setTimeout(() => location.reload(), 800);
+      }
     }
   }
 

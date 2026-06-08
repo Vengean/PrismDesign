@@ -1,6 +1,18 @@
+const CLIENT_ID_KEY = "prism-client-id";
+
+function getOrCreateClientId(): string {
+  try {
+    const saved = localStorage.getItem(CLIENT_ID_KEY);
+    if (saved) return saved;
+  } catch {}
+  const id = `serve-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  try { localStorage.setItem(CLIENT_ID_KEY, id); } catch {}
+  return id;
+}
+
 export class AgentClient {
   private ws: WebSocket | null = null;
-  private clientId = `serve-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  private clientId = getOrCreateClientId();
 
   constructor(private baseUrl: string) {}
 
@@ -14,7 +26,7 @@ export class AgentClient {
   async chat(
     message: string,
     context: { pagePath: string; components: Array<{ name: string; sourceFile?: string; sourceLine?: number }> }
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<{ success: boolean; message: string; filesModified?: string[] }> {
     const res = await fetch(`${this.baseUrl}/api/chat`, {
       method: "POST",
       headers: {

@@ -4,8 +4,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import http from "node:http";
-import { WebSocketServer, type WebSocket } from "ws";
-import { watch } from "chokidar";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -29,14 +27,13 @@ export function startServer(opts: { dir: string; port: number; agentUrl: string 
     res.send(widgetContent);
   });
 
-  // ── Livereload client script ──
-  const livereloadScript = `<script>(function(){var ws=new WebSocket("ws://"+location.host+"/__prism__/livereload");ws.onmessage=function(e){if(JSON.parse(e.data).type==="reload"){location.reload()}};ws.onclose=function(){setTimeout(function(){location.reload()},1000)}})()</script>\n`;
-
   // ── HTML injection snippet ──
+  // Use the page's hostname so LAN clients connect to the right agent address
+  const agentUrlObj = new URL(agentUrl);
+  const agentPort = agentUrlObj.port;
   const injectionSnippet =
-    `<script>window.__PRISM_DESIGN__=${JSON.stringify({ agentUrl })}</script>\n` +
-    `<script src="/__prism__/widget.js"></script>\n` +
-    livereloadScript;
+    `<script>window.__PRISM_DESIGN__={agentUrl:"http://"+location.hostname+":${agentPort}"}</script>\n` +
+    `<script src="/__prism__/widget.js"></script>\n`;
 
   // ── Helper: inject into HTML ──
   function injectHtml(html: string): string {
@@ -98,52 +95,6 @@ export function startServer(opts: { dir: string; port: number; agentUrl: string 
 
   // ── HTTP server ──
   const server = http.createServer(app);
-
-  // ── Livereload WebSocket ──
-  const wss = new WebSocketServer({ server, path: "/__prism__/livereload" });
-  const lrClients = new Set<WebSocket>();
-
-  wss.on("connection", (ws) => {
-    lrClients.add(ws);
-    ws.on("close", () => lrClients.delete(ws));
-  });
-
-  function broadcastReload() {
-    const msg = JSON.stringify({ type: "reload" });
-    for (const ws of lrClients) {
-      if (ws.readyState === ws.OPEN) {
-        ws.send(msg);
-      }
-    }
-  }
-
-  // ── Chokidar file watcher ──
-  const watcher = watch(dir, {
-    ignored: [
-      "**/node_modules/**",
-      "**/.git/**",
-      "**/dist/**",
-      "**/.DS_Store",
-    ],
-    depth: 5,
-    ignoreInitial: true,
-    usePolling: false,
-  });
-
-  let reloadTimer: ReturnType<typeof setTimeout> | null = null;
-
-  watcher.on("all", (event, filePath) => {
-    if (event === "add" || event === "change" || event === "unlink") {
-      // Debounce: batch rapid changes into one reload
-      if (reloadTimer) clearTimeout(reloadTimer);
-      reloadTimer = setTimeout(() => {
-        const rel = path.relative(dir, filePath);
-        console.log(`  🔄 ${rel} changed, reloading...`);
-        broadcastReload();
-        reloadTimer = null;
-      }, 150);
-    }
-  });
 
   server.listen(port, "0.0.0.0");
   return server;

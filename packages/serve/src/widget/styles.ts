@@ -1,5 +1,7 @@
 export const WIDGET_CSS = `
 /* ── Reset ── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -14,21 +16,28 @@ export const WIDGET_CSS = `
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: #6366f1;
+  background: #ffffff;
   color: white;
   border: none;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.06);
   z-index: 2147483647;
   transition: transform 0.2s, box-shadow 0.2s;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  padding: 0;
+  overflow: hidden;
+}
+.prism-fab img {
+  width: 28px;
+  height: 28px;
 }
 .prism-fab:hover {
   transform: scale(1.08);
-  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.08);
 }
 .prism-fab:active {
   transform: scale(0.95);
@@ -65,7 +74,8 @@ export const WIDGET_CSS = `
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
   font-size: 13px;
   color: #1a1a1a;
   animation: prism-slide-up 0.25s ease-out;
@@ -79,27 +89,33 @@ export const WIDGET_CSS = `
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* ── Panel Header ── */
+/* ── Panel Header — matches chrome-ext compact style ── */
 .prism-header {
   display: flex;
   align-items: center;
-  padding: 0 12px;
-  height: 42px;
+  padding: 6px 8px;
   border-bottom: 1px solid #e5e7eb;
   flex-shrink: 0;
-  gap: 8px;
+  gap: 6px;
+}
+.prism-header .title-icon {
+  display: flex;
+  align-items: center;
+}
+.prism-header .title-icon img {
+  width: 20px;
+  height: 20px;
 }
 .prism-header .title {
-  font-size: 14px;
-  font-weight: 700;
-  color: #6366f1;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1a1a1a;
   margin-right: auto;
-  letter-spacing: 0.5px;
 }
 .prism-close-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
   background: none;
   border: none;
   cursor: pointer;
@@ -121,7 +137,7 @@ export const WIDGET_CSS = `
   padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 .chat-messages::-webkit-scrollbar {
   width: 4px;
@@ -140,34 +156,52 @@ export const WIDGET_CSS = `
   text-align: center;
   padding: 20px;
 }
+
+/* ── Message wrapper — chrome-ext uses flex row with avatar ── */
+.chat-msg-row {
+  display: flex;
+  gap: 8px;
+}
+.chat-msg-row.user {
+  justify-content: flex-end;
+}
+.chat-msg-row.ai {
+  justify-content: flex-start;
+}
+.ai-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(99, 50, 200, 0.1);
+  color: oklch(0.45 0.2 275);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
 .chat-msg {
   max-width: 85%;
   padding: 8px 12px;
-  border-radius: 10px;
+  border-radius: 12px;
   font-size: 12px;
   line-height: 1.6;
   word-break: break-word;
 }
 .chat-msg.user {
-  align-self: flex-end;
-  background: #ede9fe;
-  color: #3730a3;
+  background: #dbeafe;
+  color: #111827;
   border-bottom-right-radius: 4px;
 }
 .chat-msg.ai {
-  align-self: flex-start;
   background: #f3f4f6;
   color: #1f2937;
   border-bottom-left-radius: 4px;
 }
 .chat-msg.ai.thinking {
   color: #6b7280;
-}
-.chat-msg .ai-label {
-  font-size: 10px;
-  font-weight: 600;
-  color: #6366f1;
-  margin-bottom: 2px;
 }
 
 /* ── Chat: progress step ── */
@@ -176,6 +210,7 @@ export const WIDGET_CSS = `
   align-items: center;
   gap: 6px;
   font-size: 12px;
+  color: #6b7280;
 }
 
 /* ── Chat: comment tags in user message ── */
@@ -192,28 +227,34 @@ export const WIDGET_CSS = `
 }
 .chat-msg .comment-tag-display .tag-target {
   font-weight: 600;
-  font-family: 'SF Mono', Monaco, monospace;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
 }
 
-/* ── Chat markdown ── */
+/* ── Chat markdown — matches chrome-ext .chat-markdown ── */
+.chat-msg p { margin: 4px 0; }
+.chat-msg > :first-child { margin-top: 0; }
+.chat-msg > :last-child { margin-bottom: 0; }
+
 .chat-msg h1, .chat-msg h2, .chat-msg h3, .chat-msg h4 {
   font-weight: 600;
-  margin: 6px 0 4px;
+  margin: 8px 0 4px;
+  line-height: 1.3;
 }
 .chat-msg h1 { font-size: 15px; }
 .chat-msg h2 { font-size: 14px; }
 .chat-msg h3 { font-size: 13px; }
+.chat-msg h4 { font-size: 12px; }
 .chat-msg code {
-  background: rgba(99, 102, 241, 0.1);
-  color: #4f46e5;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  font-size: 11px;
+  background: oklch(0.45 0.2 275 / 0.1);
+  color: oklch(0.4 0.18 275);
   padding: 1px 4px;
   border-radius: 3px;
-  font-size: 11px;
-  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
 }
 .chat-msg pre {
-  background: #1e1e2e;
-  color: #cdd6f4;
+  background: oklch(0.15 0 0);
+  color: oklch(0.85 0 0);
   padding: 8px 10px;
   border-radius: 6px;
   overflow-x: auto;
@@ -225,22 +266,34 @@ export const WIDGET_CSS = `
   background: none;
   color: inherit;
   padding: 0;
+  border-radius: 0;
   font-size: inherit;
 }
 .chat-msg ul, .chat-msg ol {
   padding-left: 18px;
   margin: 4px 0;
 }
+.chat-msg ul { list-style: disc; }
+.chat-msg ol { list-style: decimal; }
+.chat-msg li { margin: 2px 0; }
 .chat-msg a {
-  color: #6366f1;
+  color: oklch(0.45 0.2 275);
   text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .chat-msg blockquote {
-  border-left: 3px solid #6366f1;
-  padding-left: 8px;
-  color: #6b7280;
-  margin: 4px 0;
+  border-left: 3px solid oklch(0.45 0.2 275 / 0.4);
+  padding: 2px 10px;
+  color: oklch(0.45 0 0);
+  margin: 6px 0;
 }
+.chat-msg hr {
+  margin: 8px 0;
+  border: none;
+  border-top: 1px solid oklch(0.9 0 0);
+}
+.chat-msg strong { font-weight: 600; }
+.chat-msg em { font-style: italic; }
 
 /* ── Input Area ── */
 .chat-input-area {
@@ -279,7 +332,7 @@ export const WIDGET_CSS = `
 }
 .comment-tag .tag-target {
   font-weight: 600;
-  font-family: 'SF Mono', Monaco, monospace;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -320,7 +373,7 @@ export const WIDGET_CSS = `
 .comment-tooltip .tt-target {
   font-weight: 600;
   color: #a5b4fc;
-  font-family: 'SF Mono', Monaco, monospace;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
   font-size: 11px;
 }
 .comment-tooltip .tt-text {
@@ -333,26 +386,28 @@ export const WIDGET_CSS = `
   display: flex;
   gap: 6px;
   align-items: flex-end;
-  padding: 8px 12px;
+  padding: 8px 8px;
 }
 .chat-input-row textarea {
   flex: 1;
+  height: 36px;
   min-height: 36px;
   max-height: 80px;
-  padding: 8px 10px;
-  border: 1px solid #d1d5db;
+  padding: 7px 10px;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
   font-size: 12px;
   font-family: inherit;
   line-height: 1.5;
   resize: none;
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
   color: #1a1a1a;
   background: #fff;
 }
 .chat-input-row textarea:focus {
-  border-color: #6366f1;
+  border-color: oklch(0.45 0.2 275);
+  box-shadow: 0 0 0 1px oklch(0.45 0.2 275);
 }
 .chat-input-row textarea::placeholder {
   color: #9ca3af;
@@ -362,7 +417,7 @@ export const WIDGET_CSS = `
   height: 36px;
   border-radius: 8px;
   background: none;
-  border: 1px solid #d1d5db;
+  border: 1px solid #e5e7eb;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -372,19 +427,19 @@ export const WIDGET_CSS = `
   transition: all 0.15s;
 }
 .comment-btn:hover {
-  border-color: #6366f1;
-  color: #6366f1;
+  border-color: oklch(0.45 0.2 275);
+  color: oklch(0.45 0.2 275);
 }
 .comment-btn.active {
-  background: #6366f1;
-  border-color: #6366f1;
+  background: oklch(0.45 0.2 275);
+  border-color: oklch(0.45 0.2 275);
   color: white;
 }
 .chat-send-btn {
   width: 36px;
   height: 36px;
   border-radius: 8px;
-  background: #6366f1;
+  background: oklch(0.45 0.2 275);
   color: white;
   border: none;
   cursor: pointer;
@@ -395,10 +450,10 @@ export const WIDGET_CSS = `
   transition: background 0.15s;
 }
 .chat-send-btn:hover {
-  background: #4f46e5;
+  background: oklch(0.4 0.2 275);
 }
 .chat-send-btn:disabled {
-  background: #c7c8cc;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
@@ -418,6 +473,12 @@ export const WIDGET_CSS = `
   padding: 2px 6px;
   border-radius: 4px;
   font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.chat-clear-btn svg {
+  vertical-align: middle;
 }
 .chat-clear-btn:hover {
   color: #ef4444;
@@ -433,7 +494,7 @@ export const WIDGET_CSS = `
   width: 12px;
   height: 12px;
   border: 2px solid #d1d5db;
-  border-top-color: #6366f1;
+  border-top-color: oklch(0.45 0.2 275);
   border-radius: 50%;
   animation: prism-spin 0.6s linear infinite;
   flex-shrink: 0;

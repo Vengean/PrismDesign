@@ -1,8 +1,12 @@
 import { t } from "./i18n.js";
+import { getElementContext } from "./dom-context.js";
 
 export interface CommentInfo {
   target: string; // e.g. "div.header" or "button#submit"
   text: string;
+  domPath?: string;
+  textContent?: string;
+  componentName?: string | null;
 }
 
 // ── Global overlay & popup IDs ──
@@ -103,14 +107,15 @@ function removePopup() {
   if (popup) popup.remove();
 }
 
-function getElementLabel(el: Element): string {
-  const tag = el.tagName.toLowerCase();
-  if (el.id) return `${tag}#${el.id}`;
-  const cls =
-    el.className && typeof el.className === "string"
-      ? "." + el.className.trim().split(/\s+/).slice(0, 2).join(".")
-      : "";
-  return `${tag}${cls}`;
+function buildCommentInfo(el: Element, text: string): CommentInfo {
+  const ctx = getElementContext(el);
+  return {
+    target: ctx.label,
+    text,
+    domPath: ctx.domPath,
+    textContent: ctx.textContent,
+    componentName: ctx.componentName,
+  };
 }
 
 function isCommentUI(el: Element): boolean {
@@ -205,7 +210,7 @@ export function showCommentMode(
       const text = textareaEl.value.trim();
       if (text) {
         cleanup();
-        onConfirm({ target: getElementLabel(target), text });
+        onConfirm(buildCommentInfo(target, text));
       }
     };
     actions.appendChild(confirmBtn);

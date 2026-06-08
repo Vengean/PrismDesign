@@ -1,4 +1,4 @@
-import { ICON_CLOSE } from "./icons.js";
+import { ICON_CLOSE, ICON_PRISM } from "./icons.js";
 import { t } from "./i18n.js";
 
 const STORAGE_KEY_VISIBLE = "prism-panel-visible";
@@ -20,6 +20,11 @@ export function createPanel(shadowRoot: ShadowRoot): PanelAPI {
   // ── Header ──
   const header = document.createElement("div");
   header.className = "prism-header";
+
+  const titleIcon = document.createElement("span");
+  titleIcon.className = "title-icon";
+  titleIcon.innerHTML = ICON_PRISM;
+  header.appendChild(titleIcon);
 
   const title = document.createElement("span");
   title.className = "title";
