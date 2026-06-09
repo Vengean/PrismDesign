@@ -1,5 +1,4 @@
 import { WIDGET_CSS } from "./styles.js";
-import { ICON_PRISM } from "./icons.js";
 import { AgentClient } from "./agent-client.js";
 import { createPanel } from "./panel.js";
 import { createChat } from "./chat.js";
@@ -32,17 +31,10 @@ function init() {
   style.textContent = WIDGET_CSS;
   shadow.appendChild(style);
 
-  // ── Floating button ──
-  const fab = document.createElement("button");
-  fab.className = "prism-fab";
-  fab.innerHTML = ICON_PRISM;
-  fab.onclick = () => panel.toggle();
-  shadow.appendChild(fab);
-
-  // ── Panel ──
+  // ── Panel (includes FAB) ──
   const panel = createPanel(shadow);
 
-  // ── Chat (the only view) ──
+  // ── Chat ──
   createChat(panel.getBody(), agentClient, shadow);
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "prism-design-serve",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Serve static files with PrismDesign AI widget — comment and chat with AI to modify source code",
   "type": "module",
   "license": "MIT",

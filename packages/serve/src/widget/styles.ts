@@ -8,88 +8,112 @@ export const WIDGET_CSS = `
   padding: 0;
 }
 
-/* ── Floating Button ── */
-.prism-fab {
+/* ══════════════════════════════════════
+   Morphing Container — FAB ↔ Panel
+   ══════════════════════════════════════ */
+.prism-container {
   position: fixed;
   bottom: 24px;
   right: 24px;
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
   background: #ffffff;
-  color: white;
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.06);
-  z-index: 2147483647;
-  transition: transform 0.2s, box-shadow 0.2s;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  padding: 0;
-  overflow: hidden;
-}
-.prism-fab img {
-  width: 28px;
-  height: 28px;
-}
-.prism-fab:hover {
-  transform: scale(1.08);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.08);
-}
-.prism-fab:active {
-  transform: scale(0.95);
-}
-.prism-fab .badge {
-  position: absolute;
-  top: -4px;
-  right: -4px;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 9px;
-  background: #ef4444;
-  color: white;
-  font-size: 11px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-}
-
-/* ── Panel ── */
-.prism-panel {
-  position: fixed;
-  bottom: 84px;
-  right: 24px;
-  width: 400px;
-  height: 520px;
-  background: #ffffff;
-  border-radius: 12px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.06);
-  z-index: 2147483646;
-  display: flex;
-  flex-direction: column;
+  z-index: 2147483647;
   overflow: hidden;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   font-size: 13px;
   color: #1a1a1a;
-  animation: prism-slide-up 0.25s ease-out;
+  transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+              height 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+              border-radius 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.3s ease;
 }
-.prism-panel.hidden {
-  display: none;
+.prism-container.no-transition,
+.prism-container.no-transition * {
+  transition: none !important;
 }
 
-@keyframes prism-slide-up {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
+/* ── Collapsed = FAB ── */
+.prism-container.collapsed {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.06);
+}
+.prism-container.collapsed .prism-fab {
+  opacity: 1 !important;
+  pointer-events: auto;
+}
+.prism-container.collapsed .prism-panel-inner {
+  opacity: 0;
+  pointer-events: none;
 }
 
-/* ── Panel Header — matches chrome-ext compact style ── */
+/* ── Expanded = Panel ── */
+.prism-container.expanded {
+  width: 400px;
+  height: min(520px, calc(100vh - 72px));
+  max-width: calc(100vw - 48px);
+  border-radius: 12px;
+}
+.prism-container.expanded .prism-fab {
+  opacity: 0;
+  pointer-events: none;
+}
+.prism-container.expanded .prism-panel-inner {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ── FAB (inside container) ── */
+.prism-fab {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  /* Collapsing: FAB fades in only when container is nearly at 48px */
+  opacity: 0;
+  transition: opacity 0.12s ease 0.35s;
+}
+.prism-fab img {
+  width: 28px;
+  height: 28px;
+}
+/* Expanding: FAB fades out fast */
+.prism-container.expanded .prism-fab {
+  transition: opacity 0.08s ease;
+}
+.prism-container.collapsed:hover {
+  transform: scale(1.08);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+.prism-container.collapsed:active {
+  transform: scale(0.95);
+}
+
+/* ── Panel inner ── */
+.prism-panel-inner {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  /* Collapsing: content stays briefly then fades out mid-shrink */
+  transition: opacity 0.15s ease 0.08s;
+}
+/* Expanding: content fades in early, overlapping with container expand */
+.prism-container.expanded .prism-panel-inner {
+  transition: opacity 0.25s ease 0.1s;
+}
+
+/* ── Panel Header ── */
 .prism-header {
   display: flex;
   align-items: center;
@@ -157,7 +181,7 @@ export const WIDGET_CSS = `
   padding: 20px;
 }
 
-/* ── Message wrapper — chrome-ext uses flex row with avatar ── */
+/* ── Message wrapper ── */
 .chat-msg-row {
   display: flex;
   gap: 8px;
@@ -230,7 +254,7 @@ export const WIDGET_CSS = `
   font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
 }
 
-/* ── Chat markdown — matches chrome-ext .chat-markdown ── */
+/* ── Chat markdown ── */
 .chat-msg p { margin: 4px 0; }
 .chat-msg > :first-child { margin-top: 0; }
 .chat-msg > :last-child { margin-bottom: 0; }

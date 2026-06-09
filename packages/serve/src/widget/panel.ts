@@ -14,10 +14,22 @@ export interface PanelAPI {
 }
 
 export function createPanel(shadowRoot: ShadowRoot): PanelAPI {
-  const panel = document.createElement("div");
-  panel.className = "prism-panel hidden";
+  // ── Container: anchored bottom-right, morphs between FAB and panel ──
+  const container = document.createElement("div");
+  container.className = "prism-container collapsed";
 
-  // ── Header ──
+  // ── FAB face (visible when collapsed) ──
+  const fab = document.createElement("button");
+  fab.className = "prism-fab";
+  fab.innerHTML = ICON_PRISM;
+  fab.onclick = () => show();
+  container.appendChild(fab);
+
+  // ── Panel face (visible when expanded) ──
+  const panelInner = document.createElement("div");
+  panelInner.className = "prism-panel-inner";
+
+  // Header
   const header = document.createElement("div");
   header.className = "prism-header";
 
@@ -37,28 +49,31 @@ export function createPanel(shadowRoot: ShadowRoot): PanelAPI {
   closeBtn.onclick = () => hide();
   header.appendChild(closeBtn);
 
-  panel.appendChild(header);
+  panelInner.appendChild(header);
 
-  // ── Body ──
+  // Body
   const body = document.createElement("div");
   body.style.cssText = "flex:1;min-height:0;display:flex;flex-direction:column;";
-  panel.appendChild(body);
+  panelInner.appendChild(body);
 
-  shadowRoot.appendChild(panel);
+  container.appendChild(panelInner);
+  shadowRoot.appendChild(container);
 
   // ── State ──
   let visible = false;
   const visibilityCbs: Array<(v: boolean) => void> = [];
 
   function show() {
-    panel.classList.remove("hidden");
+    container.classList.remove("collapsed");
+    container.classList.add("expanded");
     visible = true;
     try { localStorage.setItem(STORAGE_KEY_VISIBLE, "1"); } catch {}
     visibilityCbs.forEach((cb) => cb(true));
   }
 
   function hide() {
-    panel.classList.add("hidden");
+    container.classList.remove("expanded");
+    container.classList.add("collapsed");
     visible = false;
     try { localStorage.setItem(STORAGE_KEY_VISIBLE, "0"); } catch {}
     visibilityCbs.forEach((cb) => cb(false));
@@ -69,10 +84,17 @@ export function createPanel(shadowRoot: ShadowRoot): PanelAPI {
     else show();
   }
 
-  // Restore visibility from previous session
+  // Restore from previous session (skip animation on restore)
   try {
     if (localStorage.getItem(STORAGE_KEY_VISIBLE) === "1") {
+      container.classList.add("no-transition");
       show();
+      // Re-enable transitions after paint
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          container.classList.remove("no-transition");
+        });
+      });
     }
   } catch {}
 
@@ -83,6 +105,6 @@ export function createPanel(shadowRoot: ShadowRoot): PanelAPI {
     isVisible: () => visible,
     getBody: () => body,
     onVisibilityChange: (cb) => visibilityCbs.push(cb),
-    destroy: () => panel.remove(),
+    destroy: () => container.remove(),
   };
 }
