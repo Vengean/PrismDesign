@@ -1,6 +1,6 @@
 {
   "name": "prism-design-serve",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Serve static files with PrismDesign AI widget — comment and chat with AI to modify source code",
   "type": "module",
   "license": "MIT",
@@ -24,6 +24,10 @@
     "visual-editing",
     "widget"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anthropics/prism-design"
+  },
   "engines": {
     "node": ">=18"
   },

@@ -2,7 +2,6 @@ import { getTabState, removeTab } from "./tab-state.js";
 import {
   connectAgent,
   disconnectAgent,
-  applyChanges,
   chatWithAgent,
   rollbackAgent,
 } from "./agent-connection.js";
@@ -207,10 +206,6 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, sender, sendRespons
       handleAgentDisconnect().then(sendResponse);
       return true;
 
-    case "AGENT_APPLY_CHANGES":
-      handleApplyChanges(message.payload).then(sendResponse);
-      return true;
-
     case "AGENT_CHAT":
       handleChat(message.payload).then(sendResponse);
       return true;
@@ -304,11 +299,7 @@ async function handleAgentDisconnect() {
   return { success: true };
 }
 
-async function handleApplyChanges(payload: {
-  changes: unknown[];
-  pagePath?: string;
-  supplement?: string;
-}) {
+async function handleChat(payload: { message: string }) {
   const tabId = await getActiveTabId();
   if (!tabId) return { success: false, error: "no active tab" };
 
@@ -317,42 +308,7 @@ async function handleApplyChanges(payload: {
 
   try {
     broadcastToSidePanel({ type: "AGENT_WORKING", payload: { working: true } });
-    const result = await applyChanges(
-      state,
-      payload.changes as any,
-      payload.pagePath,
-      payload.supplement
-    );
-    broadcastToSidePanel({ type: "AGENT_WORKING", payload: { working: false } });
-    broadcastToSidePanel({
-      type: "AGENT_RESULT",
-      payload: {
-        success: result.success,
-        message: result.message,
-        filesModified: result.filesModified,
-      },
-    });
-    return result;
-  } catch (err) {
-    broadcastToSidePanel({ type: "AGENT_WORKING", payload: { working: false } });
-    broadcastToSidePanel({ type: "AGENT_ERROR", payload: { message: String(err) } });
-    return { success: false, error: String(err) };
-  }
-}
-
-async function handleChat(payload: {
-  message: string;
-  context: { pagePath: string; components: unknown[] };
-}) {
-  const tabId = await getActiveTabId();
-  if (!tabId) return { success: false, error: "no active tab" };
-
-  const state = getTabState(tabId);
-  if (!state.connected) return { success: false, error: "not connected" };
-
-  try {
-    broadcastToSidePanel({ type: "AGENT_WORKING", payload: { working: true } });
-    const result = await chatWithAgent(state, payload.message, payload.context as any);
+    const result = await chatWithAgent(state, payload.message);
     broadcastToSidePanel({ type: "AGENT_WORKING", payload: { working: false } });
     broadcastToSidePanel({
       type: "AGENT_RESULT",

@@ -44,12 +44,11 @@ async function waitForAgent(url: string, maxRetries = 30): Promise<boolean> {
 
 function startAgent(opts: {
   agentPort: number;
-  dir: string;
   apiKey?: string;
   model?: string;
   apiBaseUrl?: string;
 }): ChildProcess {
-  const args = ["prism-design-agent", "start", "--port", String(opts.agentPort), "--project", opts.dir];
+  const args = ["prism-design-agent", "start", "--port", String(opts.agentPort)];
   if (opts.apiKey) args.push("--api-key", opts.apiKey);
   if (opts.model) args.push("--model", opts.model);
   if (opts.apiBaseUrl) args.push("--api-base-url", opts.apiBaseUrl);
@@ -129,7 +128,7 @@ Examples:
   // Start agent
   if (!noAgent) {
     console.log("🤖 启动 Agent...");
-    agentChild = startAgent({ agentPort, dir, apiKey, model, apiBaseUrl });
+    agentChild = startAgent({ agentPort, apiKey, model, apiBaseUrl });
 
     console.log("⏳ 等待 Agent 就绪...");
     const ready = await waitForAgent(agentUrl);

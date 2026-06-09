@@ -302,7 +302,7 @@ export function App() {
 
       {/* Content */}
       <div className="flex-1 min-h-0">
-        {view === "chat" && <ChatPanel agent={agent} chat={chat} />}
+        {view === "chat" && <ChatPanel agent={agent} chat={chat} selection={selection} />}
         {view === "navigator" && (
           <Navigator selection={selection} tree={tree} refreshTree={refreshTree} highlightElement={highlightElement} unhighlightElement={unhighlightElement} selectElement={selectElement} />
         )}

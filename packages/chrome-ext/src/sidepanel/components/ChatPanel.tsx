@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Send, Trash2, MessageSquare, Plug, Loader2, AlertCircle } from "lucide-react";
 import { t } from "../../shared/i18n.js";
-import type { ChatMessage } from "../../shared/types.js";
+import type { ChatMessage, ElementSelection } from "../../shared/types.js";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -23,7 +23,7 @@ interface ChatState {
   clearHistory: () => void;
 }
 
-export function ChatPanel({ agent, chat }: { agent: AgentState; chat: ChatState }) {
+export function ChatPanel({ agent, chat, selection }: { agent: AgentState; chat: ChatState; selection: ElementSelection | null }) {
   if (!agent.connected && !agent.connecting) {
     return <ConnectionForm agent={agent} />;
   }
@@ -35,7 +35,7 @@ export function ChatPanel({ agent, chat }: { agent: AgentState; chat: ChatState 
       </div>
     );
   }
-  return <ChatView chat={chat} />;
+  return <ChatView chat={chat} selection={selection} />;
 }
 
 function ConnectionForm({ agent }: { agent: AgentState }) {
@@ -72,7 +72,23 @@ function ConnectionForm({ agent }: { agent: AgentState }) {
   );
 }
 
-function ChatView({ chat }: { chat: ChatState }) {
+function formatSelectionContext(sel: ElementSelection): string {
+  const lines: string[] = [];
+  lines.push(`Page: ${sel.pagePath}`);
+  lines.push(`Element: <${sel.tagName}> ${sel.domPath}`);
+  if (sel.componentChain) lines.push(`Component: ${sel.componentChain}`);
+  if (sel.component?.sourceFile) {
+    let loc = sel.component.sourceFile;
+    if (sel.component.sourceLine) loc += `:${sel.component.sourceLine}`;
+    lines.push(`Source: ${loc}`);
+  }
+  if (sel.textContent) lines.push(`Text: "${sel.textContent.slice(0, 80)}"`);
+  if (sel.id) lines.push(`id: ${sel.id}`);
+  if (sel.className) lines.push(`class: ${sel.className.split(" ").slice(0, 5).join(" ")}`);
+  return lines.join("\n");
+}
+
+function ChatView({ chat, selection }: { chat: ChatState; selection: ElementSelection | null }) {
   const { messages, sending, sendMessage, clearHistory } = chat;
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -83,7 +99,11 @@ function ChatView({ chat }: { chat: ChatState }) {
 
   const handleSend = () => {
     if (!input.trim()) return;
-    sendMessage(input);
+    let message = input;
+    if (selection) {
+      message += `\n\n--- Context ---\n${formatSelectionContext(selection)}`;
+    }
+    sendMessage(message);
     setInput("");
   };
 

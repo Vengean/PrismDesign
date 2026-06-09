@@ -1,5 +1,4 @@
 import type { TabState } from "./tab-state.js";
-import type { StyleChange, ComponentInfo } from "../shared/types.js";
 
 /**
  * Connect to agent server for a specific tab.
@@ -90,38 +89,18 @@ export function disconnectAgent(state: TabState) {
 }
 
 /**
- * Apply design changes via agent REST API.
- */
-export async function applyChanges(
-  state: TabState,
-  changes: StyleChange[],
-  pagePath?: string,
-  supplement?: string
-): Promise<{ success: boolean; message: string; filesModified: string[] }> {
-  if (!state.agentUrl) throw new Error("Agent not connected");
-
-  const res = await fetch(`${state.agentUrl}/api/apply-changes`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ changes, pagePath, supplement }),
-  });
-  return res.json();
-}
-
-/**
  * Send chat message via agent REST API.
  */
 export async function chatWithAgent(
   state: TabState,
   message: string,
-  context: { pagePath: string; components: ComponentInfo[] }
 ): Promise<{ success: boolean; message: string }> {
   if (!state.agentUrl) throw new Error("Agent not connected");
 
   const res = await fetch(`${state.agentUrl}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, context }),
+    body: JSON.stringify({ message }),
   });
   return res.json();
 }

@@ -55,15 +55,16 @@ export function startServer(opts: { dir: string; port: number; agentUrl: string 
 
     let filePath: string;
     if (ext === ".html" || ext === ".htm") {
-      filePath = path.join(dir, req.path);
+      filePath = path.resolve(dir, req.path.slice(1));
     } else {
-      filePath = path.join(dir, req.path, "index.html");
+      filePath = path.resolve(dir, req.path.slice(1), "index.html");
       if (!fs.existsSync(filePath)) {
         filePath = path.join(dir, "index.html");
       }
     }
 
-    if (!fs.existsSync(filePath) || !filePath.endsWith(".html")) {
+    // Prevent path traversal
+    if (!filePath.startsWith(path.resolve(dir)) || !fs.existsSync(filePath) || !filePath.endsWith(".html")) {
       return next();
     }
 

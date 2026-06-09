@@ -1,18 +1,24 @@
 {
   "name": "prism-design-agent",
-  "version": "0.1.2",
+  "version": "0.2.1",
   "description": "AI agent service for PrismDesign — scans project, receives design edits, modifies source code",
   "type": "module",
   "license": "MIT",
   "bin": {
     "prism-design-agent": "./dist/cli.js"
   },
+  "exports": {
+    "./config": {
+      "import": "./dist/config.js",
+      "types": "./dist/config.d.ts"
+    }
+  },
   "files": [
     "dist"
   ],
   "scripts": {
-    "dev": "tsx watch src/cli.ts -- start",
-    "build": "tsup src/cli.ts --format esm --dts",
+    "dev": "tsx watch src/cli.ts start",
+    "build": "tsup",
     "start": "node dist/cli.js start"
   },
   "keywords": [

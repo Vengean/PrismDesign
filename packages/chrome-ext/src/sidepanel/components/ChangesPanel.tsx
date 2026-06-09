@@ -21,27 +21,42 @@ function groupChanges(changes: StyleChange[]): Map<string, { label: string; sour
   return groups;
 }
 
+function formatChangesMessage(changes: StyleChange[]): string {
+  const groups = groupChanges(changes);
+  const parts: string[] = [];
+
+  for (const group of groups.values()) {
+    const lines: string[] = [];
+    let header = `[${group.label}]`;
+    if (group.source) header += ` (${group.source})`;
+    lines.push(header);
+
+    for (const c of group.items) {
+      if (c.textContent) lines.push(`  text: "${c.textContent}"`);
+      if (c.property === "comment") {
+        lines.push(`  - comment: "${c.newValue}"`);
+      } else {
+        lines.push(`  - ${c.property}: "${c.oldValue}" → "${c.newValue}"`);
+      }
+    }
+    parts.push(lines.join("\n"));
+  }
+
+  return `Apply the following visual changes to the source code:\n\n${parts.join("\n\n")}`;
+}
+
 export function ChangesPanel() {
   const { changes, clearAll } = useChanges();
-  const { applyChanges, connected, aiWorking } = useAgent();
-  const { addSystemMessage } = useChat();
+  const { connected, aiWorking } = useAgent();
+  const { sendMessage, addSystemMessage } = useChat();
   const [syncing, setSyncing] = useState(false);
 
   const handleSync = async () => {
     if (changes.length === 0 || !connected || syncing) return;
     setSyncing(true);
-    addSystemMessage(t("changes.syncing", { n: changes.length }));
-    try {
-      const result = await applyChanges(changes);
-      if (result?.success) {
-        addSystemMessage(result.message || t("changes.done"));
-        clearAll();
-      } else {
-        addSystemMessage(`${t("changes.failed")}: ${result?.message || "unknown error"}`);
-      }
-    } catch {
-      addSystemMessage(t("chat.requestFailed"));
-    }
+    const message = formatChangesMessage(changes);
+    sendMessage(message);
+    clearAll();
     setSyncing(false);
   };
 

@@ -1,6 +1,6 @@
 # CLAUDE.md — PrismDesign
 
-> AI 驱动的可视化 UI 编辑工具：设计师在浏览器中编辑页面样式，AI 自动同步修改到源码。
+> AI 驱动的可视化 UI 编辑工具：在浏览器中描述修改需求，AI 自动同步修改到源码。
 
 ## 快速启动
 
@@ -28,20 +28,22 @@ PrismDesign/                    ← pnpm monorepo
 ├── packages/
 │   ├── agent/                  ← AI 代码修改服务 (Express + WebSocket + Claude Agent SDK)
 │   │   └── src/
-│   │       ├── cli.ts          ← CLI 入口，.env 加载，项目根检测
-│   │       ├── server.ts       ← HTTP + WS 服务器
+│   │       ├── cli.ts          ← CLI 入口，.env 加载，prism.config 加载，项目根检测
+│   │       ├── server.ts       ← HTTP + WS 服务器（纯透传，单一 /api/chat 端点）
 │   │       ├── agent.ts        ← 多用户 session 管理（Claude Agent SDK v2）
-│   │       ├── project-profiler.ts ← 框架/语言/构建工具检测
-│   │       └── prompt-builder.ts   ← AI system prompt 构建
+│   │       ├── config.ts       ← prism.config.{ts,js,mjs} 加载 + defineConfig 导出
+│   │       └── project-profiler.ts ← 框架/语言/构建工具检测
 │   ├── serve/                  ← 独立部署工具 (静态文件服务 + 内嵌 Widget)
 │   │   └── src/
 │   │       ├── cli.ts          ← CLI 入口，启动 agent 子进程 + HTTP 服务
 │   │       ├── server.ts       ← Express 静态文件服务 + HTML 注入
-│   │       └── widget/         ← 内嵌 Widget (IIFE 单文件，vConsole 风格)
-│   │           ├── index.ts    ← Shadow DOM 入口 + 浮动按钮
-│   │           ├── panel.ts    ← 可展开面板 (对话/评论 tabs)
-│   │           ├── chat.ts     ← 对话功能
-│   │           └── comment.ts  ← 评论标注功能
+│   │       └── widget/         ← 内嵌 Widget (IIFE 单文件)
+│   │           ├── index.ts    ← Shadow DOM 入口
+│   │           ├── panel.ts    ← FAB ↔ 面板变形动画
+│   │           ├── chat.ts     ← 对话功能 + DOM 上下文收集
+│   │           ├── comment.ts  ← 评论标注功能
+│   │           ├── dom-context.ts ← 页面 DOM 树收集（类似 chrome-ext 的 dom-tree.ts）
+│   │           └── styles.ts   ← 全部样式（与 Chrome 插件主题统一）
 │   └── chrome-ext/             ← Chrome 插件 (Manifest V3)
 │       └── src/
 │           ├── content/        ← Content Script（注入目标页面）
@@ -102,6 +104,23 @@ PrismDesign/                    ← pnpm monorepo
 
 ## 架构要点
 
+### 职责分工
+
+```
+客户端（Chrome 插件 / Serve Widget）
+  ├── 构造完整消息（含页面上下文、元素信息、修改描述）
+  └── POST /api/chat { message }
+          ↓
+Agent Server（纯透传）
+  ├── 接收 message → 转发给 Claude SDK session
+  ├── WebSocket 广播进度事件
+  └── 返回 { success, message, filesModified }
+          ↓
+Claude Agent SDK
+  ├── 读取项目 CLAUDE.md（settingSources: ["project"]）
+  └── 使用 Read/Write/Edit/Glob/Grep 工具修改代码
+```
+
 ### 消息流
 
 ```
@@ -114,12 +133,22 @@ Side Panel ←→ Background Service Worker ←→ Content Script
 - **Upstream**（→ Side Panel）：`ELEMENT_SELECTED`, `STYLE_CHANGED`, `DOM_TREE_UPDATED`
 - **Agent 事件**（→ Side Panel）：`AGENT_STATUS`, `AGENT_WORKING`, `AGENT_ERROR`
 
+### Agent API
+
+- `GET /api/status` — 健康检查 + 项目信息
+- `POST /api/chat` — 唯一的消息端点，纯透传
+- `WebSocket /ws` — 实时进度推送（`agent:start`, `agent:progress`, `agent:done`, `agent:error`）
+
 ### Agent Session 管理
 
 - 每个 clientId 独立 session，30 分钟超时清理
-- 首条消息包含 system prompt（项目框架 + 编码规范），后续消息只发用户内容
-- API：`/api/status`、`/api/apply-changes`、`/api/chat`、`/api/rollback`
-- WebSocket `/ws` 推送实时事件
+- 懒创建：启动时不消耗 API，首次收到消息才创建 session
+- SDK 自动读取项目 CLAUDE.md（`settingSources: ["project"]`）
+- 支持 `prism.config.ts` 配置 SDK options
+
+### Agent 配置优先级
+
+CLI 参数 > prism.config.{ts,js,mjs} > 环境变量 > .env 文件
 
 ### 组件检测
 

@@ -5,9 +5,10 @@ export interface ProjectProfile {
   resolvedRoot: string;
   framework: "react" | "vue" | "next" | "nuxt" | "unknown";
   language: "typescript" | "javascript";
-  buildTool: "vite" | "webpack" | "turbopack" | "unknown";
+  buildTool: "vite" | "webpack" | "unknown";
   srcDir: string;
-  conventions: string;
+  /** SDK session options from prism.config */
+  sdkOptions?: Record<string, unknown>;
 }
 
 function detectFramework(deps: Record<string, string>) {
@@ -56,8 +57,7 @@ export function scanProject(root: string): ProjectProfile {
       language: "javascript",
       buildTool: "unknown",
       srcDir: ".",
-      conventions: "",
-    };
+      };
   }
 
   const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
@@ -95,6 +95,5 @@ export function scanProject(root: string): ProjectProfile {
     language,
     buildTool,
     srcDir,
-    conventions: "",
   };
 }

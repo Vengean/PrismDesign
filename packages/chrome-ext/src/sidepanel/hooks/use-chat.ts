@@ -73,7 +73,7 @@ export function useChat() {
     return () => chrome.runtime.onMessage.removeListener(handler);
   }, []);
 
-  const sendMessage = useCallback(async (text: string, context?: { pagePath: string; components: unknown[] }) => {
+  const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || sending) return;
 
     const userMsg: ChatMessage = { role: "user", content: text, timestamp: Date.now() };
@@ -83,10 +83,7 @@ export function useChat() {
 
     chrome.runtime.sendMessage({
       type: "AGENT_CHAT",
-      payload: {
-        message: text,
-        context: context || { pagePath: "/", components: [] },
-      },
+      payload: { message: text },
     }).catch(() => {
       setSending(false);
       setMessages((prev) => {

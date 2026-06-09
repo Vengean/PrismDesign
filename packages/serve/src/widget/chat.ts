@@ -344,10 +344,7 @@ export function createChat(
 
     let hasFileChanges = false;
     try {
-      const result = await agentClient.chat(agentMessage, {
-        pagePath: pageCtx.pagePath,
-        components: [],
-      });
+      const result = await agentClient.chat(agentMessage);
       console.log("[PrismDesign] Agent 返回结果:", result);
 
       hasFileChanges = (result.filesModified?.length ?? 0) > 0;

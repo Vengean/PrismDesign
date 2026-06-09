@@ -5,6 +5,7 @@ import path from "node:path";
 import os from "node:os";
 import { scanProject } from "./project-profiler.js";
 import { startServer } from "./server.js";
+import { loadConfig, applyConfigToEnv, type PrismConfig } from "./config.js";
 
 // ── .env loader (lightweight, no dependency) ──
 
@@ -72,7 +73,7 @@ async function main() {
   const args = process.argv.slice(2);
   const command = args[0];
 
-  if (command === "--help" || command === "-h" || (command !== "start" && command !== undefined)) {
+  if (command === "--help" || command === "-h") {
     console.log(`
 🎨 PrismDesign Agent
 
@@ -82,32 +83,38 @@ Usage:
 Options:
   --port <number>        服务端口 (default: 9527)
   --project <path>       项目根目录 (default: 自动检测)
-  --api-key <key>        Anthropic API Key (或 ANTHROPIC_API_KEY 环境变量)
-  --api-base-url <url>   API Base URL (或 ANTHROPIC_BASE_URL 环境变量)
-  --model <name>         模型名称 (或 ANTHROPIC_MODEL 环境变量, default: claude-opus-4-6)
-  --system-prompt <file> 自定义 system prompt 文件路径
+  --api-key <key>        Anthropic API Key
+  --api-base-url <url>   API Base URL (代理)
+  --model <name>         模型名称 (default: claude-opus-4-6)
 
-Environment Variables:
-  ANTHROPIC_API_KEY      API Key
-  ANTHROPIC_BASE_URL     API Base URL (用于代理或兼容接口)
-  ANTHROPIC_MODEL        模型名称
+Config File (prism.config.ts):
+  启动目录下放置 prism.config.ts 可配置所有参数:
+  anthropicApiKey, anthropicModel, anthropicBaseUrl,
+  httpsProxy, httpProxy, options (SDK 选项)
+
+  优先级: CLI 参数 > prism.config > 环境变量 > .env
 
 Examples:
   npx prism-design-agent start
   npx prism-design-agent start --port 8080
   npx prism-design-agent start --model claude-sonnet-4-6
-  ANTHROPIC_API_KEY=sk-xxx npx prism-design-agent start
 `);
     process.exit(0);
   }
 
-  // Load .env files
+  // Determine project root
   const projectArg = getArg(args, "--project");
   const projectRoot = projectArg ? path.resolve(projectArg) : findProjectRoot();
+
+  // Load .env files first (lowest priority, only sets if key not in env)
   loadEnvFile(projectRoot);
   loadEnvFile(process.cwd());
 
-  // CLI args override env vars
+  // Load prism.config.{ts,js,mjs} (overrides .env)
+  const config = await loadConfig(projectRoot);
+  applyConfigToEnv(config, true);
+
+  // CLI args override everything
   const apiKey = getArg(args, "--api-key");
   if (apiKey) process.env.ANTHROPIC_API_KEY = apiKey;
 
@@ -118,19 +125,6 @@ Examples:
   if (model) process.env.ANTHROPIC_MODEL = model;
 
   const port = parseInt(getArg(args, "--port") || "9527", 10);
-
-  // Custom system prompt
-  const promptFile = getArg(args, "--system-prompt");
-  let customPrompt = "";
-  if (promptFile) {
-    const resolved = path.resolve(promptFile);
-    if (!fs.existsSync(resolved)) {
-      console.error(`❌ System prompt 文件不存在: ${resolved}`);
-      process.exit(1);
-    }
-    customPrompt = fs.readFileSync(resolved, "utf-8");
-    console.log(`📄 自定义 system prompt: ${resolved}`);
-  }
 
   // Scan project
   console.log("🔍 扫描项目...");
@@ -149,9 +143,8 @@ Examples:
   console.log(`   构建工具: ${profile.buildTool}`);
   console.log(`   源码目录: ${profile.srcDir}`);
 
-  if (customPrompt) {
-    profile.conventions = customPrompt;
-  }
+  // Attach SDK options from config
+  profile.sdkOptions = config.options;
 
   // Start server
   const localIP = getLocalIP();

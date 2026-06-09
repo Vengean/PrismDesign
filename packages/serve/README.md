@@ -49,7 +49,7 @@ Add to `package.json`:
 | `--no-agent` | Serve files only, no AI agent | `false` |
 | `--api-key <key>` | Anthropic API Key (forwarded to agent) | `$ANTHROPIC_API_KEY` |
 | `--api-base-url <url>` | Custom API base URL | `$ANTHROPIC_BASE_URL` |
-| `--model <name>` | Model name (forwarded to agent) | `claude-sonnet-4-20250514` |
+| `--model <name>` | Model name (forwarded to agent) | `claude-opus-4-6` |
 | `--open` | Open browser on start | `false` |
 
 ## Configuration
@@ -77,9 +77,11 @@ prism-design-serve --dir ./dist --api-base-url https://your-proxy.com/v1
 
 ## Features
 
-- **Comment Mode** — Click the comment button, select a page element, type your feedback. The AI knows exactly which element you're referring to.
-- **Chat Mode** — Describe changes in natural language. The widget collects the page's DOM structure automatically to help the AI locate the right code.
+- **Comment Mode** — Click the comment button, select a page element, type your feedback. The widget collects element info (DOM path, component name, text content) automatically.
+- **Chat Mode** — Describe changes in natural language. The widget collects the page's DOM structure to help the AI locate the right code.
 - **Auto Reload** — After the AI modifies files, the page reloads to reflect changes. Chat history is preserved across reloads.
+- **LAN Access** — Share the URL with others on your network. The widget auto-detects the correct agent address.
+- **Morph Animation** — The floating button smoothly expands into the chat panel and collapses back.
 - **Zero Config** — No build step or framework integration needed. Works with any static HTML.
 
 ## Requirements

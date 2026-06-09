@@ -23,17 +23,14 @@ export class AgentClient {
     return res.json();
   }
 
-  async chat(
-    message: string,
-    context: { pagePath: string; components: Array<{ name: string; sourceFile?: string; sourceLine?: number }> }
-  ): Promise<{ success: boolean; message: string; filesModified?: string[] }> {
+  async chat(message: string): Promise<{ success: boolean; message: string; filesModified?: string[] }> {
     const res = await fetch(`${this.baseUrl}/api/chat`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-client-id": this.clientId,
       },
-      body: JSON.stringify({ message, context }),
+      body: JSON.stringify({ message }),
     });
     return res.json();
   }

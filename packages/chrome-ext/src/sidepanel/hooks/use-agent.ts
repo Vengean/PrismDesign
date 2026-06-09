@@ -85,26 +85,12 @@ export function useAgent() {
     setProject(null);
   }, []);
 
-  const applyChanges = useCallback(async (changes: unknown[], pagePath?: string, supplement?: string) => {
-    return chrome.runtime.sendMessage({
-      type: "AGENT_APPLY_CHANGES",
-      payload: { changes, pagePath, supplement },
-    }) as Promise<{ success: boolean; message: string; filesModified?: string[] }>;
-  }, []);
-
-  const chat = useCallback(async (message: string, context: { pagePath: string; components: unknown[] }) => {
-    return chrome.runtime.sendMessage({
-      type: "AGENT_CHAT",
-      payload: { message, context },
-    }) as Promise<{ success: boolean; message: string }>;
-  }, []);
-
   const rollback = useCallback(async () => {
     return chrome.runtime.sendMessage({ type: "AGENT_ROLLBACK" }) as Promise<{ success: boolean }>;
   }, []);
 
   return {
     connected, connecting, error, project, aiWorking, agentUrl, setAgentUrl,
-    connect, disconnect, applyChanges, chat, rollback,
+    connect, disconnect, rollback,
   };
 }
