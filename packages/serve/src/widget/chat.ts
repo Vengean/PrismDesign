@@ -3,7 +3,6 @@ import { t } from "./i18n.js";
 import { renderMarkdown } from "./markdown.js";
 import type { AgentClient } from "./agent-client.js";
 import { showCommentMode, type CommentInfo } from "./comment.js";
-import { collectPageContext, serializeDomTree } from "./dom-context.js";
 
 const STORAGE_KEY = "prism-chat-history";
 
@@ -268,34 +267,27 @@ export function createChat(
     sending = true;
     sendBtn.disabled = true;
 
-    // Collect page DOM context for the agent
-    const pageCtx = collectPageContext();
-    const domTreeText = serializeDomTree(pageCtx.domTree);
-
     // Build the message for the agent
+    const pagePath = location.pathname;
     let agentMessage = "";
     const savedComments = [...commentTags];
 
     if (hasComments) {
       const lines = commentTags.map((c) => {
         let line = `- <${c.target}>`;
-        if (c.componentName) line += ` [组件: ${c.componentName}]`;
-        if (c.textContent) line += ` (文本: "${c.textContent}")`;
-        if (c.domPath) line += `\n  DOM路径: ${c.domPath}`;
-        line += `\n  评论: "${c.text}"`;
+        if (c.textContent) line += ` (text: "${c.textContent}")`;
+        line += `: "${c.text}"`;
         return line;
       });
-      agentMessage = `设计师对页面元素的评审意见：\n\n${lines.join("\n\n")}`;
+      agentMessage = lines.join("\n");
       if (text) {
-        agentMessage += `\n\n补充说明：${text}`;
+        agentMessage += `\n\n${text}`;
       }
-      agentMessage += "\n\n请根据以上评审意见修改对应的源代码。";
     } else {
       agentMessage = text;
     }
 
-    // Append page context
-    agentMessage += `\n\n--- 页面上下文 ---\n页面路径: ${pageCtx.pagePath}\n页面标题: ${pageCtx.pageTitle}\nDOM 结构:\n${domTreeText}`;
+    agentMessage += `\n\nPage: ${pagePath}`;
 
     // Build display content for the user message
     const displayContent = text;
