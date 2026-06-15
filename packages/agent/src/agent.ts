@@ -49,8 +49,7 @@ function getSession(clientId: string): UserSession {
 
   console.log(`[Agent] 为客户端 ${clientId} 创建新会话`);
 
-  const defaultOptions = {
-    model: process.env.ANTHROPIC_MODEL || "claude-opus-4-6",
+  const defaultOptions: Record<string, unknown> = {
     cwd: projectRoot,
     allowedTools: ["Read", "Write", "Edit", "Glob", "Grep"],
     permissionMode: "bypassPermissions" as const,
@@ -58,10 +57,29 @@ function getSession(clientId: string): UserSession {
     settingSources: ["project" as const],
   };
 
+  // Set model from env var or default
+  defaultOptions.model = process.env.ANTHROPIC_MODEL || "claude-opus-4-6";
+
+  // Pass env vars explicitly so the spawned claude CLI inherits them
+  if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_BASE_URL) {
+    defaultOptions.env = {
+      ...process.env,
+      ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || "",
+      ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL || "",
+      ANTHROPIC_MODEL: process.env.ANTHROPIC_MODEL || "",
+    };
+  }
+
   // Merge SDK options from prism.config (config options override defaults)
   const sessionOptions = profile.sdkOptions
     ? { ...defaultOptions, ...profile.sdkOptions }
     : defaultOptions;
+
+  console.log(`[Agent] 创建会话, options:`, JSON.stringify({
+    ...sessionOptions,
+    env: undefined,
+  }));
+  console.log(`[Agent] 环境变量: MODEL=${process.env.ANTHROPIC_MODEL}, BASE_URL=${process.env.ANTHROPIC_BASE_URL}, KEY=${process.env.ANTHROPIC_API_KEY?.slice(0, 10)}...`);
 
   const session = unstable_v2_createSession(sessionOptions as any);
 

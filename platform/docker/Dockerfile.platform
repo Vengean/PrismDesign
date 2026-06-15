@@ -1,0 +1,25 @@
+FROM node:22-slim
+
+RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
+RUN npm install -g pnpm@9
+
+WORKDIR /app
+
+# Install dependencies
+COPY package.json pnpm-lock.yaml* ./
+COPY web/package.json web/
+RUN pnpm install --frozen-lockfile || pnpm install
+
+# Copy source
+COPY . .
+
+# Build
+RUN pnpm build
+
+# Runtime
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV PRISM_DATA_DIR=/data
+
+EXPOSE 3000
+CMD ["node", "dist/server.js"]
