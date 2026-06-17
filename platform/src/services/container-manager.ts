@@ -1,8 +1,41 @@
 import Docker from "dockerode";
+import fs from "fs";
+import path from "path";
+import os from "os";
 import { findWorkspaceById, updateWorkspace } from "./db.js";
 import type { Workspace, RepoConfig } from "../types.js";
 
-const docker = new Docker({ socketPath: "/var/run/docker.sock" });
+// Auto-detect container runtime socket: Podman → Docker
+function detectSocketPath(): string {
+  // Allow explicit override
+  if (process.env.CONTAINER_SOCKET) return process.env.CONTAINER_SOCKET;
+
+  const candidates = [
+    // Podman Desktop (macOS)
+    path.join(os.homedir(), ".local/share/containers/podman/machine/podman.sock"),
+    // Podman machine (macOS alternate)
+    path.join(os.homedir(), ".config/containers/podman/machine/podman.sock"),
+    // Podman rootless (Linux)
+    process.env.XDG_RUNTIME_DIR ? `${process.env.XDG_RUNTIME_DIR}/podman/podman.sock` : "",
+    // Podman root (Linux)
+    "/run/podman/podman.sock",
+    // Docker
+    "/var/run/docker.sock",
+  ].filter(Boolean);
+
+  for (const sock of candidates) {
+    if (fs.existsSync(sock)) {
+      console.log(`[Container] Using socket: ${sock}`);
+      return sock;
+    }
+  }
+
+  // Fallback
+  console.warn("[Container] No container socket found, defaulting to /var/run/docker.sock");
+  return "/var/run/docker.sock";
+}
+
+const docker = new Docker({ socketPath: detectSocketPath() });
 const WORKSPACE_IMAGE = process.env.PRISM_WORKSPACE_IMAGE || "prism-workspace:latest";
 
 function containerName(workspaceId: string) {
@@ -15,6 +48,7 @@ export async function createAndStartContainer(workspace: Workspace): Promise<{
   containerId: string;
   devPort: number;
   agentPort: number;
+  codeServerPort: number;
 }> {
   const reposEnv = workspace.repos
     .map((r: RepoConfig) => `${r.name}|${r.url}|${r.branch}`)
@@ -30,14 +64,16 @@ export async function createAndStartContainer(workspace: Workspace): Promise<{
       `GIT_SSH_KEY=${workspace.git_ssh_key || ""}`,
       `GIT_SSH_PORT=${workspace.git_ssh_port || ""}`,
       `STARTUP_SCRIPT=${workspace.startup_script || ""}`,
+      `AGENT_TYPE=${workspace.agent_type || "claude"}`,
       `ANTHROPIC_API_KEY=${workspace.anthropic_api_key || ""}`,
       `ANTHROPIC_MODEL=${workspace.anthropic_model || ""}`,
       `ANTHROPIC_BASE_URL=${workspace.anthropic_base_url || ""}`,
     ],
-    ExposedPorts: { "5173/tcp": {}, "9527/tcp": {} },
+    ExposedPorts: { "5173/tcp": {}, "8080/tcp": {}, "9527/tcp": {} },
     HostConfig: {
       PortBindings: {
         "5173/tcp": [{ HostPort: "0" }],
+        "8080/tcp": [{ HostPort: "0" }],
         "9527/tcp": [{ HostPort: "0" }],
       },
       Binds: [`prism-ws-${workspace.id}:/workspace`],
@@ -52,9 +88,10 @@ export async function createAndStartContainer(workspace: Workspace): Promise<{
   const info = await container.inspect();
   const ports = info.NetworkSettings.Ports;
   const devPort = parseInt(ports["5173/tcp"]?.[0]?.HostPort || "0");
+  const codeServerPort = parseInt(ports["8080/tcp"]?.[0]?.HostPort || "0");
   const agentPort = parseInt(ports["9527/tcp"]?.[0]?.HostPort || "0");
 
-  return { containerId: container.id, devPort, agentPort };
+  return { containerId: container.id, devPort, agentPort, codeServerPort };
 }
 
 export async function stopContainer(workspaceId: string) {

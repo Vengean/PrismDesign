@@ -29,6 +29,7 @@ export default function WorkspaceSettings() {
   const [repos, setRepos] = useState<RepoConfig[]>([emptyRepo()]);
   const [claudeMd, setClaudeMd] = useState("");
   const [startupScript, setStartupScript] = useState("");
+  const [agentType, setAgentType] = useState<"claude" | "glm">("claude");
   const [anthropicApiKey, setAnthropicApiKey] = useState("");
   const [anthropicBaseUrl, setAnthropicBaseUrl] = useState("");
   const [anthropicModel, setAnthropicModel] = useState("");
@@ -44,6 +45,7 @@ export default function WorkspaceSettings() {
         setGitSshKey(ws.git_ssh_key || "");
         setGitSshPort(ws.git_ssh_port || 22);
         setAuthMode(ws.git_ssh_key ? "ssh" : "token");
+        setAgentType((ws.agent_type as "claude" | "glm") || "claude");
         setAnthropicApiKey(ws.anthropic_api_key || "");
         setAnthropicBaseUrl(ws.anthropic_base_url || "");
         setAnthropicModel(ws.anthropic_model || "");
@@ -96,6 +98,7 @@ export default function WorkspaceSettings() {
         gitAccessToken,
         gitSshKey,
         gitSshPort,
+        agentType,
         anthropicApiKey,
         anthropicBaseUrl,
         anthropicModel,
@@ -281,13 +284,45 @@ export default function WorkspaceSettings() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
+              <Label>Agent 类型</Label>
+              <div className="flex gap-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="agentType"
+                    value="claude"
+                    checked={agentType === "claude"}
+                    onChange={() => setAgentType("claude")}
+                    className="accent-primary"
+                  />
+                  <span className="text-sm">Claude Agent SDK</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="agentType"
+                    value="glm"
+                    checked={agentType === "glm"}
+                    onChange={() => setAgentType("glm")}
+                    className="accent-primary"
+                  />
+                  <span className="text-sm">GLM Agent</span>
+                </label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {agentType === "claude"
+                  ? "使用 Claude Agent SDK，支持 Claude 系列模型及 LiteLLM 代理"
+                  : "使用智谱 GLM Agent，原生支持 GLM 系列模型"}
+              </p>
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="api-key">API Key *</Label>
               <Input
                 id="api-key"
                 type="password"
                 value={anthropicApiKey}
                 onChange={(e) => setAnthropicApiKey(e.target.value)}
-                placeholder="sk-ant-..."
+                placeholder={agentType === "claude" ? "sk-ant-..." : "智谱 API Key"}
               />
             </div>
             <div className="space-y-2">
@@ -296,7 +331,7 @@ export default function WorkspaceSettings() {
                 id="base-url"
                 value={anthropicBaseUrl}
                 onChange={(e) => setAnthropicBaseUrl(e.target.value)}
-                placeholder="https://api.anthropic.com（留空使用默认）"
+                placeholder={agentType === "claude" ? "https://api.anthropic.com（留空使用默认）" : "https://open.bigmodel.cn/api/paas/v4（留空使用默认）"}
               />
             </div>
             <div className="space-y-2">
@@ -305,7 +340,7 @@ export default function WorkspaceSettings() {
                 id="model"
                 value={anthropicModel}
                 onChange={(e) => setAnthropicModel(e.target.value)}
-                placeholder="claude-sonnet-4-20250514（留空使用默认）"
+                placeholder={agentType === "claude" ? "claude-sonnet-4-20250514（留空使用默认）" : "glm-4-plus（留空使用默认）"}
               />
             </div>
           </CardContent>

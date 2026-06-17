@@ -83,15 +83,20 @@ export default function ServicePanel({ workspace, onRefresh }: ServicePanelProps
       <div className="mt-3 p-4 rounded-lg bg-muted/50 border border-dashed space-y-3">
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium">服务信息</span>
-          <Badge variant="default">运行中</Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline">
+              {workspace.agent_type === "glm" ? "GLM Agent" : "Claude Agent SDK"}
+            </Badge>
+            <Badge variant="default">运行中</Badge>
+          </div>
         </div>
 
         {workspace.agent_port ? (
           <ServiceAddress
             label="Agent"
-            address={`${hostname}:${workspace.agent_port}`}
+            address={`${window.location.origin}/api/workspaces/${workspace.id}/agent`}
             copied={copied === "agent"}
-            onCopy={() => copyToClipboard(`${hostname}:${workspace.agent_port}`, "agent")}
+            onCopy={() => copyToClipboard(`${window.location.origin}/api/workspaces/${workspace.id}/agent`, "agent")}
           />
         ) : null}
 
@@ -101,6 +106,15 @@ export default function ServicePanel({ workspace, onRefresh }: ServicePanelProps
             address={`http://${hostname}:${workspace.dev_port}`}
             copied={copied === "dev"}
             onCopy={() => copyToClipboard(`http://${hostname}:${workspace.dev_port}`, "dev")}
+          />
+        ) : null}
+
+        {workspace.code_server_port ? (
+          <ServiceAddress
+            label="VS Code Web"
+            address={`http://${hostname}:${workspace.code_server_port}`}
+            copied={copied === "code-server"}
+            onCopy={() => copyToClipboard(`http://${hostname}:${workspace.code_server_port}`, "code-server")}
           />
         ) : null}
 

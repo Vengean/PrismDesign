@@ -62,6 +62,14 @@ if [ -n "$STARTUP_SCRIPT" ]; then
   timeout 300 /tmp/startup.sh > >(tee -a "$LOG_DIR/startup.log") 2>&1 &
 fi
 
-# 6. Start Agent Server
-echo "Starting agent server on port 9527..." | log_main
-cd /workspace && node /prism-agent/dist/cli.js start --port 9527 > >(tee -a "$LOG_DIR/agent.log") 2>&1
+# 6. Start code-server (VS Code Web)
+echo "Starting code-server on port 8080..." | log_main
+code-server --bind-addr 0.0.0.0:8080 --auth none --disable-telemetry /workspace > >(tee -a "$LOG_DIR/code-server.log") 2>&1 &
+
+# 7. Start Agent Server
+AGENT_TYPE_FLAG=""
+if [ -n "$AGENT_TYPE" ] && [ "$AGENT_TYPE" != "claude" ]; then
+  AGENT_TYPE_FLAG="--agent-type $AGENT_TYPE"
+fi
+echo "Starting agent server on port 9527 (type: ${AGENT_TYPE:-claude})..." | log_main
+cd /workspace && node /prism-agent/dist/cli.js start --port 9527 $AGENT_TYPE_FLAG > >(tee -a "$LOG_DIR/agent.log") 2>&1

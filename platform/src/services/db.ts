@@ -39,6 +39,7 @@ function initTables() {
       git_access_token TEXT NOT NULL DEFAULT '',
       git_ssh_key TEXT NOT NULL DEFAULT '',
       git_ssh_port INTEGER NOT NULL DEFAULT 22,
+      agent_type TEXT NOT NULL DEFAULT 'claude',
       anthropic_api_key TEXT NOT NULL DEFAULT '',
       anthropic_base_url TEXT NOT NULL DEFAULT '',
       anthropic_model TEXT NOT NULL DEFAULT '',
@@ -67,10 +68,16 @@ function migrate() {
   if (colNames.length > 0 && !colNames.includes("git_ssh_port")) {
     db.exec(`ALTER TABLE workspaces ADD COLUMN git_ssh_port INTEGER NOT NULL DEFAULT 22`);
   }
+  if (colNames.length > 0 && !colNames.includes("agent_type")) {
+    db.exec(`ALTER TABLE workspaces ADD COLUMN agent_type TEXT NOT NULL DEFAULT 'claude'`);
+  }
   for (const col of ["anthropic_api_key", "anthropic_base_url", "anthropic_model"]) {
     if (colNames.length > 0 && !colNames.includes(col)) {
       db.exec(`ALTER TABLE workspaces ADD COLUMN ${col} TEXT NOT NULL DEFAULT ''`);
     }
+  }
+  if (colNames.length > 0 && !colNames.includes("code_server_port")) {
+    db.exec(`ALTER TABLE workspaces ADD COLUMN code_server_port INTEGER`);
   }
 }
 
@@ -123,6 +130,7 @@ function rowToWorkspace(row: WorkspaceRow): Workspace {
     repos: JSON.parse(row.repos),
     dev_port: row.dev_port ?? undefined,
     agent_port: row.agent_port ?? undefined,
+    code_server_port: row.code_server_port ?? undefined,
     container_id: row.container_id ?? undefined,
     error_message: row.error_message ?? undefined,
   } as Workspace;
@@ -153,6 +161,7 @@ export function createWorkspace(data: {
   gitAccessToken: string;
   gitSshKey: string;
   gitSshPort: number;
+  agentType: string;
   anthropicApiKey: string;
   anthropicBaseUrl: string;
   anthropicModel: string;
@@ -160,10 +169,10 @@ export function createWorkspace(data: {
   const id = crypto.randomUUID();
   getDb()
     .prepare(
-      `INSERT INTO workspaces (id, name, owner_id, repos, claude_md, startup_script, git_access_token, git_ssh_key, git_ssh_port, anthropic_api_key, anthropic_base_url, anthropic_model)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO workspaces (id, name, owner_id, repos, claude_md, startup_script, git_access_token, git_ssh_key, git_ssh_port, agent_type, anthropic_api_key, anthropic_base_url, anthropic_model)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(id, data.name, data.ownerId, data.repos, data.claudeMd, data.startupScript, data.gitAccessToken, data.gitSshKey, data.gitSshPort, data.anthropicApiKey, data.anthropicBaseUrl, data.anthropicModel);
+    .run(id, data.name, data.ownerId, data.repos, data.claudeMd, data.startupScript, data.gitAccessToken, data.gitSshKey, data.gitSshPort, data.agentType, data.anthropicApiKey, data.anthropicBaseUrl, data.anthropicModel);
   return id;
 }
 
@@ -179,6 +188,7 @@ export function updateWorkspace(
       | "git_access_token"
       | "git_ssh_key"
       | "git_ssh_port"
+      | "agent_type"
       | "anthropic_api_key"
       | "anthropic_base_url"
       | "anthropic_model"
@@ -186,6 +196,7 @@ export function updateWorkspace(
       | "sync_status"
       | "dev_port"
       | "agent_port"
+      | "code_server_port"
       | "container_id"
       | "error_message"
     >

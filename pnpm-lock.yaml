@@ -104,6 +104,9 @@ importers:
 
   packages/agent:
     dependencies:
+      '@agentclientprotocol/sdk':
+        specifier: ^0.25.1
+        version: 0.25.1(zod@4.3.6)
       '@anthropic-ai/claude-agent-sdk':
         specifier: ^0.2.118
         version: 0.2.118(zod@4.3.6)
@@ -259,6 +262,11 @@ importers:
         version: 8.0.8(@types/node@22.19.17)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.22.4)
 
 packages:
+
+  '@agentclientprotocol/sdk@0.25.1':
+    resolution: {integrity: sha512-jx2rF3bdpGwZ75Q/meyEDLLbYmbtxk82Uh9hDCdxDvcEedBnNSF5hZAnL/kJR5VNz56JqwOmqnAqasC84MwwkQ==}
+    peerDependencies:
+      zod: ^3.25.0 || ^4.0.0
 
   '@ant-design/colors@8.0.1':
     resolution: {integrity: sha512-foPVl0+SWIslGUtD/xBr1p9U4AKzPhNYEseXYRRo5QSzGACYZrQbe11AYJbYfAWnWSpGBx6JjBmSeugUsD9vqQ==}
@@ -2056,6 +2064,7 @@ packages:
 
   '@ungap/structured-clone@1.3.0':
     resolution: {integrity: sha512-WmoN8qaIAo7WTYWbAZuG8PYEhn5fkz7dZrqTBZ7dtt//lL2Gwms1IcnQ5yHqjDfX8Ft5j4YzDM23f87zBfDe9g==}
+    deprecated: Potential CWE-502 - Update to 1.3.1 or higher
 
   '@vitejs/plugin-react@6.0.1':
     resolution: {integrity: sha512-l9X/E3cDb+xY3SWzlG1MOGt2usfEHGMNIaegaUGFsLkb3RCn/k8/TOXBcab+OndDI4TBtktT8/9BwwW8Vi9KUQ==}
@@ -3721,6 +3730,10 @@ packages:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
 
 snapshots:
+
+  '@agentclientprotocol/sdk@0.25.1(zod@4.3.6)':
+    dependencies:
+      zod: 4.3.6
 
   '@ant-design/colors@8.0.1':
     dependencies:

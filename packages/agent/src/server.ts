@@ -2,19 +2,35 @@ import express from "express";
 import cors from "cors";
 import { WebSocketServer, WebSocket } from "ws";
 import http from "node:http";
-import { runAgent, initAgent, closeAllSessions } from "./agent.js";
-import type { ProjectProfile } from "./project-profiler.js";
+import type { AgentResult, ProgressCallback } from "./glm-agent.js";
 
 function getClientId(req: express.Request): string {
   return (req.headers["x-client-id"] as string) || "default";
 }
 
-export function startServer(
+export async function startServer(
   projectRoot: string,
-  profile: ProjectProfile,
-  port: number
+  port: number,
 ) {
-  initAgent(projectRoot, profile);
+  const agentType = process.env.AGENT_TYPE || "claude";
+
+  // Lazy-load agent modules so choosing GLM doesn't require claude-agent-sdk
+  let runAgentFn: (clientId: string, message: string, onProgress?: ProgressCallback) => Promise<AgentResult>;
+  let shutdownFn: () => void;
+
+  if (agentType === "glm") {
+    const glm = await import("./glm-agent.js");
+    glm.initGlmAgent(projectRoot);
+    runAgentFn = glm.runGlmAgent;
+    shutdownFn = glm.closeAllGlmSessions;
+    console.log("[Server] 使用 GLM Agent (glm-acp-agent)");
+  } else {
+    const claude = await import("./agent.js");
+    claude.initAgent(projectRoot);
+    runAgentFn = claude.runAgent;
+    shutdownFn = claude.closeAllSessions;
+    console.log("[Server] 使用 Claude Agent SDK");
+  }
 
   const app = express();
   app.use(cors());
@@ -45,18 +61,16 @@ export function startServer(
   app.get("/api/status", (_req, res) => {
     res.json({
       status: "running",
-      project: {
-        root: projectRoot,
-        framework: profile.framework,
-        language: profile.language,
-      },
+      agentType,
+      project: { root: projectRoot },
     });
   });
 
-  // Chat — pure pass-through: client sends full message, server forwards to agent
   app.post("/api/chat", async (req, res) => {
     const clientId = getClientId(req);
     const { message } = req.body as { message: string };
+
+    console.log(`[Server] POST /api/chat clientId=${clientId} message=${message ? `${message.length} chars` : "EMPTY"}`);
 
     if (!message) {
       res.status(400).json({ success: false, message: "message is required" });
@@ -64,11 +78,10 @@ export function startServer(
     }
 
     broadcast("agent:start", { type: "chat" });
-
     const onProgress = (text: string) => broadcast("agent:progress", { text });
 
     try {
-      const result = await runAgent(clientId, message, onProgress);
+      const result = await runAgentFn(clientId, message, onProgress);
       broadcast("agent:done", { success: result.success, filesModified: result.filesModified });
       res.json(result);
     } catch (error) {
@@ -82,7 +95,7 @@ export function startServer(
   server.listen(port, "0.0.0.0");
 
   function shutdown() {
-    closeAllSessions();
+    shutdownFn();
     server.close();
     process.exit(0);
   }

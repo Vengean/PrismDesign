@@ -19,6 +19,7 @@ const LOG_SOURCES: Record<string, string> = {
   main: "/var/log/prism/main.log",
   agent: "/var/log/prism/agent.log",
   startup: "/var/log/prism/startup.log",
+  "code-server": "/var/log/prism/code-server.log",
 };
 
 // Service status
@@ -93,12 +94,13 @@ router.post("/:id/services/restart", async (req, res) => {
 
   try {
     await stopContainer(workspace.id);
-    const { containerId, devPort, agentPort } = await createAndStartContainer(workspace);
+    const { containerId, devPort, agentPort, codeServerPort } = await createAndStartContainer(workspace);
     updateWorkspace(workspace.id, {
       status: "running",
       container_id: containerId,
       dev_port: devPort,
       agent_port: agentPort,
+      code_server_port: codeServerPort,
     });
     res.json(findWorkspaceById(workspace.id));
   } catch (err) {

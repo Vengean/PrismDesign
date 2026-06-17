@@ -11,26 +11,52 @@ import {
   stopContainer,
   removeContainer,
   syncWorkspaceRepos,
+  getContainerStatus,
 } from "../services/container-manager.js";
 import { authenticate } from "../middleware/auth.js";
-import type { AuthRequest } from "../types.js";
+import type { AuthRequest, Workspace } from "../types.js";
+
+// Reconcile DB status with actual container status
+async function reconcileStatus(workspace: Workspace): Promise<Workspace> {
+  if (workspace.status !== "running" && workspace.status !== "starting") return workspace;
+
+  const containerStatus = await getContainerStatus(workspace.id);
+
+  // Container is gone or stopped but DB says running
+  if (containerStatus === "not_found" || containerStatus === "exited" || containerStatus === "stopped" || containerStatus === "dead") {
+    updateWorkspace(workspace.id, {
+      status: "stopped",
+      container_id: "",
+      dev_port: 0,
+      agent_port: 0,
+      code_server_port: 0,
+    });
+    return { ...workspace, status: "stopped", container_id: "", dev_port: 0, agent_port: 0, code_server_port: 0 };
+  }
+
+  return workspace;
+}
+
+async function reconcileAll(workspaces: Workspace[]): Promise<Workspace[]> {
+  return Promise.all(workspaces.map(reconcileStatus));
+}
 
 const router: RouterType = Router();
 
 router.use(authenticate);
 
 // List workspaces
-router.get("/", (req, res) => {
+router.get("/", async (req, res) => {
   const authReq = req as AuthRequest;
   const isAdmin = authReq.user!.role === "admin";
   const workspaces = listWorkspaces(authReq.user!.userId, isAdmin);
-  res.json(workspaces);
+  res.json(await reconcileAll(workspaces));
 });
 
 // Create workspace
 router.post("/", (req, res) => {
   const authReq = req as AuthRequest;
-  const { name, repos, claudeMd, startupScript, gitAccessToken, gitSshKey, gitSshPort, anthropicApiKey, anthropicBaseUrl, anthropicModel, autoSync } = req.body;
+  const { name, repos, claudeMd, startupScript, gitAccessToken, gitSshKey, gitSshPort, agentType, anthropicApiKey, anthropicBaseUrl, anthropicModel, autoSync } = req.body;
 
   if (!name?.trim()) {
     res.status(400).json({ error: "工作空间名称不能为空" });
@@ -59,6 +85,7 @@ router.post("/", (req, res) => {
       gitAccessToken: gitAccessToken || "",
       gitSshKey: gitSshKey || "",
       gitSshPort: parseInt(gitSshPort) || 22,
+      agentType: agentType || "claude",
       anthropicApiKey: anthropicApiKey || "",
       anthropicBaseUrl: anthropicBaseUrl || "",
       anthropicModel: anthropicModel || "",
@@ -81,7 +108,7 @@ router.post("/", (req, res) => {
 });
 
 // Get workspace
-router.get("/:id", (req, res) => {
+router.get("/:id", async (req, res) => {
   const authReq = req as AuthRequest;
   const workspace = findWorkspaceById(req.params.id);
 
@@ -95,7 +122,7 @@ router.get("/:id", (req, res) => {
     return;
   }
 
-  res.json(workspace);
+  res.json(await reconcileStatus(workspace));
 });
 
 // Update workspace
@@ -113,7 +140,7 @@ router.put("/:id", (req, res) => {
     return;
   }
 
-  const { name, repos, claudeMd, startupScript, gitAccessToken, gitSshKey, gitSshPort, anthropicApiKey, anthropicBaseUrl, anthropicModel } = req.body;
+  const { name, repos, claudeMd, startupScript, gitAccessToken, gitSshKey, gitSshPort, agentType, anthropicApiKey, anthropicBaseUrl, anthropicModel } = req.body;
 
   updateWorkspace(req.params.id, {
     ...(name !== undefined && { name }),
@@ -123,6 +150,7 @@ router.put("/:id", (req, res) => {
     ...(gitAccessToken !== undefined && { git_access_token: gitAccessToken }),
     ...(gitSshKey !== undefined && { git_ssh_key: gitSshKey }),
     ...(gitSshPort !== undefined && { git_ssh_port: parseInt(gitSshPort) || 22 }),
+    ...(agentType !== undefined && { agent_type: agentType }),
     ...(anthropicApiKey !== undefined && { anthropic_api_key: anthropicApiKey }),
     ...(anthropicBaseUrl !== undefined && { anthropic_base_url: anthropicBaseUrl }),
     ...(anthropicModel !== undefined && { anthropic_model: anthropicModel }),
@@ -204,12 +232,13 @@ router.post("/:id/start", async (req, res) => {
     // Remove old container if exists
     await removeContainer(workspace.id);
 
-    const { containerId, devPort, agentPort } = await createAndStartContainer(workspace);
+    const { containerId, devPort, agentPort, codeServerPort } = await createAndStartContainer(workspace);
     updateWorkspace(workspace.id, {
       status: "running",
       container_id: containerId,
       dev_port: devPort,
       agent_port: agentPort,
+      code_server_port: codeServerPort,
     });
 
     res.json(findWorkspaceById(workspace.id));
@@ -244,6 +273,7 @@ router.post("/:id/stop", async (req, res) => {
       container_id: "",
       dev_port: 0,
       agent_port: 0,
+      code_server_port: 0,
     });
     res.json(findWorkspaceById(workspace.id));
   } catch (err) {
@@ -268,12 +298,13 @@ router.post("/:id/restart", async (req, res) => {
 
   try {
     await stopContainer(workspace.id);
-    const { containerId, devPort, agentPort } = await createAndStartContainer(workspace);
+    const { containerId, devPort, agentPort, codeServerPort } = await createAndStartContainer(workspace);
     updateWorkspace(workspace.id, {
       status: "running",
       container_id: containerId,
       dev_port: devPort,
       agent_port: agentPort,
+      code_server_port: codeServerPort,
     });
     res.json(findWorkspaceById(workspace.id));
   } catch (err) {
@@ -310,6 +341,7 @@ async function syncWorkspace(workspaceId: string) {
         container_id: "",
         dev_port: 0,
         agent_port: 0,
+        code_server_port: 0,
       });
     }
   } catch (err) {
@@ -318,6 +350,7 @@ async function syncWorkspace(workspaceId: string) {
       status: "stopped",
       sync_status: "failed",
       container_id: "",
+      code_server_port: 0,
       error_message: err instanceof Error ? err.message : "同步失败",
     });
   }

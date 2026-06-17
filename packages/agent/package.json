@@ -38,6 +38,7 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "^0.25.1",
     "@anthropic-ai/claude-agent-sdk": "^0.2.118",
     "cors": "^2.8.5",
     "express": "^4.21.0",

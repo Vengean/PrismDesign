@@ -3,9 +3,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { scanProject } from "./project-profiler.js";
 import { startServer } from "./server.js";
-import { loadConfig, applyConfigToEnv, type PrismConfig } from "./config.js";
+import { loadConfig, applyConfigToEnv } from "./config.js";
 
 // ── .env loader (lightweight, no dependency) ──
 
@@ -28,27 +27,6 @@ function loadEnvFile(dir: string) {
 }
 
 // ── Helpers ──
-
-function findProjectRoot(): string {
-  let dir = process.cwd();
-  while (dir !== path.dirname(dir)) {
-    if (
-      fs.existsSync(path.join(dir, "pnpm-workspace.yaml")) ||
-      fs.existsSync(path.join(dir, "lerna.json"))
-    ) {
-      return dir;
-    }
-    const pkgPath = path.join(dir, "package.json");
-    if (fs.existsSync(pkgPath)) {
-      try {
-        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
-        if (pkg.workspaces) return dir;
-      } catch {}
-    }
-    dir = path.dirname(dir);
-  }
-  return process.cwd();
-}
 
 function getLocalIP(): string {
   const interfaces = os.networkInterfaces();
@@ -75,42 +53,30 @@ async function main() {
 
   if (command === "--help" || command === "-h") {
     console.log(`
-🎨 PrismDesign Agent
+PrismDesign Agent
 
 Usage:
   prism-design-agent start [options]
 
 Options:
   --port <number>        服务端口 (default: 9527)
-  --project <path>       项目根目录 (default: 自动检测)
-  --api-key <key>        Anthropic API Key
-  --api-base-url <url>   API Base URL (代理)
-  --model <name>         模型名称 (default: claude-opus-4-6)
-
-Config File (prism.config.ts):
-  启动目录下放置 prism.config.ts 可配置所有参数:
-  anthropicApiKey, anthropicModel, anthropicBaseUrl,
-  httpsProxy, httpProxy, options (SDK 选项)
-
-  优先级: CLI 参数 > prism.config > 环境变量 > .env
-
-Examples:
-  npx prism-design-agent start
-  npx prism-design-agent start --port 8080
-  npx prism-design-agent start --model claude-sonnet-4-6
+  --project <path>       项目根目录 (default: 当前目录)
+  --api-key <key>        API Key
+  --api-base-url <url>   API Base URL
+  --model <name>         模型名称
+  --agent-type <type>    Agent 类型: claude | glm (default: claude)
 `);
     process.exit(0);
   }
 
   // Determine project root
   const projectArg = getArg(args, "--project");
-  const projectRoot = projectArg ? path.resolve(projectArg) : findProjectRoot();
+  const projectRoot = projectArg ? path.resolve(projectArg) : process.cwd();
 
-  // Load .env files first (lowest priority, only sets if key not in env)
+  // Load .env files (lowest priority)
   loadEnvFile(projectRoot);
-  loadEnvFile(process.cwd());
 
-  // Load prism.config.{ts,js,mjs} (overrides .env)
+  // Load prism.config (overrides .env)
   const config = await loadConfig(projectRoot);
   applyConfigToEnv(config, true);
 
@@ -124,45 +90,32 @@ Examples:
   const model = getArg(args, "--model");
   if (model) process.env.ANTHROPIC_MODEL = model;
 
+  const agentTypeArg = getArg(args, "--agent-type");
+  if (agentTypeArg) process.env.AGENT_TYPE = agentTypeArg;
+
   const port = parseInt(getArg(args, "--port") || "9527", 10);
 
-  // Scan project
-  console.log("🔍 扫描项目...");
-  let profile;
-  try {
-    profile = scanProject(projectRoot);
-  } catch (error) {
-    console.error(`❌ 项目扫描失败: ${error instanceof Error ? error.message : error}`);
-    process.exit(1);
-  }
+  // Determine agent type and model display
+  const agentType = process.env.AGENT_TYPE || "claude";
+  const modelName = agentType === "glm"
+    ? (process.env.ANTHROPIC_MODEL || "glm-5.1")
+    : (process.env.ANTHROPIC_MODEL || "claude-opus-4-6");
 
-  const resolvedRoot = profile.resolvedRoot;
-
-  console.log(`   框架:     ${profile.framework}`);
-  console.log(`   语言:     ${profile.language}`);
-  console.log(`   构建工具: ${profile.buildTool}`);
-  console.log(`   源码目录: ${profile.srcDir}`);
-
-  // Attach SDK options from config
-  profile.sdkOptions = config.options;
-
-  // Start server
   const localIP = getLocalIP();
-  const modelName = process.env.ANTHROPIC_MODEL || "claude-opus-4-6";
 
   console.log("\n" + "=".repeat(50));
-  console.log("  🎨 PrismDesign Agent");
+  console.log("  PrismDesign Agent");
   console.log("=".repeat(50));
   console.log(`\n  服务地址:  http://${localIP}:${port}`);
-  console.log(`  项目目录:  ${resolvedRoot}`);
+  console.log(`  项目目录:  ${projectRoot}`);
+  console.log(`  Agent:     ${agentType === "glm" ? "GLM (glm-acp-agent)" : "Claude Agent SDK"}`);
   console.log(`  模型:      ${modelName}`);
   if (process.env.ANTHROPIC_BASE_URL) {
     console.log(`  API 代理:  ${process.env.ANTHROPIC_BASE_URL}`);
   }
-  console.log(`\n  👉 在 Chrome 插件中配置服务地址即可开始`);
   console.log("\n" + "=".repeat(50) + "\n");
 
-  startServer(resolvedRoot, profile, port);
+  await startServer(projectRoot, port);
 }
 
 main().catch((error) => {
