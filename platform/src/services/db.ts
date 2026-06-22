@@ -79,6 +79,9 @@ function migrate() {
   if (colNames.length > 0 && !colNames.includes("code_server_port")) {
     db.exec(`ALTER TABLE workspaces ADD COLUMN code_server_port INTEGER`);
   }
+  if (colNames.length > 0 && !colNames.includes("https_proxy")) {
+    db.exec(`ALTER TABLE workspaces ADD COLUMN https_proxy TEXT NOT NULL DEFAULT ''`);
+  }
 }
 
 function ensureAdmin() {
@@ -165,14 +168,15 @@ export function createWorkspace(data: {
   anthropicApiKey: string;
   anthropicBaseUrl: string;
   anthropicModel: string;
+  httpsProxy: string;
 }): string {
   const id = crypto.randomUUID();
   getDb()
     .prepare(
-      `INSERT INTO workspaces (id, name, owner_id, repos, claude_md, startup_script, git_access_token, git_ssh_key, git_ssh_port, agent_type, anthropic_api_key, anthropic_base_url, anthropic_model)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO workspaces (id, name, owner_id, repos, claude_md, startup_script, git_access_token, git_ssh_key, git_ssh_port, agent_type, anthropic_api_key, anthropic_base_url, anthropic_model, https_proxy)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(id, data.name, data.ownerId, data.repos, data.claudeMd, data.startupScript, data.gitAccessToken, data.gitSshKey, data.gitSshPort, data.agentType, data.anthropicApiKey, data.anthropicBaseUrl, data.anthropicModel);
+    .run(id, data.name, data.ownerId, data.repos, data.claudeMd, data.startupScript, data.gitAccessToken, data.gitSshKey, data.gitSshPort, data.agentType, data.anthropicApiKey, data.anthropicBaseUrl, data.anthropicModel, data.httpsProxy);
   return id;
 }
 
@@ -192,6 +196,7 @@ export function updateWorkspace(
       | "anthropic_api_key"
       | "anthropic_base_url"
       | "anthropic_model"
+      | "https_proxy"
       | "status"
       | "sync_status"
       | "dev_port"

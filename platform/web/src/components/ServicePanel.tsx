@@ -112,9 +112,9 @@ export default function ServicePanel({ workspace, onRefresh }: ServicePanelProps
         {workspace.code_server_port ? (
           <ServiceAddress
             label="VS Code Web"
-            address={`http://${hostname}:${workspace.code_server_port}`}
+            address={`https://${hostname}:${workspace.code_server_port}`}
             copied={copied === "code-server"}
-            onCopy={() => copyToClipboard(`http://${hostname}:${workspace.code_server_port}`, "code-server")}
+            onCopy={() => copyToClipboard(`https://${hostname}:${workspace.code_server_port}`, "code-server")}
           />
         ) : null}
 

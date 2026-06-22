@@ -220,10 +220,11 @@ export interface Workspace {
   git_access_token: string;
   git_ssh_key: string;
   git_ssh_port: number;
-  agent_type: "claude" | "glm";
+  agent_type: "claude" | "glm" | "claude-sub";
   anthropic_api_key: string;
   anthropic_base_url: string;
   anthropic_model: string;
+  https_proxy: string;
   status: "stopped" | "syncing" | "starting" | "running" | "error";
   sync_status: "none" | "syncing" | "synced" | "failed";
   dev_port?: number;
@@ -259,9 +260,10 @@ export interface CreateWorkspacePayload {
   gitAccessToken?: string;
   gitSshKey?: string;
   gitSshPort?: number;
-  agentType?: "claude" | "glm";
+  agentType?: "claude" | "glm" | "claude-sub";
   anthropicApiKey?: string;
   anthropicBaseUrl?: string;
   anthropicModel?: string;
+  httpsProxy?: string;
   autoSync?: boolean;
 }

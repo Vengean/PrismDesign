@@ -1,6 +1,11 @@
 #!/bin/bash
 set -e
 
+# Init home dir on first run (volume mount may be empty)
+if [ ! -f "$HOME/.bashrc" ] && [ -d /home/prism-skel ]; then
+  cp -a /home/prism-skel/. "$HOME/"
+fi
+
 LOG_DIR="/var/log/prism"
 mkdir -p "$LOG_DIR"
 
@@ -62,13 +67,21 @@ if [ -n "$STARTUP_SCRIPT" ]; then
   timeout 300 /tmp/startup.sh > >(tee -a "$LOG_DIR/startup.log") 2>&1 &
 fi
 
-# 6. Start code-server (VS Code Web)
+# 6. Start code-server (VS Code Web, with self-signed cert for clipboard access)
 echo "Starting code-server on port 8080..." | log_main
-code-server --bind-addr 0.0.0.0:8080 --auth none --disable-telemetry /workspace > >(tee -a "$LOG_DIR/code-server.log") 2>&1 &
+code-server --bind-addr 0.0.0.0:8080 --auth none --disable-telemetry --cert -- /workspace > >(tee -a "$LOG_DIR/code-server.log") 2>&1 &
 
-# 7. Start Agent Server
+# 7. Export HTTPS proxy if set
+if [ -n "$HTTPS_PROXY" ]; then
+  export HTTPS_PROXY
+  export https_proxy="$HTTPS_PROXY"
+  echo "HTTPS proxy: $HTTPS_PROXY" | log_main
+fi
+
+# 8. Start Agent Server
+# claude-sub uses the same Claude Agent SDK but relies on ~/.claude/ login credentials
 AGENT_TYPE_FLAG=""
-if [ -n "$AGENT_TYPE" ] && [ "$AGENT_TYPE" != "claude" ]; then
+if [ -n "$AGENT_TYPE" ] && [ "$AGENT_TYPE" != "claude" ] && [ "$AGENT_TYPE" != "claude-sub" ]; then
   AGENT_TYPE_FLAG="--agent-type $AGENT_TYPE"
 fi
 echo "Starting agent server on port 9527 (type: ${AGENT_TYPE:-claude})..." | log_main

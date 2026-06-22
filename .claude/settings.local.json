@@ -34,7 +34,10 @@
       "Bash(kill %1)",
       "Bash(node dist/cli.js --no-agent --dir /Users/vengeanliu/Documents/ai-workspace/PrismDesign/static --port 3456)",
       "Bash(npm install:*)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(docker build:*)",
+      "Bash(podman build:*)",
+      "Bash(bash:*)"
     ]
   }
 }

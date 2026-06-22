@@ -21,10 +21,11 @@ export default function CreateWorkspace() {
   const [repos, setRepos] = useState<RepoConfig[]>([emptyRepo()]);
   const [claudeMd, setClaudeMd] = useState("");
   const [startupScript, setStartupScript] = useState("");
-  const [agentType, setAgentType] = useState<"claude" | "glm">("claude");
+  const [agentType, setAgentType] = useState<"claude" | "glm" | "claude-sub">("claude");
   const [anthropicApiKey, setAnthropicApiKey] = useState("");
   const [anthropicBaseUrl, setAnthropicBaseUrl] = useState("");
   const [anthropicModel, setAnthropicModel] = useState("");
+  const [httpsProxy, setHttpsProxy] = useState("");
   const [autoSync, setAutoSync] = useState(true);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -61,6 +62,7 @@ export default function CreateWorkspace() {
 
     setLoading(true);
     try {
+      const isSub = agentType === "claude-sub";
       await api.createWorkspace({
         name: name.trim(),
         repos,
@@ -70,9 +72,10 @@ export default function CreateWorkspace() {
         gitSshKey,
         gitSshPort,
         agentType,
-        anthropicApiKey,
-        anthropicBaseUrl,
-        anthropicModel,
+        anthropicApiKey: isSub ? "" : anthropicApiKey,
+        anthropicBaseUrl: isSub ? "" : anthropicBaseUrl,
+        anthropicModel: isSub ? "" : anthropicModel,
+        httpsProxy: isSub ? httpsProxy : "",
         autoSync,
       });
       navigate("/dashboard");
@@ -244,7 +247,7 @@ export default function CreateWorkspace() {
                     onChange={() => setAgentType("claude")}
                     className="accent-primary"
                   />
-                  <span className="text-sm">Claude Agent SDK</span>
+                  <span className="text-sm">Claude API</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -255,43 +258,71 @@ export default function CreateWorkspace() {
                     onChange={() => setAgentType("glm")}
                     className="accent-primary"
                   />
-                  <span className="text-sm">GLM Agent</span>
+                  <span className="text-sm">GLM API</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="agentType"
+                    value="claude-sub"
+                    checked={agentType === "claude-sub"}
+                    onChange={() => setAgentType("claude-sub")}
+                    className="accent-primary"
+                  />
+                  <span className="text-sm">Claude 订阅</span>
                 </label>
               </div>
               <p className="text-xs text-muted-foreground">
                 {agentType === "claude"
-                  ? "使用 Claude Agent SDK，支持 Claude 系列模型及 LiteLLM 代理"
-                  : "使用智谱 GLM Agent，原生支持 GLM 系列模型"}
+                  ? "使用 Claude API，支持 Claude 系列模型及 LiteLLM 代理"
+                  : agentType === "glm"
+                  ? "使用智谱 GLM API，原生支持 GLM 系列模型"
+                  : "使用 Claude 订阅账号，需在容器终端中执行 claude /login 登录"}
               </p>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="api-key">API Key *</Label>
-              <Input
-                id="api-key"
-                type="password"
-                value={anthropicApiKey}
-                onChange={(e) => setAnthropicApiKey(e.target.value)}
-                placeholder={agentType === "claude" ? "sk-ant-..." : "智谱 API Key"}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="base-url">Base URL</Label>
-              <Input
-                id="base-url"
-                value={anthropicBaseUrl}
-                onChange={(e) => setAnthropicBaseUrl(e.target.value)}
-                placeholder={agentType === "claude" ? "https://api.anthropic.com（留空使用默认）" : "https://open.bigmodel.cn/api/paas/v4（留空使用默认）"}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="model">模型</Label>
-              <Input
-                id="model"
-                value={anthropicModel}
-                onChange={(e) => setAnthropicModel(e.target.value)}
-                placeholder={agentType === "claude" ? "claude-sonnet-4-20250514（留空使用默认）" : "glm-4-plus（留空使用默认）"}
-              />
-            </div>
+            {agentType !== "claude-sub" && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="api-key">API Key *</Label>
+                  <Input
+                    id="api-key"
+                    type="password"
+                    value={anthropicApiKey}
+                    onChange={(e) => setAnthropicApiKey(e.target.value)}
+                    placeholder={agentType === "claude" ? "sk-ant-..." : "智谱 API Key"}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="base-url">Base URL</Label>
+                  <Input
+                    id="base-url"
+                    value={anthropicBaseUrl}
+                    onChange={(e) => setAnthropicBaseUrl(e.target.value)}
+                    placeholder={agentType === "claude" ? "https://api.anthropic.com（留空使用默认）" : "https://open.bigmodel.cn/api/paas/v4（留空使用默认）"}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="model">模型</Label>
+                  <Input
+                    id="model"
+                    value={anthropicModel}
+                    onChange={(e) => setAnthropicModel(e.target.value)}
+                    placeholder={agentType === "claude" ? "claude-sonnet-4-20250514（留空使用默认）" : "glm-4-plus（留空使用默认）"}
+                  />
+                </div>
+              </>
+            )}
+            {agentType === "claude-sub" && (
+              <div className="space-y-2">
+                <Label htmlFor="https-proxy">HTTPS 代理</Label>
+                <Input
+                  id="https-proxy"
+                  value={httpsProxy}
+                  onChange={(e) => setHttpsProxy(e.target.value)}
+                  placeholder="http://127.0.0.1:7890（可选）"
+                />
+              </div>
+            )}
           </CardContent>
         </Card>
 

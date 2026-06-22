@@ -80,7 +80,7 @@ export default function WorkspaceDetail() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => window.open(`http://${hostname}:${workspace.code_server_port}`, "_blank")}
+              onClick={() => window.open(`https://${hostname}:${workspace.code_server_port}`, "_blank")}
             >
               <MonitorPlay size={14} />
               新窗口打开
@@ -117,7 +117,7 @@ export default function WorkspaceDetail() {
         </div>
       ) : workspace.code_server_port ? (
         <iframe
-          src={`http://${hostname}:${workspace.code_server_port}`}
+          src={`https://${hostname}:${workspace.code_server_port}`}
           className="flex-1 w-full border-0"
           title="VS Code Web"
         />

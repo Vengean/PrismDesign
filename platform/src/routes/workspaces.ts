@@ -56,7 +56,7 @@ router.get("/", async (req, res) => {
 // Create workspace
 router.post("/", (req, res) => {
   const authReq = req as AuthRequest;
-  const { name, repos, claudeMd, startupScript, gitAccessToken, gitSshKey, gitSshPort, agentType, anthropicApiKey, anthropicBaseUrl, anthropicModel, autoSync } = req.body;
+  const { name, repos, claudeMd, startupScript, gitAccessToken, gitSshKey, gitSshPort, agentType, anthropicApiKey, anthropicBaseUrl, anthropicModel, httpsProxy, autoSync } = req.body;
 
   if (!name?.trim()) {
     res.status(400).json({ error: "工作空间名称不能为空" });
@@ -89,6 +89,7 @@ router.post("/", (req, res) => {
       anthropicApiKey: anthropicApiKey || "",
       anthropicBaseUrl: anthropicBaseUrl || "",
       anthropicModel: anthropicModel || "",
+      httpsProxy: httpsProxy || "",
     });
 
     const workspace = findWorkspaceById(id);
@@ -140,7 +141,7 @@ router.put("/:id", (req, res) => {
     return;
   }
 
-  const { name, repos, claudeMd, startupScript, gitAccessToken, gitSshKey, gitSshPort, agentType, anthropicApiKey, anthropicBaseUrl, anthropicModel } = req.body;
+  const { name, repos, claudeMd, startupScript, gitAccessToken, gitSshKey, gitSshPort, agentType, anthropicApiKey, anthropicBaseUrl, anthropicModel, httpsProxy } = req.body;
 
   updateWorkspace(req.params.id, {
     ...(name !== undefined && { name }),
@@ -154,6 +155,7 @@ router.put("/:id", (req, res) => {
     ...(anthropicApiKey !== undefined && { anthropic_api_key: anthropicApiKey }),
     ...(anthropicBaseUrl !== undefined && { anthropic_base_url: anthropicBaseUrl }),
     ...(anthropicModel !== undefined && { anthropic_model: anthropicModel }),
+    ...(httpsProxy !== undefined && { https_proxy: httpsProxy }),
   });
 
   res.json(findWorkspaceById(req.params.id));

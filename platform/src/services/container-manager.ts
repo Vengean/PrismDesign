@@ -68,6 +68,7 @@ export async function createAndStartContainer(workspace: Workspace): Promise<{
       `ANTHROPIC_API_KEY=${workspace.anthropic_api_key || ""}`,
       `ANTHROPIC_MODEL=${workspace.anthropic_model || ""}`,
       `ANTHROPIC_BASE_URL=${workspace.anthropic_base_url || ""}`,
+      `HTTPS_PROXY=${workspace.https_proxy || ""}`,
     ],
     ExposedPorts: { "5173/tcp": {}, "8080/tcp": {}, "9527/tcp": {} },
     HostConfig: {
@@ -76,7 +77,10 @@ export async function createAndStartContainer(workspace: Workspace): Promise<{
         "8080/tcp": [{ HostPort: "0" }],
         "9527/tcp": [{ HostPort: "0" }],
       },
-      Binds: [`prism-ws-${workspace.id}:/workspace`],
+      Binds: [
+        `prism-ws-${workspace.id}:/workspace`,
+        `prism-home-${workspace.id}:/home/prism`,
+      ],
       Memory: 4 * 1024 * 1024 * 1024,
       NanoCpus: 2 * 1e9,
       SecurityOpt: ["no-new-privileges:true"],
@@ -178,7 +182,10 @@ export async function execInTempContainer(
     Cmd: [cmd.join(" ")],
     WorkingDir: workDir,
     HostConfig: {
-      Binds: [`prism-ws-${workspaceId}:/workspace`],
+      Binds: [
+        `prism-ws-${workspaceId}:/workspace`,
+        `prism-home-${workspaceId}:/home/prism`,
+      ],
     },
   });
 

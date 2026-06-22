@@ -23,7 +23,7 @@ export interface RepoConfig {
   currentBranch?: string;
 }
 
-export type AgentType = "claude" | "glm";
+export type AgentType = "claude" | "glm" | "claude-sub";
 
 export interface Workspace {
   id: string;
@@ -39,6 +39,7 @@ export interface Workspace {
   anthropic_api_key: string;
   anthropic_base_url: string;
   anthropic_model: string;
+  https_proxy: string;
   status: "stopped" | "syncing" | "starting" | "running" | "error";
   sync_status: "none" | "syncing" | "synced" | "failed";
   dev_port?: number;
@@ -65,6 +66,7 @@ export interface WorkspaceRow {
   anthropic_api_key: string;
   anthropic_base_url: string;
   anthropic_model: string;
+  https_proxy: string;
   status: string;
   sync_status: string;
   dev_port: number | null;
