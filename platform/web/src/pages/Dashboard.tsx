@@ -35,12 +35,7 @@ const STATUS_MAP: Record<string, { label: string; variant: "default" | "secondar
   error: { label: "错误", variant: "destructive" },
 };
 
-const SYNC_STATUS_MAP: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  none: { label: "未同步", variant: "secondary" },
-  syncing: { label: "同步中", variant: "outline" },
-  synced: { label: "已同步", variant: "default" },
-  failed: { label: "同步失败", variant: "destructive" },
-};
+
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -130,7 +125,6 @@ export default function Dashboard() {
         <div className="grid gap-4">
           {workspaces.map((ws) => {
             const status = STATUS_MAP[ws.status] || STATUS_MAP.stopped;
-            const syncStatus = SYNC_STATUS_MAP[ws.sync_status] || SYNC_STATUS_MAP.none;
             const isLoading = actionLoading === ws.id;
 
             return (
@@ -150,7 +144,6 @@ export default function Dashboard() {
                           {ws.agent_type === "glm" ? "GLM" : "Claude"}
                         </Badge>
                         <Badge variant={status.variant}>{status.label}</Badge>
-                        <Badge variant={syncStatus.variant}>{syncStatus.label}</Badge>
                       </div>
                       <div className="flex items-center gap-4 text-sm text-muted-foreground">
                         <span className="flex items-center gap-1">
@@ -177,7 +170,18 @@ export default function Dashboard() {
                             variant="outline"
                             size="sm"
                             disabled={isLoading}
-                            onClick={() => handleAction(ws.id, () => api.syncWorkspace(ws.id))}
+                            onClick={async () => {
+                              setActionLoading(ws.id);
+                              try {
+                                const res = await api.syncWorkspace(ws.id);
+                                alert(res.message);
+                                await loadWorkspaces();
+                              } catch (err) {
+                                alert(err instanceof Error ? err.message : "同步失败");
+                              } finally {
+                                setActionLoading(null);
+                              }
+                            }}
                           >
                             <RefreshCw size={14} className={ws.sync_status === "syncing" ? "animate-spin" : ""} />
                             同步

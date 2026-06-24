@@ -37,7 +37,8 @@
       "WebFetch(domain:github.com)",
       "Bash(docker build:*)",
       "Bash(podman build:*)",
-      "Bash(bash:*)"
+      "Bash(bash:*)",
+      "Bash(xargs ls:*)"
     ]
   }
 }

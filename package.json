@@ -7,11 +7,16 @@
     "dev": "pnpm --filter demo dev & pnpm --filter prism-design-agent dev",
     "dev:agent": "pnpm --filter prism-design-agent dev",
     "dev:demo": "pnpm --filter demo dev",
+    "dev:next": "pnpm --filter demo-next dev",
     "build:agent": "pnpm --filter prism-design-agent build",
     "build:chrome-ext": "pnpm --filter @prism-design/chrome-ext build",
     "build:serve": "pnpm --filter prism-design-serve build",
     "build:widget": "pnpm --filter prism-design-widget build",
-    "build": "pnpm -r build"
+    "build": "pnpm -r build",
+    "dev:platform": "cd platform && pnpm dev",
+    "build:platform": "cd platform && pnpm build",
+    "start:platform": "cd platform && pnpm start",
+    "docker:platform": "cd platform && docker compose up --build"
   },
   "engines": {
     "node": ">=18",

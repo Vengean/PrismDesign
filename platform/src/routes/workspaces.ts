@@ -201,6 +201,11 @@ router.post("/:id/sync", async (req, res) => {
     return;
   }
 
+  if (workspace.sync_status === "synced") {
+    res.json({ message: "代码已同步" });
+    return;
+  }
+
   syncWorkspace(workspace.id).catch((err) => {
     console.error(`Sync failed for workspace ${workspace.id}:`, err);
   });
