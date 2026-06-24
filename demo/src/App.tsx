@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from './components/ui/button'
 import { Badge } from './components/ui/badge'
 import {
@@ -59,6 +59,32 @@ export default function App() {
   const [rememberMe, setRememberMe] = useState(false)
   const [twoFactor, setTwoFactor] = useState(false)
   const [heroMouse, setHeroMouse] = useState<{ x: number; y: number } | null>(null)
+  const [activeSection, setActiveSection] = useState('#')
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const atBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 100
+      if (atBottom) {
+        setActiveSection('#examples')
+        return
+      }
+      const sections = [
+        { id: 'examples', href: '#examples' },
+        { id: 'components', href: '#components' },
+      ]
+      for (const section of sections) {
+        const el = document.getElementById(section.id)
+        if (el && el.getBoundingClientRect().top <= 100) {
+          setActiveSection(section.href)
+          return
+        }
+      }
+      setActiveSection('#')
+    }
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    handleScroll()
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
 
   return (
     <div className="min-h-screen bg-background">
@@ -73,9 +99,19 @@ export default function App() {
             <span className="font-semibold">棱镜</span>
           </div>
           <nav className="hidden md:flex items-center gap-6 text-sm">
-            <a href="#" className="text-muted-foreground hover:text-foreground transition-colors">文档</a>
-            <a href="#components" className="text-muted-foreground hover:text-foreground transition-colors">组件</a>
-            <a href="#examples" className="text-muted-foreground hover:text-foreground transition-colors">示例</a>
+            {[
+              { href: '#', label: '文档' },
+              { href: '#components', label: '组件' },
+              { href: '#examples', label: '示例' },
+            ].map(({ href, label }) => (
+              <a
+                key={href}
+                href={href}
+                className={`transition-colors ${activeSection === href ? 'text-foreground font-medium' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                {label}
+              </a>
+            ))}
           </nav>
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon">
@@ -575,7 +611,7 @@ export default function App() {
                         <AvatarFallback>ZS</AvatarFallback>
                       </Avatar>
                       <div>
-                        <CardTitle className="text-base">张设计师</CardTitle>
+                        <CardTitle className="text-base">张明远</CardTitle>
                         <CardDescription>designer@example.com</CardDescription>
                       </div>
                     </div>
@@ -591,7 +627,7 @@ export default function App() {
                       <TabsContent value="profile" className="mt-4 space-y-3">
                         <div className="space-y-2">
                           <Label htmlFor="display-name">显示名称</Label>
-                          <Input id="display-name" defaultValue="张设计师" />
+                          <Input id="display-name" defaultValue="张明远" />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="bio">个人简介</Label>

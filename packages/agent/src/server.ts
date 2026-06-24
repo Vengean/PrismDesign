@@ -91,8 +91,34 @@ export async function startServer(
     }
   });
 
-  // ---- Start ----
-  server.listen(port, "0.0.0.0");
+  // ---- Start (auto-increment port if occupied) ----
+  const maxRetries = 10;
+  let actualPort = port;
+
+  // Suppress WSS error events (they mirror the HTTP server errors)
+  wss.on("error", () => {});
+
+  await new Promise<void>((resolve, reject) => {
+    function tryListen(p: number, attempt: number) {
+      const onError = (err: NodeJS.ErrnoException) => {
+        if (err.code === "EADDRINUSE" && attempt < maxRetries) {
+          console.log(`[Server] 端口 ${p} 被占用，尝试 ${p + 1}...`);
+          server.close(() => {
+            tryListen(p + 1, attempt + 1);
+          });
+        } else {
+          reject(err);
+        }
+      };
+      server.once("error", onError);
+      server.listen(p, "0.0.0.0", () => {
+        server.removeListener("error", onError);
+        actualPort = p;
+        resolve();
+      });
+    }
+    tryListen(port, 0);
+  });
 
   function shutdown() {
     shutdownFn();
@@ -103,5 +129,5 @@ export async function startServer(
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
 
-  return server;
+  return { server, port: actualPort };
 }

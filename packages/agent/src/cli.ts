@@ -106,7 +106,13 @@ Options:
   console.log("\n" + "=".repeat(50));
   console.log("  PrismDesign Agent");
   console.log("=".repeat(50));
-  console.log(`\n  服务地址:  http://${localIP}:${port}`);
+
+  const { port: actualPort } = await startServer(projectRoot, port);
+
+  // Machine-readable marker for tooling (e.g. vite-plugin) to detect actual port
+  console.log(`__PRISM_AGENT_PORT__=${actualPort}`);
+
+  console.log(`\n  服务地址:  http://${localIP}:${actualPort}`);
   console.log(`  项目目录:  ${projectRoot}`);
   console.log(`  Agent:     ${agentType === "glm" ? "GLM (glm-acp-agent)" : "Claude Agent SDK"}`);
   console.log(`  模型:      ${modelName}`);
@@ -114,8 +120,6 @@ Options:
     console.log(`  API 代理:  ${process.env.ANTHROPIC_BASE_URL}`);
   }
   console.log("\n" + "=".repeat(50) + "\n");
-
-  await startServer(projectRoot, port);
 }
 
 main().catch((error) => {
