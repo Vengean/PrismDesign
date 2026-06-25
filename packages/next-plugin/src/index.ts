@@ -109,13 +109,16 @@ function startAgent(
     model,
   } = options;
 
-  if (agentUrlOverride) {
+  // If running inside a workspace container, reuse its agent
+  const effectiveAgentUrl = agentUrlOverride || process.env.PRISM_AGENT_URL;
+
+  if (effectiveAgentUrl) {
     const dir = ensurePublicDir(projectRoot);
     fs.writeFileSync(
       path.join(dir, "config.json"),
-      JSON.stringify({ agentUrl: agentUrlOverride }) + "\n"
+      JSON.stringify({ agentUrl: effectiveAgentUrl }) + "\n"
     );
-    log(`Using agent at ${agentUrlOverride}`);
+    log(`Using existing agent at ${effectiveAgentUrl}`);
     return;
   }
 

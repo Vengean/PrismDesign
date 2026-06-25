@@ -156,17 +156,16 @@ export default function ServicePanel({ workspace, onRefresh }: ServicePanelProps
             ))}
           </div>
 
-          <div className="flex-1 overflow-auto">
-            {logsLoading ? (
-              <div className="flex items-center justify-center py-8 text-muted-foreground">
-                <Loader2 size={16} className="animate-spin mr-2" />
-                加载中...
+          <div className="relative h-[55vh] rounded-lg bg-[#1e1e1e] overflow-hidden">
+            {logsLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-[#1e1e1e]/80 z-10">
+                <Loader2 size={16} className="animate-spin mr-2 text-[#d4d4d4]" />
+                <span className="text-sm text-[#d4d4d4]">加载中...</span>
               </div>
-            ) : (
-              <pre className="text-xs font-mono bg-[#1e1e1e] text-[#d4d4d4] p-4 rounded-lg overflow-auto max-h-[55vh] whitespace-pre-wrap break-all">
-                {logs || "暂无日志"}
-              </pre>
             )}
+            <pre className="h-full text-xs font-mono text-[#d4d4d4] p-4 overflow-auto whitespace-pre-wrap break-all">
+              {logs || "暂无日志"}
+            </pre>
           </div>
 
           <DialogFooter>
@@ -199,9 +198,14 @@ function ServiceAddress({
     <div className="flex items-center justify-between text-sm">
       <div>
         <span className="text-muted-foreground">{label}：</span>
-        <code className="ml-1 px-1.5 py-0.5 bg-background rounded text-xs font-mono border">
+        <a
+          href={address}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="ml-1 px-1.5 py-0.5 bg-background rounded text-xs font-mono border hover:text-primary hover:border-primary transition-colors"
+        >
           {address}
-        </code>
+        </a>
       </div>
       <Button variant="ghost" size="icon" className="size-7" onClick={onCopy} title="复制地址">
         {copied ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}

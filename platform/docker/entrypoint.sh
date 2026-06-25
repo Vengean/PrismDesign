@@ -24,7 +24,7 @@ if [ -n "$GIT_SSH_KEY" ]; then
   echo "$GIT_SSH_KEY" > $HOME/.ssh/id_rsa
   chmod 600 $HOME/.ssh/id_rsa
 
-  SSH_PORT="${GIT_SSH_PORT:-22}"
+  SSH_PORT="${GIT_SSH_PORT:-36000}"
   cat > $HOME/.ssh/config <<SSHEOF
 Host *
   Port ${SSH_PORT}
@@ -78,7 +78,10 @@ if [ -n "$HTTPS_PROXY" ]; then
   echo "HTTPS proxy: $HTTPS_PROXY" | log_main
 fi
 
-# 8. Start Agent Server
+# 8. Export agent URL so vite-plugin / next-plugin reuse workspace agent
+export PRISM_AGENT_URL="http://localhost:9527"
+
+# 9. Start Agent Server
 # claude-sub uses the same Claude Agent SDK but relies on ~/.claude/ login credentials
 AGENT_TYPE_FLAG=""
 if [ -n "$AGENT_TYPE" ] && [ "$AGENT_TYPE" != "claude" ] && [ "$AGENT_TYPE" != "claude-sub" ]; then

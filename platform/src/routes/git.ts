@@ -62,21 +62,28 @@ router.get("/:id/git/:repo/branches", async (req, res) => {
   }
 });
 
-// Checkout branch — requires running container
+// Checkout branch — works both running and stopped (uses temp container when stopped)
 router.post("/:id/git/:repo/checkout", async (req, res) => {
-  const result = requireRunning(req as AuthRequest, req.params.id);
+  const result = checkOwnership(req as AuthRequest, req.params.id);
   if ("error" in result) { res.status(result.status).json({ error: result.error }); return; }
 
-  const { branch, create } = req.body;
+  const { workspace } = result;
+  const { branch, create, baseBranch } = req.body;
   if (!branch) { res.status(400).json({ error: "分支名不能为空" }); return; }
 
   const repoDir = `/workspace/${req.params.repo}`;
   try {
-    const cmd = create
-      ? `cd "${repoDir}" && git checkout -b "${branch}"`
-      : `cd "${repoDir}" && git checkout "${branch}"`;
+    const exec = workspace.status === "running" ? execInContainer : execInTempContainer;
 
-    const { exitCode, stderr } = await execInContainer(req.params.id, [cmd]);
+    let cmd: string;
+    if (create) {
+      const base = baseBranch ? `cd "${repoDir}" && git checkout "${baseBranch}" && ` : `cd "${repoDir}" && `;
+      cmd = `${base}git checkout -b "${branch}"`;
+    } else {
+      cmd = `cd "${repoDir}" && git checkout "${branch}"`;
+    }
+
+    const { exitCode, stderr } = await exec(workspace.id, [cmd]);
     if (exitCode !== 0) { res.status(500).json({ error: stderr || "切换分支失败" }); return; }
 
     res.json({ message: `已切换到分支 ${branch}` });

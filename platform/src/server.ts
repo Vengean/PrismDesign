@@ -121,6 +121,6 @@ server.on("upgrade", (req, socket, head) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`Platform server running on http://localhost:${PORT}`);
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`Platform server running on http://0.0.0.0:${PORT}`);
 });

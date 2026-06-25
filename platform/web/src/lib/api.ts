@@ -121,10 +121,10 @@ export const api = {
     );
   },
 
-  checkout(workspaceId: string, repo: string, branch: string, create = false) {
+  checkout(workspaceId: string, repo: string, branch: string, create = false, baseBranch?: string) {
     return request<{ message: string }>(
       `/workspaces/${workspaceId}/git/${encodeURIComponent(repo)}/checkout`,
-      { method: "POST", body: JSON.stringify({ branch, create }) }
+      { method: "POST", body: JSON.stringify({ branch, create, baseBranch }) }
     );
   },
 

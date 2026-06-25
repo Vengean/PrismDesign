@@ -12,7 +12,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import StartupDialog from "@/components/StartupDialog";
+import BranchSelector from "@/components/BranchSelector";
 import ServicePanel from "@/components/ServicePanel";
 import {
   FolderGit2,
@@ -35,15 +35,12 @@ const STATUS_MAP: Record<string, { label: string; variant: "default" | "secondar
   error: { label: "错误", variant: "destructive" },
 };
 
-
-
 export default function Dashboard() {
   const navigate = useNavigate();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<Workspace | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [startupTarget, setStartupTarget] = useState<Workspace | null>(null);
 
   const loadWorkspaces = useCallback(async () => {
     try {
@@ -58,7 +55,6 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadWorkspaces();
-    // Poll every 5s for status updates
     const timer = window.setInterval(loadWorkspaces, 5000);
     return () => window.clearInterval(timer);
   }, [loadWorkspaces]);
@@ -129,41 +125,23 @@ export default function Dashboard() {
 
             return (
               <Card key={ws.id} className="hover:shadow-md transition-shadow">
-                <CardContent className="p-5">
-                  <div className="flex items-center justify-between">
-                    {/* Left: info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-3 mb-2">
-                        <h3
-                          className="text-base font-semibold truncate cursor-pointer hover:text-primary transition-colors"
-                          onClick={() => navigate(`/workspace/${ws.id}`)}
-                        >
-                          {ws.name}
-                        </h3>
-                        <Badge variant="outline">
-                          {ws.agent_type === "glm" ? "GLM" : "Claude"}
-                        </Badge>
-                        <Badge variant={status.variant}>{status.label}</Badge>
-                      </div>
-                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <GitBranch size={14} />
-                          {ws.repos.length} 个仓库
-                        </span>
-                        <span>
-                          创建于 {new Date(ws.created_at).toLocaleDateString("zh-CN")}
-                        </span>
-                        {ws.error_message && (
-                          <span className="flex items-center gap-1 text-destructive">
-                            <AlertCircle size={14} />
-                            {ws.error_message}
-                          </span>
-                        )}
-                      </div>
+                <CardContent className="p-5 space-y-3">
+                  {/* Row 1: title + badges + actions */}
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <h3
+                        className="text-base font-semibold truncate cursor-pointer hover:text-primary transition-colors"
+                        onClick={() => navigate(`/workspace/${ws.id}`)}
+                      >
+                        {ws.name}
+                      </h3>
+                      <Badge variant="outline" className="shrink-0">
+                        {ws.agent_type === "glm" ? "GLM" : "Claude"}
+                      </Badge>
+                      <Badge variant={status.variant} className="shrink-0">{status.label}</Badge>
                     </div>
-
-                    {/* Right: actions */}
-                    <div className="flex items-center gap-2 ml-4">
+                    <div className="flex items-center gap-3 shrink-0">
+                      <BranchSelector workspace={ws} onBranchChanged={loadWorkspaces} />
                       {ws.status === "stopped" || ws.status === "error" ? (
                         <>
                           <Button
@@ -189,9 +167,9 @@ export default function Dashboard() {
                           <Button
                             size="sm"
                             disabled={isLoading}
-                            onClick={() => setStartupTarget(ws)}
+                            onClick={() => handleAction(ws.id, () => api.startWorkspace(ws.id))}
                           >
-                            <Play size={14} />
+                            {isLoading ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
                             启动
                           </Button>
                         </>
@@ -226,6 +204,26 @@ export default function Dashboard() {
                       </Button>
                     </div>
                   </div>
+
+                  {/* Row 2: meta info */}
+                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <GitBranch size={14} />
+                      {ws.repos.length} 个仓库
+                    </span>
+                    <span>
+                      创建于 {new Date(ws.created_at).toLocaleDateString("zh-CN")}
+                    </span>
+                  </div>
+
+                  {/* Row 3: error message (independent row, won't squeeze layout) */}
+                  {ws.error_message && (
+                    <div className="flex items-start gap-1.5 text-sm text-destructive bg-destructive/5 rounded-md px-3 py-2 border border-destructive/10">
+                      <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                      <span className="break-all">{ws.error_message}</span>
+                    </div>
+                  )}
+
                   <ServicePanel workspace={ws} onRefresh={loadWorkspaces} />
                 </CardContent>
               </Card>
@@ -253,14 +251,6 @@ export default function Dashboard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Startup dialog */}
-      <StartupDialog
-        workspace={startupTarget}
-        open={!!startupTarget}
-        onOpenChange={(open) => { if (!open) setStartupTarget(null); }}
-        onStarted={loadWorkspaces}
-      />
     </div>
   );
 }

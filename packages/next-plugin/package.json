@@ -1,6 +1,6 @@
 {
   "name": "next-plugin-prism-design",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Next.js plugin for PrismDesign — AI-powered visual UI editing in the browser",
   "type": "module",
   "license": "MIT",

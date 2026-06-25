@@ -29,7 +29,7 @@ export interface PrismDesignOptions {
 }
 
 function findWidgetScript(): string | null {
-  // Resolve from prism-design-widget package
+  // Strategy 1: resolve from prism-design-widget package
   try {
     const widgetPkg = require.resolve("prism-design-widget/package.json");
     const widgetDir = path.dirname(widgetPkg);
@@ -37,7 +37,7 @@ function findWidgetScript(): string | null {
     if (fs.existsSync(iifeFile)) return iifeFile;
   } catch {}
 
-  // Fallback: look relative to this package
+  // Strategy 2: look relative to this package
   try {
     const thisDir = path.dirname(new URL(import.meta.url).pathname);
     const candidate = path.resolve(thisDir, "../../widget/dist/prism-design-widget.iife.js");
@@ -81,7 +81,8 @@ export default function prismDesign(options: PrismDesignOptions = {}): Plugin {
   } = options;
 
   let agentProcess: ChildProcess | null = null;
-  let agentUrl = agentUrlOverride || "";
+  // If running inside a workspace container, reuse its agent
+  let agentUrl = agentUrlOverride || process.env.PRISM_AGENT_URL || "";
   let widgetJs = "";
   let config: ResolvedConfig;
 
@@ -110,8 +111,8 @@ export default function prismDesign(options: PrismDesignOptions = {}): Plugin {
         res.end(widgetJs);
       });
 
-      // Start agent if needed
-      if (!agentUrlOverride && agentAutoStart) {
+      // Start agent if needed (skip if agentUrl already set via option or PRISM_AGENT_URL env)
+      if (!agentUrl && agentAutoStart) {
         const agentCli = findAgentCli();
         if (agentCli) {
           const projectRoot = config.root || process.cwd();
@@ -166,9 +167,8 @@ export default function prismDesign(options: PrismDesignOptions = {}): Plugin {
           config.logger.warn("[PrismDesign] Agent CLI not found. Install prism-design-agent or run agent manually.");
           config.logger.info("[PrismDesign] Widget will show connection form for manual URL input.");
         }
-      } else if (agentUrlOverride) {
-        agentUrl = agentUrlOverride;
-        config.logger.info(`[PrismDesign] Using agent at ${agentUrl}`);
+      } else if (agentUrl) {
+        config.logger.info(`[PrismDesign] Using existing agent at ${agentUrl}`);
       }
 
       // Cleanup on server close
