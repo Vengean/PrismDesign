@@ -5,11 +5,14 @@ interface PrismDesignProps {
   position?: 'bottom-right' | 'bottom-left';
   /** Locale override */
   locale?: 'zh' | 'en';
+  /**
+   * basePath of the Next.js app (e.g. "/s/my-app").
+   * 不传时自动从 NEXT_PUBLIC_PATH 环境变量获取。
+   */
+  basePath?: string;
 }
 
 export function PrismDesign(props: PrismDesignProps) {
-  if (process.env.NODE_ENV !== 'development') return null;
-
   const initOpts: Record<string, string> = {};
   if (props.agentUrl) initOpts.agentUrl = props.agentUrl;
   if (props.position) initOpts.position = props.position;
@@ -18,17 +21,37 @@ export function PrismDesign(props: PrismDesignProps) {
   const hasFixedAgentUrl = !!props.agentUrl;
   const optsJson = JSON.stringify(initOpts);
 
-  const initScript = hasFixedAgentUrl
+  // basePath 解析优先级：prop > NEXT_PUBLIC_PATH 环境变量 > __NEXT_DATA__ > 空字符串
+  const resolvedBasePath = props.basePath ?? process.env.NEXT_PUBLIC_PATH ?? null;
+  const bpExpr = resolvedBasePath != null
+    ? `'${resolvedBasePath.replace(/\/+$/, '')}'`
+    : `((window.__NEXT_DATA__ && window.__NEXT_DATA__.basePath) || '')`;
+
+  // 加载 widget.js 并在 onload 后立即初始化，不依赖 DOMContentLoaded
+  const script = hasFixedAgentUrl
     ? `
-      window.addEventListener('DOMContentLoaded', function() {
+    (function() {
+      var bp = ${bpExpr};
+
+      function doInit() {
         if (window.PrismDesignWidget && window.PrismDesignWidget.init) {
           window.PrismDesignWidget.init(${optsJson});
         }
-      });
-    `
+      }
+
+      if (window.PrismDesignWidget) { doInit(); return; }
+      var s = document.createElement('script');
+      s.src = bp + '/__prism-design__/widget.js';
+      s.onload = doInit;
+      document.head.appendChild(s);
+    })();
+  `
     : `
-      window.addEventListener('DOMContentLoaded', function() {
-        fetch('/__prism-design__/config.json')
+    (function() {
+      var bp = ${bpExpr};
+
+      function doInit() {
+        fetch(bp + '/__prism-design__/config.json')
           .then(function(r) { return r.ok ? r.json() : null; })
           .then(function(config) {
             var opts = ${optsJson};
@@ -46,13 +69,15 @@ export function PrismDesign(props: PrismDesignProps) {
               window.PrismDesignWidget.init(${optsJson});
             }
           });
-      });
-    `;
+      }
 
-  return (
-    <>
-      <script src="/__prism-design__/widget.js" defer />
-      <script dangerouslySetInnerHTML={{ __html: initScript }} />
-    </>
-  );
+      if (window.PrismDesignWidget) { doInit(); return; }
+      var s = document.createElement('script');
+      s.src = bp + '/__prism-design__/widget.js';
+      s.onload = doInit;
+      document.head.appendChild(s);
+    })();
+  `;
+
+  return <script dangerouslySetInnerHTML={{ __html: script }} />;
 }

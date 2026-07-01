@@ -27,19 +27,27 @@ export interface PrismDesignOptions {
   locale?: "zh" | "en";
 }
 
+// Require from project root (fallback when plugin's own require can't resolve hoisted deps)
+const projectRequire = createRequire(path.join(process.cwd(), "package.json"));
+
 export function findWidgetScript(): string | null {
-  // Strategy 1: resolve from node_modules
+  // Strategy 1: resolve from plugin's node_modules
   try {
     const widgetPkg = require.resolve("prism-design-widget/package.json");
-    const widgetDir = path.dirname(widgetPkg);
-    const iifeFile = path.join(widgetDir, "dist", "prism-design-widget.iife.js");
+    const iifeFile = path.join(path.dirname(widgetPkg), "dist", "prism-design-widget.iife.js");
     if (fs.existsSync(iifeFile)) return iifeFile;
   } catch {}
 
-  // Strategy 2: monorepo sibling
+  // Strategy 2: resolve from project root node_modules
   try {
-    const thisDir = __dirname;
-    const candidate = path.resolve(thisDir, "../../widget/dist/prism-design-widget.iife.js");
+    const widgetPkg = projectRequire.resolve("prism-design-widget/package.json");
+    const iifeFile = path.join(path.dirname(widgetPkg), "dist", "prism-design-widget.iife.js");
+    if (fs.existsSync(iifeFile)) return iifeFile;
+  } catch {}
+
+  // Strategy 3: monorepo sibling
+  try {
+    const candidate = path.resolve(__dirname, "../../widget/dist/prism-design-widget.iife.js");
     if (fs.existsSync(candidate)) return candidate;
   } catch {}
 
@@ -47,18 +55,23 @@ export function findWidgetScript(): string | null {
 }
 
 export function findAgentCli(): string | null {
-  // Strategy 1: resolve from node_modules
+  // Strategy 1: resolve from plugin's node_modules
   try {
     const agentPkg = require.resolve("prism-design-agent/package.json");
-    const agentDir = path.dirname(agentPkg);
-    const cliFile = path.join(agentDir, "dist", "cli.js");
+    const cliFile = path.join(path.dirname(agentPkg), "dist", "cli.js");
     if (fs.existsSync(cliFile)) return cliFile;
   } catch {}
 
-  // Strategy 2: monorepo sibling
+  // Strategy 2: resolve from project root node_modules
   try {
-    const thisDir = __dirname;
-    const candidate = path.resolve(thisDir, "../../agent/dist/cli.js");
+    const agentPkg = projectRequire.resolve("prism-design-agent/package.json");
+    const cliFile = path.join(path.dirname(agentPkg), "dist", "cli.js");
+    if (fs.existsSync(cliFile)) return cliFile;
+  } catch {}
+
+  // Strategy 3: monorepo sibling
+  try {
+    const candidate = path.resolve(__dirname, "../../agent/dist/cli.js");
     if (fs.existsSync(candidate)) return candidate;
   } catch {}
 

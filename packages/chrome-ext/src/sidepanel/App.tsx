@@ -226,7 +226,10 @@ export function App() {
 
       if (el.role) lines.push(`role: ${el.role}`);
       if (el.ariaLabel) lines.push(`aria-label: ${el.ariaLabel}`);
-      if (el.textContent) lines.push(`${t("sync.text")}: "${el.textContent.slice(0, 60)}"`);
+      if (el.textContent) {
+        lines.push(`${t("sync.text")}:`);
+        lines.push(el.textContent);
+      }
 
       return lines;
     }

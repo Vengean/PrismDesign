@@ -8,9 +8,9 @@ export type { PrismDesignOptions };
 
 const PRISM_PUBLIC_DIR = "__prism-design__";
 
-// Module-level state (shared across webpack compilations)
+// Module-level state (shared across config evaluations)
 let agentProcess: ChildProcess | null = null;
-let started = false;
+let setupDone = false;
 
 function log(msg: string) {
   console.log(`[PrismDesign] ${msg}`);
@@ -42,7 +42,7 @@ function copyWidget(projectRoot: string): boolean {
   return true;
 }
 
-function writeInitScript(projectRoot: string, options: PrismDesignOptions): void {
+function writeInitScript(projectRoot: string, options: PrismDesignOptions, basePath = ""): void {
   const dir = ensurePublicDir(projectRoot);
   const initOpts: Record<string, string> = {};
   if (options.position && options.position !== "bottom-right") {
@@ -50,10 +50,14 @@ function writeInitScript(projectRoot: string, options: PrismDesignOptions): void
   }
   if (options.locale) initOpts.locale = options.locale;
 
+  const prefix = basePath.replace(/\/+$/, "");
+
   // This script runs in the browser, loads widget.js dynamically, fetches config, and inits
   const script = `
 (function() {
   if (typeof window === 'undefined') return;
+
+  var basePath = '${prefix}';
 
   function initWidget(agentUrl) {
     var opts = ${JSON.stringify(initOpts)};
@@ -65,7 +69,7 @@ function writeInitScript(projectRoot: string, options: PrismDesignOptions): void
 
   function loadWidgetAndInit() {
     // Fetch agent config
-    fetch('/__prism-design__/config.json')
+    fetch(basePath + '/__prism-design__/config.json')
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(config) {
         var agentUrl;
@@ -87,7 +91,7 @@ function writeInitScript(projectRoot: string, options: PrismDesignOptions): void
     return;
   }
   var script = document.createElement('script');
-  script.src = '/__prism-design__/widget.js';
+  script.src = basePath + '/__prism-design__/widget.js';
   script.onload = loadWidgetAndInit;
   document.head.appendChild(script);
 })();
@@ -198,8 +202,47 @@ function cleanup(projectRoot: string) {
 }
 
 /**
+ * 在配置创建阶段立即执行文件准备和 Agent 启动。
+ * 不依赖 webpack 钩子，Turbopack 和 Webpack 均可工作。
+ *
+ * 使用 lockfile 防止 Next.js 多次加载配置时重复启动 Agent。
+ */
+function setupPrismDesign(projectRoot: string, options: PrismDesignOptions, basePath = "") {
+  if (setupDone) return;
+  setupDone = true;
+
+  if (!copyWidget(projectRoot)) return;
+  log("Widget files copied to public/__prism-design__/");
+
+  writeInitScript(projectRoot, options, basePath);
+
+  // 用 lockfile 防止跨模块加载上下文重复启动 Agent
+  const lockFile = path.join(projectRoot, "public", PRISM_PUBLIC_DIR, ".agent.lock");
+  try {
+    // wx 标志：文件已存在则抛异常，保证只有第一个进程能创建
+    fs.writeFileSync(lockFile, String(process.pid), { flag: "wx" });
+  } catch {
+    // lockfile 已存在，说明另一次配置加载已启动 Agent，跳过
+    log("Agent already started by another config evaluation, skipping.");
+    return;
+  }
+
+  startAgent(projectRoot, options);
+
+  // Register cleanup
+  const doCleanup = () => cleanup(projectRoot);
+  process.on("exit", doCleanup);
+  process.on("SIGINT", () => { doCleanup(); process.exit(0); });
+  process.on("SIGTERM", () => { doCleanup(); process.exit(0); });
+}
+
+/**
  * Next.js config wrapper that enables PrismDesign in development.
- * Zero intrusion — only modify next.config.ts, no component needed.
+ *
+ * Supports both Webpack and Turbopack:
+ * - File setup + Agent startup run at config creation time (always works)
+ * - Webpack entry injection is an additional enhancement (Webpack only)
+ * - For Turbopack, pair with `<PrismDesign />` component for browser-side loading
  *
  * Usage:
  * ```ts
@@ -210,8 +253,10 @@ function cleanup(projectRoot: string) {
  */
 export function withPrismDesign(options: PrismDesignOptions = {}) {
   return (nextConfig: NextConfig = {}): NextConfig => {
-    // Only activate in development
-    if (process.env.NODE_ENV === "production") return nextConfig;
+    const projectRoot = process.cwd();
+
+    // 立即执行文件准备和 Agent 启动（Turbopack / Webpack 均可工作）
+    setupPrismDesign(projectRoot, options, nextConfig.basePath as string);
 
     return {
       ...nextConfig,
@@ -221,39 +266,23 @@ export function withPrismDesign(options: PrismDesignOptions = {}) {
           config = nextConfig.webpack(config, context);
         }
 
-        // Only run on client-side dev compilation, and only once
-        if (!context.isServer && context.dev && !started) {
-          started = true;
-          const projectRoot = context.dir || process.cwd();
-
-          // Copy widget.js to public/
-          copyWidget(projectRoot);
-
-          // Write init.js to public/
-          writeInitScript(projectRoot, options);
-
-          // Start agent
-          startAgent(projectRoot, options);
-
-          // Inject init.js into the client-side main-app webpack entry
+        // Webpack-only: inject init.js into client-side entry for auto-loading
+        // (Turbopack 用户需配合 <PrismDesign /> 组件实现浏览器端加载)
+        if (!context.isServer && context.dev) {
           const initScriptPath = path.join(projectRoot, "public", PRISM_PUBLIC_DIR, "init.js");
-          const originalEntry = config.entry;
-          config.entry = async () => {
-            const entries = typeof originalEntry === "function"
-              ? await originalEntry()
-              : { ...originalEntry };
+          if (fs.existsSync(initScriptPath)) {
+            const originalEntry = config.entry;
+            config.entry = async () => {
+              const entries = typeof originalEntry === "function"
+                ? await originalEntry()
+                : { ...originalEntry };
 
-            if (Array.isArray(entries["main-app"])) {
-              entries["main-app"].push(initScriptPath);
-            }
-            return entries;
-          };
-
-          // Register cleanup
-          const doCleanup = () => cleanup(projectRoot);
-          process.on("exit", doCleanup);
-          process.on("SIGINT", () => { doCleanup(); process.exit(0); });
-          process.on("SIGTERM", () => { doCleanup(); process.exit(0); });
+              if (Array.isArray(entries["main-app"])) {
+                entries["main-app"].push(initScriptPath);
+              }
+              return entries;
+            };
+          }
         }
 
         return config;

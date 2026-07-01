@@ -156,10 +156,17 @@ async function getActiveTabId(): Promise<number | undefined> {
 async function sendToActiveTab(message: PrismMessage): Promise<unknown> {
   const tabId = await getActiveTabId();
   if (!tabId) return { success: false, error: "no active tab" };
-  return chrome.tabs.sendMessage(tabId, message).catch((err) => {
-    console.warn("[BG] sendToTab error:", err.message);
-    return { success: false, error: err.message };
-  });
+  try {
+    return await chrome.tabs.sendMessage(tabId, message);
+  } catch {
+    // Content script not ready — re-inject and retry once
+    await ensureContentScript(tabId);
+    await new Promise((r) => setTimeout(r, 200));
+    return chrome.tabs.sendMessage(tabId, message).catch((err) => {
+      console.warn("[BG] sendToTab error:", err.message);
+      return { success: false, error: err.message };
+    });
+  }
 }
 
 // ============================================================

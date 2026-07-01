@@ -76,15 +76,28 @@ function formatSelectionContext(sel: ElementSelection): string {
   const lines: string[] = [];
   lines.push(`Page: ${sel.pagePath}`);
   lines.push(`Element: <${sel.tagName}> ${sel.domPath}`);
-  if (sel.componentChain) lines.push(`Component: ${sel.componentChain}`);
+  if (sel.componentChain) {
+    // Keep only the last few meaningful components to avoid noise
+    const parts = sel.componentChain.split(" > ");
+    const trimmed = parts.length > 5 ? "... > " + parts.slice(-5).join(" > ") : sel.componentChain;
+    lines.push(`Component: ${trimmed}`);
+  }
   if (sel.component?.sourceFile) {
     let loc = sel.component.sourceFile;
     if (sel.component.sourceLine) loc += `:${sel.component.sourceLine}`;
     lines.push(`Source: ${loc}`);
   }
-  if (sel.textContent) lines.push(`Text: "${sel.textContent.slice(0, 80)}"`);
+  if (sel.component?.props && Object.keys(sel.component.props).length > 0) {
+    const propEntries = Object.entries(sel.component.props).slice(0, 8);
+    const propStr = propEntries.map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(" ");
+    lines.push(`Props: ${propStr}`);
+  }
   if (sel.id) lines.push(`id: ${sel.id}`);
   if (sel.className) lines.push(`class: ${sel.className.split(" ").slice(0, 5).join(" ")}`);
+  if (sel.textContent) {
+    lines.push(`DOM Structure:`);
+    lines.push(sel.textContent);
+  }
   return lines.join("\n");
 }
 
