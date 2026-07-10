@@ -1,6 +1,6 @@
 {
   "name": "prism-design-widget",
-  "version": "0.1.4",
+  "version": "0.1.6",
   "type": "module",
   "main": "dist/prism-design-widget.iife.js",
   "module": "dist/prism-design-widget.es.js",

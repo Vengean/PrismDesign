@@ -1,13 +1,15 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { api, type Workspace, type RepoConfig } from "@/lib/api";
+import { api, type Workspace, type RepoConfig, type AccessLevel } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
 import GitAuthFields from "@/components/GitAuthFields";
-import { ArrowLeft, Plus, Trash2, Settings, Loader2 } from "lucide-react";
+import ShareDialog from "@/components/ShareDialog";
+import { ArrowLeft, Plus, Trash2, Settings, Loader2, Share2, Eye } from "lucide-react";
 
 const emptyRepo = (): RepoConfig => ({ name: "", url: "", branch: "main" });
 
@@ -34,6 +36,11 @@ export default function WorkspaceSettings() {
   const [anthropicBaseUrl, setAnthropicBaseUrl] = useState("");
   const [anthropicModel, setAnthropicModel] = useState("");
   const [httpsProxy, setHttpsProxy] = useState("");
+  const [accessLevel, setAccessLevel] = useState<AccessLevel>(null);
+  const [shareOpen, setShareOpen] = useState(false);
+
+  const isReadonly = accessLevel === "readonly";
+  const isOwnerOrAdmin = accessLevel === "owner" || accessLevel === "admin";
 
   useEffect(() => {
     if (!id) return;
@@ -41,6 +48,7 @@ export default function WorkspaceSettings() {
       .getWorkspace(id)
       .then((ws) => {
         setWorkspace(ws);
+        setAccessLevel(ws.access_level || null);
         setName(ws.name);
         setGitAccessToken(ws.git_access_token);
         setGitSshKey(ws.git_ssh_key || "");
@@ -135,15 +143,30 @@ export default function WorkspaceSettings() {
 
   return (
     <div className="p-8 max-w-3xl">
-      <div className="flex items-center gap-3 mb-6">
-        <Button variant="ghost" size="icon" className="size-8" onClick={() => navigate("/dashboard")}>
-          <ArrowLeft size={18} />
-        </Button>
-        <Settings size={24} className="text-primary" />
-        <h1 className="text-2xl font-bold">工作空间设置</h1>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" className="size-8" onClick={() => navigate("/dashboard")}>
+            <ArrowLeft size={18} />
+          </Button>
+          <Settings size={24} className="text-primary" />
+          <h1 className="text-2xl font-bold">工作空间设置</h1>
+          {isReadonly && (
+            <Badge variant="secondary" className="gap-1">
+              <Eye size={10} />
+              只读模式
+            </Badge>
+          )}
+        </div>
+        {isOwnerOrAdmin && (
+          <Button variant="outline" onClick={() => setShareOpen(true)}>
+            <Share2 size={14} />
+            分享
+          </Button>
+        )}
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
+        <fieldset disabled={isReadonly} className="space-y-6">
         {error && (
           <div className="p-3 text-sm bg-destructive/10 text-destructive rounded-lg border border-destructive/20">
             {error}
@@ -378,16 +401,37 @@ export default function WorkspaceSettings() {
           </CardContent>
         </Card>
 
+        </fieldset>
+
         {/* Submit */}
-        <div className="flex items-center justify-end gap-3">
-          <Button type="button" variant="outline" onClick={() => navigate("/dashboard")}>
-            取消
-          </Button>
-          <Button type="submit" disabled={saving}>
-            {saving ? "保存中..." : "保存"}
-          </Button>
-        </div>
+        {!isReadonly && (
+          <div className="flex items-center justify-end gap-3">
+            <Button type="button" variant="outline" onClick={() => navigate("/dashboard")}>
+              取消
+            </Button>
+            <Button type="submit" disabled={saving}>
+              {saving ? "保存中..." : "保存"}
+            </Button>
+          </div>
+        )}
+        {isReadonly && (
+          <div className="flex items-center justify-end">
+            <Button type="button" variant="outline" onClick={() => navigate("/dashboard")}>
+              返回
+            </Button>
+          </div>
+        )}
       </form>
+
+      {/* Share dialog */}
+      {isOwnerOrAdmin && workspace && (
+        <ShareDialog
+          workspaceId={workspace.id}
+          workspaceName={workspace.name}
+          open={shareOpen}
+          onOpenChange={setShareOpen}
+        />
+      )}
     </div>
   );
 }

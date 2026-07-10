@@ -1,9 +1,11 @@
 import { Router, type Router as RouterType } from "express";
-import { findWorkspaceById } from "../services/db.js";
+import { findWorkspaceById, getWorkspaceAccessLevel } from "../services/db.js";
 import {
   getContainerStatus,
   getContainerLogs,
   stopContainer,
+  startExistingContainer,
+  containerExists,
   createAndStartContainer,
   execInContainer,
 } from "../services/container-manager.js";
@@ -28,9 +30,8 @@ router.get("/:id/services/status", async (req, res) => {
   const workspace = findWorkspaceById(req.params.id);
 
   if (!workspace) { res.status(404).json({ error: "工作空间不存在" }); return; }
-  if (authReq.user!.role !== "admin" && workspace.owner_id !== authReq.user!.userId) {
-    res.status(403).json({ error: "无权访问" }); return;
-  }
+  const accessLevel = getWorkspaceAccessLevel(req.params.id, authReq.user!.userId, authReq.user!.role);
+  if (!accessLevel) { res.status(403).json({ error: "无权访问" }); return; }
 
   const containerStatus = await getContainerStatus(workspace.id);
 
@@ -48,9 +49,8 @@ router.get("/:id/services/logs", async (req, res) => {
   const workspace = findWorkspaceById(req.params.id);
 
   if (!workspace) { res.status(404).json({ error: "工作空间不存在" }); return; }
-  if (authReq.user!.role !== "admin" && workspace.owner_id !== authReq.user!.userId) {
-    res.status(403).json({ error: "无权访问" }); return;
-  }
+  const accessLevel = getWorkspaceAccessLevel(req.params.id, authReq.user!.userId, authReq.user!.role);
+  if (!accessLevel) { res.status(403).json({ error: "无权访问" }); return; }
 
   const source = (req.query.source as string) || "all";
   const tail = parseInt(req.query.tail as string) || 1000;
@@ -88,19 +88,26 @@ router.post("/:id/services/restart", async (req, res) => {
   const workspace = findWorkspaceById(req.params.id);
 
   if (!workspace) { res.status(404).json({ error: "工作空间不存在" }); return; }
-  if (authReq.user!.role !== "admin" && workspace.owner_id !== authReq.user!.userId) {
-    res.status(403).json({ error: "无权操作" }); return;
-  }
+  const accessLevel = getWorkspaceAccessLevel(req.params.id, authReq.user!.userId, authReq.user!.role);
+  if (!accessLevel || accessLevel === "readonly") { res.status(403).json({ error: "无权操作" }); return; }
 
   try {
     await stopContainer(workspace.id);
-    const { containerId, devPort, agentPort, codeServerPort } = await createAndStartContainer(workspace);
+
+    let result: { containerId: string; devPort: number; agentPort: number; codeServerPort: number };
+    const exists = await containerExists(workspace.id);
+    if (exists) {
+      result = await startExistingContainer(workspace.id);
+    } else {
+      result = await createAndStartContainer(workspace);
+    }
+
     updateWorkspace(workspace.id, {
       status: "running",
-      container_id: containerId,
-      dev_port: devPort,
-      agent_port: agentPort,
-      code_server_port: codeServerPort,
+      container_id: result.containerId,
+      dev_port: result.devPort,
+      agent_port: result.agentPort,
+      code_server_port: result.codeServerPort,
     });
     res.json(findWorkspaceById(workspace.id));
   } catch (err) {

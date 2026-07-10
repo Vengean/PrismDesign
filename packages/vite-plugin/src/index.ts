@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { createRequire } from "node:module";
 import path from "node:path";
 import fs from "node:fs";
+import http from "node:http";
 
 const require = createRequire(import.meta.url);
 
@@ -67,6 +68,67 @@ function findAgentCli(): string | null {
 }
 
 
+/** Set up a reverse proxy on the Vite dev server to forward agent requests */
+function setupAgentProxy(server: any, targetBaseUrl: string) {
+  const target = new URL(targetBaseUrl);
+
+  // HTTP proxy: /__prism_agent__/api/* → agent /api/*
+  server.middlewares.use("/__prism_agent__", (req: any, res: any) => {
+    const proxyReq = http.request(
+      {
+        hostname: target.hostname,
+        port: target.port,
+        path: req.url || "/",
+        method: req.method,
+        headers: { ...req.headers, host: `${target.hostname}:${target.port}` },
+      },
+      (proxyRes) => {
+        res.writeHead(proxyRes.statusCode || 500, proxyRes.headers);
+        proxyRes.pipe(res);
+      }
+    );
+    proxyReq.on("error", () => {
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Agent 服务无响应" }));
+    });
+    req.pipe(proxyReq);
+  });
+
+  // WebSocket proxy: /__prism_agent__/ws → agent /ws
+  server.httpServer?.on("upgrade", (req: http.IncomingMessage, socket: any, head: Buffer) => {
+    if (!req.url?.startsWith("/__prism_agent__/ws")) return;
+
+    const wsReq = http.request({
+      hostname: target.hostname,
+      port: target.port,
+      path: "/ws",
+      method: "GET",
+      headers: { ...req.headers, host: `${target.hostname}:${target.port}` },
+    });
+
+    wsReq.on("upgrade", (_proxyRes, proxySocket, proxyHead) => {
+      socket.write(
+        "HTTP/1.1 101 Switching Protocols\r\n" +
+        "Upgrade: websocket\r\n" +
+        "Connection: Upgrade\r\n" +
+        Object.entries(_proxyRes.headers)
+          .filter(([k]) => !["upgrade", "connection"].includes(k.toLowerCase()))
+          .map(([k, v]) => `${k}: ${v}`)
+          .join("\r\n") +
+        "\r\n\r\n"
+      );
+      if (proxyHead.length) socket.write(proxyHead);
+      proxySocket.pipe(socket);
+      socket.pipe(proxySocket);
+      proxySocket.on("error", () => socket.destroy());
+      socket.on("error", () => proxySocket.destroy());
+    });
+
+    wsReq.on("error", () => socket.destroy());
+    wsReq.end();
+  });
+}
+
 export default function prismDesign(options: PrismDesignOptions = {}): Plugin {
   const {
     agentPort: preferredPort = 9527,
@@ -110,6 +172,20 @@ export default function prismDesign(options: PrismDesignOptions = {}): Plugin {
         res.setHeader("Cache-Control", "no-store");
         res.end(widgetJs);
       });
+
+      // If agent is on localhost (e.g. inside a container), proxy through the Vite dev server
+      // so the browser can reach it via the same origin (no port mapping issues)
+      let proxyingAgent = false;
+      if (agentUrl && !agentUrlOverride) {
+        const localMatch = agentUrl.match(/^(https?:\/\/(?:localhost|127\.0\.0\.1):\d+)(\/.*)?$/);
+        if (localMatch) {
+          const localAgentUrl = localMatch[1];
+          setupAgentProxy(server, localAgentUrl);
+          proxyingAgent = true;
+          agentUrl = "__PROXY__";
+          config.logger.info(`[PrismDesign] Proxying agent via dev server (${localAgentUrl})`);
+        }
+      }
 
       // Start agent if needed (skip if agentUrl already set via option or PRISM_AGENT_URL env)
       if (!agentUrl && agentAutoStart) {
@@ -160,9 +236,11 @@ export default function prismDesign(options: PrismDesignOptions = {}): Plugin {
           });
 
           const actualPort = await portPromise;
-          // Use __AGENT_PORT__ marker — actual URL is resolved in browser using location.hostname
-          agentUrl = `__AGENT_PORT__:${actualPort}`;
-          config.logger.info(`[PrismDesign] Agent ready on port ${actualPort}`);
+          // Proxy agent through Vite dev server for consistent access
+          setupAgentProxy(server, `http://localhost:${actualPort}`);
+          proxyingAgent = true;
+          agentUrl = "__PROXY__";
+          config.logger.info(`[PrismDesign] Agent ready on port ${actualPort} (proxied via dev server)`);
         } else {
           config.logger.warn("[PrismDesign] Agent CLI not found. Install prism-design-agent or run agent manually.");
           config.logger.info("[PrismDesign] Widget will show connection form for manual URL input.");
@@ -185,12 +263,15 @@ export default function prismDesign(options: PrismDesignOptions = {}): Plugin {
       if (position !== "bottom-right") initOptions.position = position;
       if (locale) initOptions.locale = locale;
 
-      // Build init script — resolve agent URL dynamically using page hostname
+      // Build init script — resolve agent URL dynamically
       let initScript: string;
-      if (agentUrl.startsWith("__AGENT_PORT__:")) {
+      if (agentUrl === "__PROXY__") {
+        // Agent is proxied through Vite dev server at /__prism_agent__
+        const optionsJson = JSON.stringify(initOptions);
+        initScript = `(function(){var o=${optionsJson};o.agentUrl=location.origin+"/__prism_agent__";PrismDesignWidget.init(o)})();`;
+      } else if (agentUrl.startsWith("__AGENT_PORT__:")) {
         const port = agentUrl.split(":")[1];
         const optionsJson = JSON.stringify(initOptions);
-        // Merge dynamic agentUrl into options at runtime
         initScript = `(function(){var o=${optionsJson};o.agentUrl="http://"+location.hostname+":${port}";PrismDesignWidget.init(o)})();`;
       } else if (agentUrl) {
         initOptions.agentUrl = agentUrl;

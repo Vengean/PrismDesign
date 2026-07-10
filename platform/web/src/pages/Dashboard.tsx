@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import BranchSelector from "@/components/BranchSelector";
 import ServicePanel from "@/components/ServicePanel";
+import ShareDialog from "@/components/ShareDialog";
 import {
   FolderGit2,
   Plus,
@@ -25,6 +26,9 @@ import {
   AlertCircle,
   GitBranch,
   Settings,
+  Share2,
+  Eye,
+  Pencil,
 } from "lucide-react";
 
 const STATUS_MAP: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
@@ -41,6 +45,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<Workspace | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [shareTarget, setShareTarget] = useState<Workspace | null>(null);
 
   const loadWorkspaces = useCallback(async () => {
     try {
@@ -122,6 +127,10 @@ export default function Dashboard() {
           {workspaces.map((ws) => {
             const status = STATUS_MAP[ws.status] || STATUS_MAP.stopped;
             const isLoading = actionLoading === ws.id;
+            const access = ws.access_level;
+            const isReadonly = access === "readonly";
+            const isOwnerOrAdmin = access === "owner" || access === "admin";
+            const canWrite = !isReadonly; // owner, admin, edit
 
             return (
               <Card key={ws.id} className="hover:shadow-md transition-shadow">
@@ -139,41 +148,53 @@ export default function Dashboard() {
                         {ws.agent_type === "glm" ? "GLM" : "Claude"}
                       </Badge>
                       <Badge variant={status.variant} className="shrink-0">{status.label}</Badge>
+                      {access === "readonly" && (
+                        <Badge variant="secondary" className="shrink-0 gap-1">
+                          <Eye size={10} />
+                          只读
+                        </Badge>
+                      )}
+                      {access === "edit" && (
+                        <Badge variant="secondary" className="shrink-0 gap-1">
+                          <Pencil size={10} />
+                          共享
+                        </Badge>
+                      )}
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
                       <BranchSelector workspace={ws} onBranchChanged={loadWorkspaces} />
-                      {ws.status === "stopped" || ws.status === "error" ? (
-                        <>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={isLoading}
-                            onClick={async () => {
-                              setActionLoading(ws.id);
-                              try {
-                                const res = await api.syncWorkspace(ws.id);
-                                alert(res.message);
-                                await loadWorkspaces();
-                              } catch (err) {
-                                alert(err instanceof Error ? err.message : "同步失败");
-                              } finally {
-                                setActionLoading(null);
-                              }
-                            }}
-                          >
-                            <RefreshCw size={14} className={ws.sync_status === "syncing" ? "animate-spin" : ""} />
-                            同步
-                          </Button>
-                          <Button
-                            size="sm"
-                            disabled={isLoading}
-                            onClick={() => handleAction(ws.id, () => api.startWorkspace(ws.id))}
-                          >
-                            {isLoading ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-                            启动
-                          </Button>
-                        </>
-                      ) : ws.status === "running" ? (
+                      {canWrite && ws.status === "running" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={isLoading}
+                          onClick={async () => {
+                            setActionLoading(ws.id);
+                            try {
+                              const res = await api.syncWorkspace(ws.id);
+                              alert(res.message);
+                              await loadWorkspaces();
+                            } catch (err) {
+                              alert(err instanceof Error ? err.message : "同步失败");
+                            } finally {
+                              setActionLoading(null);
+                            }
+                          }}
+                        >
+                          <RefreshCw size={14} className={ws.sync_status === "syncing" ? "animate-spin" : ""} />
+                          拉取代码
+                        </Button>
+                      )}
+                      {canWrite && (ws.status === "stopped" || ws.status === "error") ? (
+                        <Button
+                          size="sm"
+                          disabled={isLoading}
+                          onClick={() => handleAction(ws.id, () => api.startWorkspace(ws.id))}
+                        >
+                          {isLoading ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                          启动
+                        </Button>
+                      ) : canWrite && ws.status === "running" ? (
                         <Button
                           variant="outline"
                           size="sm"
@@ -184,6 +205,17 @@ export default function Dashboard() {
                           停止
                         </Button>
                       ) : null}
+                      {isOwnerOrAdmin && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8 text-muted-foreground"
+                          onClick={() => setShareTarget(ws)}
+                          title="分享"
+                        >
+                          <Share2 size={15} />
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="icon"
@@ -193,15 +225,17 @@ export default function Dashboard() {
                       >
                         <Settings size={15} />
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-8 text-muted-foreground hover:text-destructive"
-                        disabled={isLoading || ws.status === "running" || ws.status === "starting"}
-                        onClick={() => setDeleteTarget(ws)}
-                      >
-                        <Trash2 size={15} />
-                      </Button>
+                      {isOwnerOrAdmin && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8 text-muted-foreground hover:text-destructive"
+                          disabled={isLoading || ws.status === "running" || ws.status === "starting"}
+                          onClick={() => setDeleteTarget(ws)}
+                        >
+                          <Trash2 size={15} />
+                        </Button>
+                      )}
                     </div>
                   </div>
 
@@ -214,6 +248,9 @@ export default function Dashboard() {
                     <span>
                       创建于 {new Date(ws.created_at).toLocaleDateString("zh-CN")}
                     </span>
+                    {(access === "readonly" || access === "edit") && (
+                      <span className="text-xs">来自 {ws.owner_id}</span>
+                    )}
                   </div>
 
                   {/* Row 3: error message (independent row, won't squeeze layout) */}
@@ -251,6 +288,16 @@ export default function Dashboard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Share dialog */}
+      {shareTarget && (
+        <ShareDialog
+          workspaceId={shareTarget.id}
+          workspaceName={shareTarget.name}
+          open={!!shareTarget}
+          onOpenChange={(open) => !open && setShareTarget(null)}
+        />
+      )}
     </div>
   );
 }

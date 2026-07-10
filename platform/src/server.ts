@@ -28,10 +28,18 @@ if (!fs.existsSync(dataDir)) {
 getDb();
 
 // Middleware
-app.use(cors());
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 
 // Agent proxy — no auth required (Chrome extension / Serve widget connects directly)
+// Explicit CORS to ensure headers survive Vite dev proxy
+app.use("/api/workspaces/:id/agent", (req, res, next) => {
+  res.header("Access-Control-Allow-Origin", req.headers.origin || "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, x-client-id");
+  if (req.method === "OPTIONS") { res.sendStatus(204); return; }
+  next();
+});
 app.all("/api/workspaces/:id/agent/*", async (req, res) => {
   const workspace = findWorkspaceById(req.params.id);
   if (!workspace) { res.status(404).json({ error: "工作空间不存在" }); return; }

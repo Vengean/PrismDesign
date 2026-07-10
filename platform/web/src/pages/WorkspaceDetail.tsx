@@ -10,6 +10,7 @@ import {
   MonitorPlay,
   ExternalLink,
   AlertCircle,
+  Eye,
 } from "lucide-react";
 
 const STATUS_MAP: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
@@ -60,6 +61,8 @@ export default function WorkspaceDetail() {
   const status = STATUS_MAP[workspace.status] || STATUS_MAP.stopped;
   const isRunning = workspace.status === "running";
   const hostname = window.location.hostname;
+  const protocol = window.location.protocol;
+  const isReadonly = workspace.access_level === "readonly";
 
   return (
     <div className="flex flex-col h-[calc(100vh-56px)]">
@@ -74,13 +77,19 @@ export default function WorkspaceDetail() {
           <Badge variant="outline">
             {workspace.agent_type === "glm" ? "GLM" : "Claude"}
           </Badge>
+          {isReadonly && (
+            <Badge variant="secondary" className="gap-1">
+              <Eye size={10} />
+              只读
+            </Badge>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {isRunning && workspace.code_server_port && (
             <Button
               variant="outline"
               size="sm"
-              onClick={() => window.open(`https://${hostname}:${workspace.code_server_port}`, "_blank")}
+              onClick={() => window.open(`http://${hostname}:${workspace.code_server_port}`, "_blank")}
             >
               <MonitorPlay size={14} />
               新窗口打开
@@ -91,7 +100,7 @@ export default function WorkspaceDetail() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => window.open(`http://${hostname}:${workspace.dev_port}`, "_blank")}
+              onClick={() => window.open(`${protocol}//${hostname}:${workspace.dev_port}`, "_blank")}
             >
               预览
               <ExternalLink size={12} />
@@ -117,7 +126,7 @@ export default function WorkspaceDetail() {
         </div>
       ) : workspace.code_server_port ? (
         <iframe
-          src={`https://${hostname}:${workspace.code_server_port}`}
+          src={`http://${hostname}:${workspace.code_server_port}`}
           className="flex-1 w-full border-0"
           title="VS Code Web"
         />

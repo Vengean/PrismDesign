@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import path from "path";
-import type { Workspace, WorkspaceRow } from "../types.js";
+import type { Workspace, WorkspaceRow, WorkspaceShare, SharePermission, WorkspaceAccessLevel } from "../types.js";
 
 const DATA_DIR = process.env.PRISM_DATA_DIR || "./data";
 const DB_PATH = path.join(DATA_DIR, "platform.db");
@@ -51,6 +51,17 @@ function initTables() {
       error_message TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS workspace_shares (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      permission TEXT NOT NULL DEFAULT 'readonly',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(workspace_id, user_id)
     );
   `);
 
@@ -229,4 +240,60 @@ export function updateWorkspace(
 
 export function deleteWorkspace(id: string) {
   getDb().prepare("DELETE FROM workspaces WHERE id = ?").run(id);
+}
+
+// ─── Share helpers ───
+
+export function getWorkspaceAccessLevel(workspaceId: string, userId: string, userRole: string): WorkspaceAccessLevel {
+  if (userRole === "admin") return "admin";
+  const workspace = findWorkspaceById(workspaceId);
+  if (!workspace) return null;
+  if (workspace.owner_id === userId) return "owner";
+  const share = getDb()
+    .prepare("SELECT permission FROM workspace_shares WHERE workspace_id = ? AND user_id = ?")
+    .get(workspaceId, userId) as { permission: SharePermission } | undefined;
+  if (share) return share.permission;
+  return null;
+}
+
+export function listWorkspaceShares(workspaceId: string): WorkspaceShare[] {
+  return getDb()
+    .prepare("SELECT * FROM workspace_shares WHERE workspace_id = ? ORDER BY created_at DESC")
+    .all(workspaceId) as WorkspaceShare[];
+}
+
+export function addWorkspaceShare(workspaceId: string, userId: string, permission: SharePermission): WorkspaceShare {
+  const id = crypto.randomUUID();
+  getDb()
+    .prepare("INSERT INTO workspace_shares (id, workspace_id, user_id, permission) VALUES (?, ?, ?, ?)")
+    .run(id, workspaceId, userId, permission);
+  return { id, workspace_id: workspaceId, user_id: userId, permission, created_at: new Date().toISOString() };
+}
+
+export function updateWorkspaceShare(shareId: string, permission: SharePermission) {
+  getDb().prepare("UPDATE workspace_shares SET permission = ? WHERE id = ?").run(permission, shareId);
+}
+
+export function removeWorkspaceShare(shareId: string) {
+  getDb().prepare("DELETE FROM workspace_shares WHERE id = ?").run(shareId);
+}
+
+export function removeWorkspaceShareByUserAndWorkspace(workspaceId: string, userId: string) {
+  getDb().prepare("DELETE FROM workspace_shares WHERE workspace_id = ? AND user_id = ?").run(workspaceId, userId);
+}
+
+export function listSharedWorkspaces(userId: string): (Workspace & { share_permission: SharePermission })[] {
+  const rows = getDb()
+    .prepare(`
+      SELECT w.*, ws.permission as share_permission
+      FROM workspaces w
+      JOIN workspace_shares ws ON w.id = ws.workspace_id
+      WHERE ws.user_id = ?
+      ORDER BY w.updated_at DESC
+    `)
+    .all(userId) as (WorkspaceRow & { share_permission: SharePermission })[];
+  return rows.map((row) => ({
+    ...rowToWorkspace(row),
+    share_permission: row.share_permission,
+  }));
 }

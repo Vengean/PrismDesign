@@ -9,7 +9,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
+import { cn, copyToClipboard as copyText } from "@/lib/utils";
 import { Copy, Check, RotateCcw, ScrollText, Loader2 } from "lucide-react";
 
 interface ServicePanelProps {
@@ -36,8 +36,8 @@ export default function ServicePanel({ workspace, onRefresh }: ServicePanelProps
 
   const hostname = window.location.hostname;
 
-  function copyToClipboard(text: string, key: string) {
-    navigator.clipboard.writeText(text);
+  async function copyToClipboard(text: string, key: string) {
+    await copyText(text);
     setCopied(key);
     setTimeout(() => setCopied(null), 2000);
   }
@@ -103,18 +103,18 @@ export default function ServicePanel({ workspace, onRefresh }: ServicePanelProps
         {workspace.dev_port ? (
           <ServiceAddress
             label="Dev Server"
-            address={`http://${hostname}:${workspace.dev_port}`}
+            address={`${window.location.protocol}//${hostname}:${workspace.dev_port}`}
             copied={copied === "dev"}
-            onCopy={() => copyToClipboard(`http://${hostname}:${workspace.dev_port}`, "dev")}
+            onCopy={() => copyToClipboard(`${window.location.protocol}//${hostname}:${workspace.dev_port}`, "dev")}
           />
         ) : null}
 
         {workspace.code_server_port ? (
           <ServiceAddress
             label="VS Code Web"
-            address={`https://${hostname}:${workspace.code_server_port}`}
+            address={`http://${hostname}:${workspace.code_server_port}`}
             copied={copied === "code-server"}
-            onCopy={() => copyToClipboard(`https://${hostname}:${workspace.code_server_port}`, "code-server")}
+            onCopy={() => copyToClipboard(`http://${hostname}:${workspace.code_server_port}`, "code-server")}
           />
         ) : null}
 

@@ -1,28 +1,36 @@
 import { Router, type Router as RouterType } from "express";
-import { findWorkspaceById } from "../services/db.js";
+import { findWorkspaceById, getWorkspaceAccessLevel } from "../services/db.js";
 import { execInContainer, execInTempContainer } from "../services/container-manager.js";
 import { authenticate } from "../middleware/auth.js";
-import type { AuthRequest, Workspace } from "../types.js";
+import type { AuthRequest, Workspace, WorkspaceAccessLevel } from "../types.js";
 
 const router: RouterType = Router();
 
 router.use(authenticate);
 
-function checkOwnership(req: AuthRequest, workspaceId: string):
+type AccessResult =
   | { error: string; status: number }
-  | { workspace: Workspace } {
+  | { workspace: Workspace; accessLevel: WorkspaceAccessLevel };
+
+// Check access — allows shared users (readonly or edit)
+function checkAccess(req: AuthRequest, workspaceId: string): AccessResult {
   const workspace = findWorkspaceById(workspaceId);
   if (!workspace) return { error: "工作空间不存在", status: 404 };
-  if (req.user!.role !== "admin" && workspace.owner_id !== req.user!.userId) {
-    return { error: "无权操作", status: 403 };
-  }
-  return { workspace };
+  const accessLevel = getWorkspaceAccessLevel(workspaceId, req.user!.userId, req.user!.role);
+  if (!accessLevel) return { error: "无权操作", status: 403 };
+  return { workspace, accessLevel };
 }
 
-function requireRunning(req: AuthRequest, workspaceId: string):
-  | { error: string; status: number }
-  | { workspace: Workspace } {
-  const result = checkOwnership(req, workspaceId);
+// Check access + require write permission (blocks readonly)
+function checkWriteAccess(req: AuthRequest, workspaceId: string): AccessResult {
+  const result = checkAccess(req, workspaceId);
+  if ("error" in result) return result;
+  if (result.accessLevel === "readonly") return { error: "只读权限，无法执行此操作", status: 403 };
+  return result;
+}
+
+function requireRunning(req: AuthRequest, workspaceId: string, readonly = false): AccessResult {
+  const result = readonly ? checkAccess(req, workspaceId) : checkWriteAccess(req, workspaceId);
   if ("error" in result) return result;
   if (result.workspace.status !== "running") {
     return { error: "工作空间未运行", status: 400 };
@@ -32,7 +40,7 @@ function requireRunning(req: AuthRequest, workspaceId: string):
 
 // List branches — works even when stopped (uses temp container)
 router.get("/:id/git/:repo/branches", async (req, res) => {
-  const result = checkOwnership(req as AuthRequest, req.params.id);
+  const result = checkAccess(req as AuthRequest, req.params.id);
   if ("error" in result) { res.status(result.status).json({ error: result.error }); return; }
 
   const { workspace } = result;
@@ -64,7 +72,7 @@ router.get("/:id/git/:repo/branches", async (req, res) => {
 
 // Checkout branch — works both running and stopped (uses temp container when stopped)
 router.post("/:id/git/:repo/checkout", async (req, res) => {
-  const result = checkOwnership(req as AuthRequest, req.params.id);
+  const result = checkWriteAccess(req as AuthRequest, req.params.id);
   if ("error" in result) { res.status(result.status).json({ error: result.error }); return; }
 
   const { workspace } = result;
@@ -94,7 +102,7 @@ router.post("/:id/git/:repo/checkout", async (req, res) => {
 
 // Git status — requires running container
 router.get("/:id/git/:repo/status", async (req, res) => {
-  const result = requireRunning(req as AuthRequest, req.params.id);
+  const result = requireRunning(req as AuthRequest, req.params.id, true);
   if ("error" in result) { res.status(result.status).json({ error: result.error }); return; }
 
   const repoDir = `/workspace/${req.params.repo}`;
@@ -119,7 +127,7 @@ function sanitizePath(p: string): string | null {
 
 // List directory contents
 router.get("/:id/git/:repo/files", async (req, res) => {
-  const result = requireRunning(req as AuthRequest, req.params.id);
+  const result = requireRunning(req as AuthRequest, req.params.id, true);
   if ("error" in result) { res.status(result.status).json({ error: result.error }); return; }
 
   const rawPath = (req.query.path as string) || ".";
@@ -160,7 +168,7 @@ router.get("/:id/git/:repo/files", async (req, res) => {
 
 // Read file content
 router.get("/:id/git/:repo/file", async (req, res) => {
-  const result = requireRunning(req as AuthRequest, req.params.id);
+  const result = requireRunning(req as AuthRequest, req.params.id, true);
   if ("error" in result) { res.status(result.status).json({ error: result.error }); return; }
 
   const rawPath = req.query.path as string;
@@ -267,7 +275,7 @@ router.delete("/:id/git/:repo/file", async (req, res) => {
 
 // Git diff
 router.get("/:id/git/:repo/diff", async (req, res) => {
-  const result = requireRunning(req as AuthRequest, req.params.id);
+  const result = requireRunning(req as AuthRequest, req.params.id, true);
   if ("error" in result) { res.status(result.status).json({ error: result.error }); return; }
 
   const repoDir = `/workspace/${req.params.repo}`;
@@ -333,7 +341,7 @@ router.post("/:id/git/:repo/pull", async (req, res) => {
 
 // Git log
 router.get("/:id/git/:repo/log", async (req, res) => {
-  const result = checkOwnership(req as AuthRequest, req.params.id);
+  const result = checkAccess(req as AuthRequest, req.params.id);
   if ("error" in result) { res.status(result.status).json({ error: result.error }); return; }
 
   const { workspace } = result;

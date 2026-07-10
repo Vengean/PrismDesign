@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "@/lib/api";
+import { copyToClipboard } from "@/lib/utils";
 import { Users, Plus, Trash2, RotateCcw, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -264,8 +265,8 @@ function CredentialDialog({
 
   if (!info) return null;
 
-  function handleCopy() {
-    navigator.clipboard.writeText(`用户名: ${info!.id}\n密码: ${info!.password}`);
+  async function handleCopy() {
+    await copyToClipboard(`用户名: ${info!.id}\n密码: ${info!.password}`);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }

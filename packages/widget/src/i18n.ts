@@ -18,6 +18,8 @@ const zh: Record<string, string> = {
   "connect.error": "无法连接到 Agent",
   "connect.disconnect": "断开",
   "connect.hint": "请输入 PrismDesign Agent 服务地址",
+  "connect.waiting": "等待 Agent 服务就绪...",
+  "connect.retry": "重试",
 };
 
 const en: Record<string, string> = {
@@ -40,6 +42,8 @@ const en: Record<string, string> = {
   "connect.error": "Cannot reach Agent",
   "connect.disconnect": "Disconnect",
   "connect.hint": "Enter the PrismDesign Agent server URL",
+  "connect.waiting": "Waiting for Agent...",
+  "connect.retry": "Retry",
 };
 
 let currentLocale: "zh" | "en" = navigator.language.startsWith("zh") ? "zh" : "en";

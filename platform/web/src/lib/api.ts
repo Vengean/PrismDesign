@@ -188,6 +188,31 @@ export const api = {
     );
   },
 
+  // Shares
+  getShares(workspaceId: string) {
+    return request<WorkspaceShare[]>(`/workspaces/${workspaceId}/shares`);
+  },
+
+  addShare(workspaceId: string, userId: string, permission: "readonly" | "edit") {
+    return request<WorkspaceShare>(`/workspaces/${workspaceId}/shares`, {
+      method: "POST",
+      body: JSON.stringify({ userId, permission }),
+    });
+  },
+
+  updateShare(workspaceId: string, shareId: string, permission: "readonly" | "edit") {
+    return request<{ message: string }>(`/workspaces/${workspaceId}/shares/${shareId}`, {
+      method: "PUT",
+      body: JSON.stringify({ permission }),
+    });
+  },
+
+  removeShare(workspaceId: string, shareId: string) {
+    return request<{ message: string }>(`/workspaces/${workspaceId}/shares/${shareId}`, {
+      method: "DELETE",
+    });
+  },
+
   // Services
   getServiceStatus(id: string) {
     return request<{ container: string; agentPort: number | null; devPort: number | null; status: string }>(
@@ -209,6 +234,8 @@ export interface RepoConfig {
   url: string;
   branch: string;
 }
+
+export type AccessLevel = "owner" | "admin" | "edit" | "readonly" | null;
 
 export interface Workspace {
   id: string;
@@ -234,6 +261,15 @@ export interface Workspace {
   error_message?: string;
   created_at: string;
   updated_at: string;
+  access_level?: AccessLevel;
+}
+
+export interface WorkspaceShare {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  permission: "readonly" | "edit";
+  created_at: string;
 }
 
 export interface FileEntry {
@@ -265,5 +301,4 @@ export interface CreateWorkspacePayload {
   anthropicBaseUrl?: string;
   anthropicModel?: string;
   httpsProxy?: string;
-  autoSync?: boolean;
 }

@@ -3,7 +3,7 @@ import { AgentClient } from "./agent-client.js";
 import { createPanel, type PanelAPI } from "./panel.js";
 import { createChat, type ChatAPI } from "./chat.js";
 import { createConnectForm, getSavedAgentUrl, clearSavedAgentUrl } from "./connect-form.js";
-import { setLocale } from "./i18n.js";
+import { setLocale, t } from "./i18n.js";
 
 export interface PrismWidgetOptions {
   /** Agent server URL. If provided, skips the connection form. */
@@ -43,6 +43,7 @@ export function init(options?: PrismWidgetOptions) {
 
   // ── State ──
   let currentChat: ChatAPI | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
   function mountChat(client: AgentClient) {
     const body = panel.getBody();
@@ -63,25 +64,76 @@ export function init(options?: PrismWidgetOptions) {
     });
   }
 
+  /** Show a "connecting / retry" status when agentUrl is preconfigured */
+  function mountAutoConnect(url: string) {
+    const body = panel.getBody();
+    body.innerHTML = "";
+    currentChat = null;
+    panel.setDisconnectHandler(null);
+
+    const wrap = document.createElement("div");
+    wrap.className = "connect-form";
+
+    const statusEl = document.createElement("div");
+    statusEl.className = "connect-hint";
+    statusEl.textContent = t("connect.connecting");
+    wrap.appendChild(statusEl);
+
+    const retryBtn = document.createElement("button");
+    retryBtn.className = "connect-btn";
+    retryBtn.textContent = t("connect.retry");
+    retryBtn.style.display = "none";
+    retryBtn.onclick = () => attemptConnect();
+    wrap.appendChild(retryBtn);
+
+    body.appendChild(wrap);
+
+    let attempt = 0;
+    async function attemptConnect() {
+      attempt++;
+      statusEl.textContent = t("connect.connecting");
+      retryBtn.style.display = "none";
+
+      const ok = await AgentClient.checkConnection(url);
+      if (ok) {
+        if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+        const client = new AgentClient(url);
+        mountChat(client);
+      } else {
+        statusEl.textContent = t("connect.waiting");
+        retryBtn.style.display = "";
+        // Auto-retry with backoff: 3s, 5s, 10s, then every 10s
+        const delay = attempt <= 1 ? 3000 : attempt <= 3 ? 5000 : 10000;
+        retryTimer = setTimeout(attemptConnect, delay);
+      }
+    }
+
+    attemptConnect();
+  }
+
   function handleDisconnect() {
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
     if (currentChat) {
       currentChat.destroy();
       currentChat = null;
     }
-    clearSavedAgentUrl();
-    mountConnectForm();
+    if (options?.agentUrl) {
+      // Preconfigured URL — show auto-reconnect, not manual form
+      mountAutoConnect(options.agentUrl);
+    } else {
+      clearSavedAgentUrl();
+      mountConnectForm();
+    }
   }
 
   // ── Init flow ──
   if (options?.agentUrl) {
-    // Direct connect — skip form
-    const client = new AgentClient(options.agentUrl);
-    mountChat(client);
+    // Preconfigured URL — check connection first, auto-retry if unavailable
+    mountAutoConnect(options.agentUrl);
   } else {
     // Try saved URL
     const savedUrl = getSavedAgentUrl();
     if (savedUrl) {
-      // Attempt silent connect
       AgentClient.checkConnection(savedUrl).then((ok) => {
         if (ok) {
           const client = new AgentClient(savedUrl);

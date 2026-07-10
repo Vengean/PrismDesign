@@ -69,6 +69,8 @@ export async function createAndStartContainer(workspace: Workspace): Promise<{
       `ANTHROPIC_MODEL=${workspace.anthropic_model || ""}`,
       `ANTHROPIC_BASE_URL=${workspace.anthropic_base_url || ""}`,
       `HTTPS_PROXY=${workspace.https_proxy || ""}`,
+      `PRISM_AGENT_URL=http://localhost:9527`,
+      `HOME=/workspace/.home`,
     ],
     ExposedPorts: { "5173/tcp": {}, "8080/tcp": {}, "9527/tcp": {} },
     HostConfig: {
@@ -79,7 +81,6 @@ export async function createAndStartContainer(workspace: Workspace): Promise<{
       },
       Binds: [
         `prism-ws-${workspace.id}:/workspace`,
-        `prism-home-${workspace.id}:/home/prism`,
       ],
       Memory: 4 * 1024 * 1024 * 1024,
       NanoCpus: 2 * 1e9,
@@ -98,7 +99,20 @@ export async function createAndStartContainer(workspace: Workspace): Promise<{
   return { containerId: container.id, devPort, agentPort, codeServerPort };
 }
 
+/** Stop container (keep it, don't remove) */
 export async function stopContainer(workspaceId: string) {
+  try {
+    const container = docker.getContainer(containerName(workspaceId));
+    await container.stop({ t: 10 });
+  } catch (err: unknown) {
+    const code = (err as { statusCode?: number }).statusCode;
+    // 304 = already stopped, 404 = not found — both OK
+    if (code !== 304 && code !== 404) throw err;
+  }
+}
+
+/** Stop + remove container (for workspace deletion or recreation) */
+export async function destroyContainer(workspaceId: string) {
   try {
     const container = docker.getContainer(containerName(workspaceId));
     try {
@@ -114,13 +128,33 @@ export async function stopContainer(workspaceId: string) {
   }
 }
 
-export async function removeContainer(workspaceId: string) {
+/** Start an existing stopped container and return its port mappings */
+export async function startExistingContainer(workspaceId: string): Promise<{
+  containerId: string;
+  devPort: number;
+  agentPort: number;
+  codeServerPort: number;
+}> {
+  const container = docker.getContainer(containerName(workspaceId));
+  await container.start();
+
+  const info = await container.inspect();
+  const ports = info.NetworkSettings.Ports;
+  const devPort = parseInt(ports["5173/tcp"]?.[0]?.HostPort || "0");
+  const codeServerPort = parseInt(ports["8080/tcp"]?.[0]?.HostPort || "0");
+  const agentPort = parseInt(ports["9527/tcp"]?.[0]?.HostPort || "0");
+
+  return { containerId: container.id, devPort, agentPort, codeServerPort };
+}
+
+/** Check if a container exists (running or stopped) */
+export async function containerExists(workspaceId: string): Promise<boolean> {
   try {
     const container = docker.getContainer(containerName(workspaceId));
-    await container.remove({ force: true });
-  } catch (err: unknown) {
-    const statusCode = (err as { statusCode?: number }).statusCode;
-    if (statusCode !== 404) throw err;
+    await container.inspect();
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -181,10 +215,10 @@ export async function execInTempContainer(
     Entrypoint: ["bash", "-c"],
     Cmd: [cmd.join(" ")],
     WorkingDir: workDir,
+    Env: [`HOME=/workspace/.home`],
     HostConfig: {
       Binds: [
         `prism-ws-${workspaceId}:/workspace`,
-        `prism-home-${workspaceId}:/home/prism`,
       ],
     },
   });

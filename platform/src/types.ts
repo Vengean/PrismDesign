@@ -25,6 +25,19 @@ export interface RepoConfig {
 
 export type AgentType = "claude" | "glm" | "claude-sub";
 
+export type SharePermission = "readonly" | "edit";
+
+export interface WorkspaceShare {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  permission: SharePermission;
+  created_at: string;
+}
+
+// Permission level the current user has on a workspace
+export type WorkspaceAccessLevel = "owner" | "admin" | "edit" | "readonly" | null;
+
 export interface Workspace {
   id: string;
   name: string;

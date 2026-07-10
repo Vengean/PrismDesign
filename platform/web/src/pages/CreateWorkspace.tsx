@@ -26,7 +26,6 @@ export default function CreateWorkspace() {
   const [anthropicBaseUrl, setAnthropicBaseUrl] = useState("");
   const [anthropicModel, setAnthropicModel] = useState("");
   const [httpsProxy, setHttpsProxy] = useState("");
-  const [autoSync, setAutoSync] = useState(true);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -76,7 +75,6 @@ export default function CreateWorkspace() {
         anthropicBaseUrl: isSub ? "" : anthropicBaseUrl,
         anthropicModel: isSub ? "" : anthropicModel,
         httpsProxy: isSub ? httpsProxy : "",
-        autoSync,
       });
       navigate("/dashboard");
     } catch (err) {
@@ -323,24 +321,6 @@ export default function CreateWorkspace() {
                 />
               </div>
             )}
-          </CardContent>
-        </Card>
-
-        {/* Options */}
-        <Card>
-          <CardContent className="pt-6">
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={autoSync}
-                onChange={(e) => setAutoSync(e.target.checked)}
-                className="size-4 rounded border-input accent-primary"
-              />
-              <div>
-                <p className="text-sm font-medium">创建后自动同步代码</p>
-                <p className="text-xs text-muted-foreground">勾选后将自动 clone 所有仓库</p>
-              </div>
-            </label>
           </CardContent>
         </Card>
 

@@ -3,9 +3,13 @@ import { t } from "./i18n.js";
 export interface CommentInfo {
   target: string; // e.g. "div.header" or "button#submit"
   text: string;
-  textContent?: string;
+  domStructure?: string;
   /** React/Vue component name */
   component?: string;
+  /** Component chain (authoring hierarchy) */
+  componentChain?: string;
+  /** Component props */
+  props?: Record<string, unknown>;
   /** Source file path (relative) */
   sourceFile?: string;
   /** Source line number */
@@ -144,25 +148,95 @@ function getSourceFromFiber(fiber: any): { fileName?: string; lineNumber?: numbe
   return null;
 }
 
-function detectComponentInfo(el: Element): { component?: string; sourceFile?: string; sourceLine?: number } {
+// Fiber tags to skip: Fragment(6), ContextConsumer(9), ContextProvider(10), Suspense(13)
+const SKIP_TAGS = new Set([6, 9, 10, 13]);
+
+function sanitizeProps(props: Record<string, unknown> | null): Record<string, unknown> {
+  if (!props) return {};
+  const clean: Record<string, unknown> = {};
+  try {
+    for (const key of Object.keys(props)) {
+      if (key === "children") continue;
+      const value = props[key];
+      const t = typeof value;
+      if (t === "string" || t === "number" || t === "boolean" || value === null) {
+        clean[key] = value;
+      }
+    }
+  } catch {}
+  return clean;
+}
+
+interface DetectedInfo {
+  component?: string;
+  componentChain?: string;
+  props?: Record<string, unknown>;
+  sourceFile?: string;
+  sourceLine?: number;
+}
+
+function detectComponentInfo(el: Element): DetectedInfo {
   try {
     // React: find fiber
     const keys = Object.getOwnPropertyNames(el);
     const fiberKey = keys.find(k => k.startsWith("__reactFiber$") || k.startsWith("__reactInternalInstance$"));
     if (fiberKey) {
-      let f = (el as any)[fiberKey];
+      const fiber = (el as any)[fiberKey];
+
+      // 1. Find nearest user component via return chain
+      let comp: DetectedInfo | null = null;
+      let f = fiber;
       while (f) {
-        if (typeof f.type === "function") {
+        if (typeof f.type === "function" && !SKIP_TAGS.has(f.tag)) {
           const name = f.type.displayName || f.type.name;
-          if (name) {
+          if (name && name.length > 2) {
             const src = getSourceFromFiber(f);
-            if (src?.fileName && !src.fileName.includes("node_modules")) {
-              return { component: name, sourceFile: src.fileName, sourceLine: src.lineNumber };
+            const isNM = src?.fileName?.includes("node_modules");
+            if (!isNM) {
+              comp = {
+                component: name,
+                props: sanitizeProps(f.memoizedProps),
+                sourceFile: src?.fileName,
+                sourceLine: src?.lineNumber,
+              };
+              break;
             }
           }
         }
         f = f.return;
       }
+
+      // 2. Build chain via _debugOwner (authoring hierarchy)
+      const chain: string[] = [];
+      let owner = fiber._debugOwner;
+      while (owner) {
+        if (typeof owner.type === "function" && !SKIP_TAGS.has(owner.tag)) {
+          const name = owner.type.displayName || owner.type.name;
+          if (name && name.length > 2) {
+            const src = getSourceFromFiber(owner);
+            const isNM = src?.fileName?.includes("node_modules");
+            if (!isNM && (chain.length === 0 || chain[chain.length - 1] !== name)) {
+              chain.push(name);
+            }
+          }
+        }
+        owner = owner._debugOwner;
+      }
+      chain.reverse();
+      if (comp?.component && (chain.length === 0 || chain[chain.length - 1] !== comp.component)) {
+        chain.push(comp.component);
+      }
+
+      // Trim chain: keep last 5
+      const trimmed = chain.length > 5 ? "... > " + chain.slice(-5).join(" > ") : chain.join(" > ");
+
+      return {
+        component: comp?.component,
+        componentChain: trimmed || undefined,
+        props: comp?.props,
+        sourceFile: comp?.sourceFile,
+        sourceLine: comp?.sourceLine,
+      };
     }
 
     // Vue 3
@@ -182,6 +256,48 @@ function detectComponentInfo(el: Element): { component?: string; sourceFile?: st
   return {};
 }
 
+/** Build simplified DOM snapshot: first child per level, text truncated, siblings as "..." */
+function collectDomSnapshot(el: Element, depth = 0, maxDepth = 4): string {
+  const indent = "  ".repeat(depth);
+  const tag = el.tagName.toLowerCase();
+  const htmlEl = el as HTMLElement;
+
+  let attrs = "";
+  if (el.id) attrs += ` id="${el.id}"`;
+  const cls = typeof el.className === "string" ? el.className.trim() : "";
+  if (cls) {
+    const parts = cls.split(" ");
+    attrs += ` class="${parts.slice(0, 3).join(" ")}${parts.length > 3 ? " ..." : ""}"`;
+  }
+
+  const children = el.children;
+  if (children.length === 0 || depth >= maxDepth) {
+    const text = (htmlEl.innerText || "").trim().replace(/\s+/g, " ");
+    if (!text) return `${indent}<${tag}${attrs} />`;
+    const truncated = text.length > 30 ? text.slice(0, 30) + "..." : text;
+    return `${indent}<${tag}${attrs}>${truncated}</${tag}>`;
+  }
+
+  const lines: string[] = [];
+  lines.push(`${indent}<${tag}${attrs}>`);
+
+  for (const node of el.childNodes) {
+    if (node === children[0]) break;
+    if (node.nodeType === Node.TEXT_NODE) {
+      const t = (node.textContent || "").trim();
+      if (t) {
+        const truncated = t.length > 30 ? t.slice(0, 30) + "..." : t;
+        lines.push(`${indent}  ${truncated}`);
+      }
+    }
+  }
+
+  lines.push(collectDomSnapshot(children[0], depth + 1, maxDepth));
+  if (children.length > 1) lines.push(`${indent}  ...`);
+  lines.push(`${indent}</${tag}>`);
+  return lines.join("\n");
+}
+
 function buildCommentInfo(el: Element, commentText: string): CommentInfo {
   const tag = el.tagName.toLowerCase();
   let target = tag;
@@ -191,13 +307,15 @@ function buildCommentInfo(el: Element, commentText: string): CommentInfo {
     const cls = el.className.trim().split(/\s+/).slice(0, 2).join(".");
     if (cls) target = `${tag}.${cls}`;
   }
-  const textContent = (el.textContent || "").trim().slice(0, 80);
-  const { component, sourceFile, sourceLine } = detectComponentInfo(el);
+  const domStructure = collectDomSnapshot(el);
+  const { component, componentChain, props, sourceFile, sourceLine } = detectComponentInfo(el);
   return {
     target,
     text: commentText,
-    textContent: textContent || undefined,
+    domStructure: domStructure || undefined,
     component,
+    componentChain,
+    props: props && Object.keys(props).length > 0 ? props : undefined,
     sourceFile,
     sourceLine,
   };
