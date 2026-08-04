@@ -136,13 +136,21 @@ function startAgent(
   }
 
   const agentEnv = { ...process.env };
-  if (apiKey) agentEnv.ANTHROPIC_API_KEY = apiKey;
-  if (baseUrl) agentEnv.ANTHROPIC_BASE_URL = baseUrl;
-  if (model) agentEnv.ANTHROPIC_MODEL = model;
+  if (agentType === "openai") {
+    if (apiKey) agentEnv.OPENAI_API_KEY = apiKey;
+    if (baseUrl) agentEnv.OPENAI_BASE_URL = baseUrl;
+    if (model) agentEnv.OPENAI_MODEL = model;
+  } else if (agentType === "codex") {
+    if (model) agentEnv.CODEX_MODEL = model;
+  } else {
+    if (apiKey) agentEnv.ANTHROPIC_API_KEY = apiKey;
+    if (baseUrl) agentEnv.ANTHROPIC_BASE_URL = baseUrl;
+    if (model) agentEnv.ANTHROPIC_MODEL = model;
+  }
 
   const proc = spawn(
     "node",
-    [agentCli, "start", "--port", String(preferredPort), "--project", projectRoot, "--agent-type", agentType],
+    [agentCli, "start", "--port", String(preferredPort), "--project", projectRoot, "--provider", agentType],
     { stdio: ["ignore", "pipe", "pipe"], env: agentEnv }
   );
   agentProcess = proc;

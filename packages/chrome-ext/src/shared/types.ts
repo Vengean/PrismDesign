@@ -66,6 +66,15 @@ export interface ChatMessage {
 
 export interface ProjectInfo {
   framework: string;
+  styling?: string[];
+  componentLib?: string[];
+}
+
+export interface AgentCapabilities {
+  streaming: boolean;
+  sessions: boolean;
+  cancel: boolean;
+  rollback: boolean;
 }
 
 // ============================================================
@@ -121,9 +130,10 @@ export type AgentMessage =
 
 // Agent events: Background -> Side Panel
 export type AgentEventMessage =
-  | { type: "AGENT_STATUS"; payload: { connected: boolean; project?: ProjectInfo } }
+  | { type: "AGENT_STATUS"; payload: { connected: boolean; connecting?: boolean; agentUrl?: string; error?: string; project?: ProjectInfo; provider?: string; model?: string; capabilities?: AgentCapabilities } }
   | { type: "AGENT_WORKING"; payload: { working: boolean } }
   | { type: "AGENT_PROGRESS"; payload: { text: string } }
+  | { type: "AGENT_TEXT_DELTA"; payload: { runId: string; delta: string } }
   | { type: "AGENT_RESULT"; payload: { success: boolean; message: string; filesModified?: string[] } }
   | { type: "AGENT_ERROR"; payload: { message: string } };
 

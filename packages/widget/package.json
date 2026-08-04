@@ -1,13 +1,13 @@
 {
   "name": "prism-design-widget",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "type": "module",
   "main": "dist/prism-design-widget.iife.js",
   "module": "dist/prism-design-widget.es.js",
   "types": "dist/index.d.ts",
   "files": ["dist"],
   "scripts": {
-    "build": "vite build",
+    "build": "vite build && tsc --emitDeclarationOnly --incremental false",
     "dev": "vite build --watch"
   },
   "devDependencies": {

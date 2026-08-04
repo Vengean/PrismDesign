@@ -7,12 +7,24 @@ import { pathToFileURL } from "node:url";
  * All fields are optional — CLI args and env vars fill in defaults.
  */
 export interface PrismConfig {
+  /** Agent provider. `agentType` is kept for backwards compatibility. */
+  provider?: "claude" | "claude-sub" | "openai" | "codex" | "glm";
+  agentType?: "claude" | "claude-sub" | "openai" | "codex" | "glm";
   /** Anthropic API Key */
   anthropicApiKey?: string;
   /** Model name */
   anthropicModel?: string;
   /** API Base URL (proxy) */
   anthropicBaseUrl?: string;
+  /** OpenAI API configuration */
+  openaiApiKey?: string;
+  openaiModel?: string;
+  openaiBaseUrl?: string;
+  /** Codex CLI configuration; authentication is managed by `codex login`. */
+  codexModel?: string;
+  codexReasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
+  /** `https` avoids slow WebSocket fallback; set `websocket` when the network supports it. */
+  codexTransport?: "https" | "websocket";
   /** HTTPS proxy */
   httpsProxy?: string;
   /** HTTP proxy */
@@ -112,6 +124,14 @@ export function applyConfigToEnv(config: PrismConfig, force = false) {
     ["anthropicApiKey", "ANTHROPIC_API_KEY"],
     ["anthropicModel", "ANTHROPIC_MODEL"],
     ["anthropicBaseUrl", "ANTHROPIC_BASE_URL"],
+    ["openaiApiKey", "OPENAI_API_KEY"],
+    ["openaiModel", "OPENAI_MODEL"],
+    ["openaiBaseUrl", "OPENAI_BASE_URL"],
+    ["codexModel", "CODEX_MODEL"],
+    ["codexReasoningEffort", "CODEX_REASONING_EFFORT"],
+    ["codexTransport", "CODEX_TRANSPORT"],
+    ["provider", "PRISM_AGENT_PROVIDER"],
+    ["agentType", "PRISM_AGENT_PROVIDER"],
     ["httpsProxy", "HTTPS_PROXY"],
     ["httpProxy", "HTTP_PROXY"],
   ];

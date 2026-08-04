@@ -8,7 +8,7 @@ PrismDesign 的 Vite 插件 —— 一行配置，为你的 React / Vue / Svelte
 - 自动启动 AI Agent 服务，无需手动管理
 - Agent 端口被占用时自动递增
 - 生产构建自动跳过，零影响
-- 支持 Claude API、GLM API 等多种 AI 后端
+- 支持 Claude Agent SDK、OpenAI Agents SDK、Codex SDK 和 GLM/ACP
 
 ## 安装
 
@@ -40,8 +40,7 @@ export default defineConfig({
 prismDesign({
   // ── Agent 配置 ──
 
-  // API Key（传递给 Agent 作为 ANTHROPIC_API_KEY）
-  // 也可以通过项目根目录 .env 文件配置
+  // API Key；OpenAI/Claude/GLM 按 Provider 解释，Codex 不需要
   apiKey: 'sk-ant-...',
 
   // API Base URL（可选，用于 LiteLLM 代理等场景）
@@ -50,8 +49,9 @@ prismDesign({
   // AI 模型名称（可选，默认 claude-sonnet-4-20250514）
   model: 'claude-sonnet-4-20250514',
 
-  // Agent 类型（默认 "claude"）
-  agentType: 'claude',  // 'claude' | 'glm'
+  // Agent Provider（默认 "claude"）
+  agentType: 'codex',
+  // 'claude' | 'claude-sub' | 'openai' | 'codex' | 'glm'
 
   // Agent 服务端口（默认 9527，被占用时自动递增）
   agentPort: 9527,
@@ -75,6 +75,36 @@ prismDesign({
 ```
 
 ## 使用场景
+
+### Codex CLI 登录（推荐用于本机开发）
+
+```bash
+codex login
+```
+
+```ts
+prismDesign({ agentType: 'codex' })
+```
+
+Codex 会复用本机 ChatGPT 登录态。受限网络下默认使用 HTTPS/SSE；如需 WebSocket：
+
+```bash
+HTTP_PROXY=http://127.0.0.1:7893 \
+HTTPS_PROXY=http://127.0.0.1:7893 \
+NO_PROXY=127.0.0.1,localhost \
+CODEX_TRANSPORT=websocket \
+pnpm dev
+```
+
+### OpenAI Agents SDK
+
+```bash
+OPENAI_API_KEY=sk-xxx pnpm dev
+```
+
+```ts
+prismDesign({ agentType: 'openai' })
+```
 
 ### 基础用法（使用 .env 配置 API Key）
 
@@ -181,9 +211,9 @@ AI 会直接修改源码，修改完成后页面自动刷新。
 │                    ↕ spawn                   │
 │  ┌───────────────────────────────────────┐  │
 │  │  Agent Server (port 9527)             │  │
-│  │  ├─ POST /api/chat → Claude SDK      │  │
-│  │  ├─ WebSocket /ws → 实时进度          │  │
-│  │  └─ 读取项目 CLAUDE.md               │  │
+│  │  ├─ POST /api/chat → Provider        │  │
+│  │  ├─ WebSocket /ws → Protocol v2      │  │
+│  │  └─ clientId/runId 会话与事件隔离     │  │
 │  └───────────────────────────────────────┘  │
 └─────────────────────────────────────────────┘
          ↕ HTTP + WebSocket
@@ -198,7 +228,7 @@ AI 会直接修改源码，修改完成后页面自动刷新。
 └─────────────────────────────────────────────┘
 ```
 
-## CLAUDE.md
+## 项目指令
 
 在项目根目录创建 `CLAUDE.md` 文件可以给 AI 提供项目上下文，例如：
 
@@ -220,7 +250,7 @@ AI 会直接修改源码，修改完成后页面自动刷新。
 - 优先使用已有的组件库组件
 ```
 
-Agent 启动时会自动读取这个文件。
+Claude Provider 会读取该文件；Codex Provider 使用 Codex CLI 的标准项目指令机制。
 
 ## 注意事项
 
@@ -235,4 +265,13 @@ Agent 启动时会自动读取这个文件。
 - React / Vue / Svelte / 任何 Vite 支持的框架
 - 现代浏览器（Chrome, Firefox, Safari, Edge）
 
-> **Next.js 用户**：Next.js 使用 Webpack/Turbopack，不支持 Vite 插件。请关注后续的 `@prism-design/next-plugin`。
+> **Next.js 用户**：Next.js 使用 Webpack/Turbopack，不支持 Vite 插件，请使用 `next-plugin-prism-design`。
+
+## 发布检查
+
+```bash
+pnpm --filter vite-plugin-prism-design build
+pnpm --filter demo dev
+```
+
+确认 widget 注入、Agent 自动启动、同源 HTTP/WebSocket 代理、聊天流式更新和 HMR 源码修改均正常。

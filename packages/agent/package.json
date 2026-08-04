@@ -1,6 +1,6 @@
 {
   "name": "prism-design-agent",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "AI agent service for PrismDesign — scans project, receives design edits, modifies source code",
   "type": "module",
   "license": "MIT",
@@ -41,9 +41,12 @@
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.25.1",
     "@anthropic-ai/claude-agent-sdk": "^0.2.118",
+    "@openai/agents": "^0.14.2",
+    "@openai/codex-sdk": "^0.146.0",
     "cors": "^2.8.5",
     "express": "^4.21.0",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

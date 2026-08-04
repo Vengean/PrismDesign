@@ -9,17 +9,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export interface PrismDesignOptions {
   /** Agent server port (default: 9527, auto-increments if occupied) */
   agentPort?: number;
-  /** Agent type: "claude" | "glm" (default: "claude") */
-  agentType?: "claude" | "glm";
+  /** Agent provider: Claude, OpenAI Agents SDK, Codex SDK, or GLM (default: "claude") */
+  agentType?: "claude" | "claude-sub" | "openai" | "codex" | "glm";
   /** Disable auto-starting agent (if you run it manually) */
   agentAutoStart?: boolean;
   /** Agent URL override (skips auto-start, connects to existing agent) */
   agentUrl?: string;
-  /** API Key for the AI model (passed to agent as ANTHROPIC_API_KEY) */
+  /** Provider API key. Not used by the Codex subscription-login provider. */
   apiKey?: string;
-  /** API Base URL (passed to agent as ANTHROPIC_BASE_URL, e.g. LiteLLM proxy) */
+  /** Provider API base URL (for example a LiteLLM proxy). */
   baseUrl?: string;
-  /** AI model name (passed to agent as ANTHROPIC_MODEL) */
+  /** Provider model override. */
   model?: string;
   /** Widget position (default: "bottom-right") */
   position?: "bottom-right" | "bottom-left";

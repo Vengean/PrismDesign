@@ -64,7 +64,8 @@ Options:
   --api-key <key>        API Key
   --api-base-url <url>   API Base URL
   --model <name>         模型名称
-  --agent-type <type>    Agent 类型: claude | glm (default: claude)
+  --provider <type>      Agent Provider: claude | claude-sub | openai | codex | glm
+  --agent-type <type>    --provider 的兼容别名
 `);
     process.exit(0);
   }
@@ -81,23 +82,27 @@ Options:
   applyConfigToEnv(config, true);
 
   // CLI args override everything
+  const providerArg = getArg(args, "--provider") || getArg(args, "--agent-type");
+  if (providerArg) process.env.PRISM_AGENT_PROVIDER = providerArg;
+  const agentType = process.env.PRISM_AGENT_PROVIDER || process.env.AGENT_TYPE || "claude";
+
   const apiKey = getArg(args, "--api-key");
-  if (apiKey) process.env.ANTHROPIC_API_KEY = apiKey;
+  if (apiKey && agentType !== "codex") process.env[agentType === "openai" ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY"] = apiKey;
 
   const baseUrl = getArg(args, "--api-base-url");
-  if (baseUrl) process.env.ANTHROPIC_BASE_URL = baseUrl;
+  if (baseUrl) process.env[agentType === "openai" ? "OPENAI_BASE_URL" : "ANTHROPIC_BASE_URL"] = baseUrl;
 
   const model = getArg(args, "--model");
-  if (model) process.env.ANTHROPIC_MODEL = model;
-
-  const agentTypeArg = getArg(args, "--agent-type");
-  if (agentTypeArg) process.env.AGENT_TYPE = agentTypeArg;
+  if (model) process.env[agentType === "openai" ? "OPENAI_MODEL" : agentType === "codex" ? "CODEX_MODEL" : "ANTHROPIC_MODEL"] = model;
 
   const port = parseInt(getArg(args, "--port") || "9527", 10);
 
   // Determine agent type and model display
-  const agentType = process.env.AGENT_TYPE || "claude";
-  const modelName = agentType === "glm"
+  const modelName = agentType === "codex"
+    ? (process.env.CODEX_MODEL || "Codex CLI default")
+    : agentType === "openai"
+    ? (process.env.OPENAI_MODEL || "gpt-5.6")
+    : agentType === "glm"
     ? (process.env.ANTHROPIC_MODEL || "glm-5.1")
     : (process.env.ANTHROPIC_MODEL || "claude-opus-4-6");
 
@@ -114,10 +119,11 @@ Options:
 
   console.log(`\n  服务地址:  http://${localIP}:${actualPort}`);
   console.log(`  项目目录:  ${projectRoot}`);
-  console.log(`  Agent:     ${agentType === "glm" ? "GLM (glm-acp-agent)" : "Claude Agent SDK"}`);
+  console.log(`  Agent:     ${agentType === "codex" ? "Codex SDK (ChatGPT login)" : agentType === "openai" ? "OpenAI Agents SDK" : agentType === "glm" ? "GLM (glm-acp-agent)" : "Claude Agent SDK"}`);
   console.log(`  模型:      ${modelName}`);
-  if (process.env.ANTHROPIC_BASE_URL) {
-    console.log(`  API 代理:  ${process.env.ANTHROPIC_BASE_URL}`);
+  const configuredBaseUrl = agentType === "openai" ? process.env.OPENAI_BASE_URL : process.env.ANTHROPIC_BASE_URL;
+  if (configuredBaseUrl) {
+    console.log(`  API 代理:  ${configuredBaseUrl}`);
   }
   console.log("\n" + "=".repeat(50) + "\n");
 }

@@ -266,12 +266,14 @@ async function handleAgentConnect(url: string) {
         broadcastToSidePanel({ type: "AGENT_WORKING", payload: { working: true } });
       } else if (eventType === "agent:progress") {
         broadcastToSidePanel({ type: "AGENT_PROGRESS", payload: { text: (data as any)?.text || "" } });
+      } else if (eventType === "message.delta") {
+        broadcastToSidePanel({ type: "AGENT_TEXT_DELTA", payload: { runId: (data as any)?.runId || "", delta: (data as any)?.delta || "" } });
       } else if (eventType === "agent:done") {
         broadcastToSidePanel({ type: "AGENT_WORKING", payload: { working: false } });
         // Reload static pages (file://) since they have no HMR/dev server
         sendToActiveTab({ type: "RELOAD_IF_STATIC" } as PrismMessage);
       } else if (eventType === "agent:error") {
-        broadcastToSidePanel({ type: "AGENT_ERROR", payload: { message: String(data) } });
+        broadcastToSidePanel({ type: "AGENT_ERROR", payload: { message: (data as any)?.message || String(data) } });
       } else if (eventType === "connection_lost") {
         broadcastToSidePanel({ type: "AGENT_STATUS", payload: { connected: false } });
       }
@@ -322,6 +324,7 @@ async function handleChat(payload: { message: string }) {
       payload: {
         success: result.success,
         message: result.message,
+        filesModified: result.filesModified,
       },
     });
     return result;

@@ -5,7 +5,7 @@ import prismDesign from 'vite-plugin-prism-design'
 import path from 'path'
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), prismDesign()],
+  plugins: [react(), tailwindcss(), prismDesign({ agentType: 'codex' })],
   server: {
     host: true,
   },

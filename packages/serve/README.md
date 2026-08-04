@@ -8,6 +8,13 @@ Lightweight static file server with built-in PrismDesign AI widget — comment o
 npx prism-design-serve --dir ./dist --open
 ```
 
+Use the local Codex CLI login without an API key:
+
+```bash
+codex login status
+npx prism-design-serve --dir ./dist --provider codex --open
+```
+
 A floating button appears on the page. Click it to open the AI chat panel, describe changes or annotate elements, and the AI modifies your source files automatically.
 
 ## Installation
@@ -46,15 +53,25 @@ Add to `package.json`:
 | `--dir <path>` | Static file directory | Current directory |
 | `--port <number>` | HTTP server port | `3000` |
 | `--agent-port <number>` | Agent service port | `9527` |
+| `--provider <name>` | `claude`, `claude-sub`, `openai`, `codex`, or `glm` | Agent default (`claude`) |
 | `--no-agent` | Serve files only, no AI agent | `false` |
-| `--api-key <key>` | Anthropic API Key (forwarded to agent) | `$ANTHROPIC_API_KEY` |
-| `--api-base-url <url>` | Custom API base URL | `$ANTHROPIC_BASE_URL` |
-| `--model <name>` | Model name (forwarded to agent) | `claude-opus-4-6` |
+| `--api-key <key>` | Provider API key; ignored by `codex` | Provider environment variable |
+| `--api-base-url <url>` | Provider API base URL | Provider default |
+| `--model <name>` | Provider model override | Provider default |
 | `--open` | Open browser on start | `false` |
 
 ## Configuration
 
-### API Key (required)
+### Provider authentication
+
+Codex subscription login:
+
+```bash
+codex login
+prism-design-serve --dir ./dist --provider codex
+```
+
+Claude API key:
 
 ```bash
 # Environment variable
@@ -75,6 +92,16 @@ prism-design-serve --dir ./dist
 prism-design-serve --dir ./dist --api-base-url https://your-proxy.com/v1
 ```
 
+For Codex WebSocket behind a local HTTP/Mixed proxy:
+
+```bash
+HTTP_PROXY=http://127.0.0.1:7893 \
+HTTPS_PROXY=http://127.0.0.1:7893 \
+NO_PROXY=127.0.0.1,localhost \
+CODEX_TRANSPORT=websocket \
+prism-design-serve --dir ./dist --provider codex
+```
+
 ## Features
 
 - **Comment Mode** — Click the comment button, select a page element, type your feedback. The widget collects element info (DOM path, component name, text content) automatically.
@@ -87,7 +114,14 @@ prism-design-serve --dir ./dist --api-base-url https://your-proxy.com/v1
 ## Requirements
 
 - Node.js >= 18
-- `prism-design-agent` (installed automatically as a peer dependency, or globally)
+- `prism-design-agent` installed alongside this package or available globally
+
+## Release verification
+
+```bash
+pnpm --filter prism-design-serve build
+prism-design-serve --dir ./dist --provider codex
+```
 
 ## License
 

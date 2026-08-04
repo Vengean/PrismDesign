@@ -1,6 +1,7 @@
 import type { ProjectInfo } from "../shared/types.js";
 
 export interface TabState {
+  clientId: string;
   agentUrl: string | null;
   connected: boolean;
   project: ProjectInfo | null;
@@ -13,6 +14,7 @@ const tabs = new Map<number, TabState>();
 export function getTabState(tabId: number): TabState {
   if (!tabs.has(tabId)) {
     tabs.set(tabId, {
+      clientId: `chrome-tab-${tabId}`,
       agentUrl: null,
       connected: false,
       project: null,

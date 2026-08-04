@@ -38,7 +38,8 @@
       "Bash(docker build:*)",
       "Bash(podman build:*)",
       "Bash(bash:*)",
-      "Bash(xargs ls:*)"
+      "Bash(xargs ls:*)",
+      "Bash(node:*)"
     ]
   }
 }

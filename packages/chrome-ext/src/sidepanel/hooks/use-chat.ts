@@ -34,6 +34,18 @@ export function useChat() {
         });
         return;
       }
+      if (message.type === "AGENT_TEXT_DELTA") {
+        setMessages((prev) => {
+          const updated = [...prev];
+          const lastIdx = updated.findLastIndex((m) => m.role === "ai");
+          if (lastIdx >= 0) {
+            const current = updated[lastIdx].content.startsWith("⏳") ? "" : updated[lastIdx].content;
+            updated[lastIdx] = { ...updated[lastIdx], content: current + message.payload.delta };
+          }
+          return updated;
+        });
+        return;
+      }
       if (message.type === "AGENT_RESULT") {
         setSending(false);
         setMessages((prev) => {

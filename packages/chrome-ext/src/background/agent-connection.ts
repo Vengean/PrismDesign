@@ -39,7 +39,7 @@ export async function connectAgent(
   state.project = status.project;
 
   // Establish WebSocket
-  const wsUrl = url.replace(/^http/, "ws") + "/ws";
+  const wsUrl = url.replace(/^http/, "ws") + `/ws?clientId=${encodeURIComponent(state.clientId)}`;
   const ws = new WebSocket(wsUrl);
 
   ws.onmessage = (event) => {
@@ -94,13 +94,14 @@ export function disconnectAgent(state: TabState) {
 export async function chatWithAgent(
   state: TabState,
   message: string,
-): Promise<{ success: boolean; message: string }> {
+): Promise<{ success: boolean; message: string; filesModified?: string[]; runId?: string }> {
   if (!state.agentUrl) throw new Error("Agent not connected");
 
+  const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const res = await fetch(`${state.agentUrl}/api/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message }),
+    headers: { "Content-Type": "application/json", "x-client-id": state.clientId },
+    body: JSON.stringify({ message, runId }),
   });
   return res.json();
 }

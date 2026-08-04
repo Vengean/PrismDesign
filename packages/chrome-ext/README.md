@@ -38,6 +38,16 @@ npm run dev
 
 ### 第一步：连接 Agent
 
+先在目标源码项目中启动任一 Provider：
+
+```bash
+# 使用本机 Codex/ChatGPT 登录态
+prism-design-agent start --provider codex
+
+# 或 OpenAI Agents SDK
+OPENAI_API_KEY=sk-xxx prism-design-agent start --provider openai
+```
+
 1. 点击 Chrome 工具栏中的 PrismDesign 图标，打开侧边栏
 2. 输入 Agent 服务地址（如 `http://192.168.1.100:9527`）
 3. 点击「连接」，状态显示「已连接」即可
@@ -78,7 +88,7 @@ npm run dev
 ### 回退
 
 - 点击「放弃所有修改」可丢弃所有未保存的修改并刷新页面
-- Agent 端也支持 git rollback
+- Agent 能力由 `/api/status` 返回；只有 Provider 声明支持时才应显示 Agent 级回退/取消操作
 
 ## 组件检测
 
@@ -115,6 +125,8 @@ npm run dev
 └─────────────────────────────────────────────────────┘
 ```
 
+扩展为每个 tab 生成独立 `clientId`，聊天请求和 WebSocket 事件不会在不同 tab 间串线。扩展兼容 Agent Protocol v2 的文本增量、工具进度和文件变更事件。
+
 ### 消息协议（Content Script ↔ Side Panel）
 
 | 消息类型 | 方向 | 说明 |
@@ -135,3 +147,16 @@ npm run dev
 **Q: 修改保存后页面没更新？**
 - 确认 Agent 服务正在运行且目标项目的 dev server 支持 HMR
 - 检查侧边栏的连接状态是否正常
+
+**Q: Agent 地址可访问但侧边栏一直显示未连接？**
+- 打开 `http://127.0.0.1:9527/api/status` 检查 Provider 状态
+- 确认页面和扩展能够访问 Agent 所在主机/端口
+- 局域网场景不要填写远程机器自己的 `localhost`
+
+## 发布检查
+
+```bash
+pnpm --filter @prism-design/chrome-ext build
+```
+
+在 `chrome://extensions` 重新加载 `packages/chrome-ext/dist`，至少验证连接、聊天、元素选择、源码修改和断线重连。

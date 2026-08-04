@@ -32,6 +32,9 @@ import {
   Heart,
   Star,
   ChevronRight,
+  Users,
+  MessageCircle,
+  BookOpen,
 } from 'lucide-react'
 
 const teamMembers = [
@@ -65,10 +68,11 @@ export default function App() {
     const handleScroll = () => {
       const atBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 100
       if (atBottom) {
-        setActiveSection('#examples')
+        setActiveSection('#community')
         return
       }
       const sections = [
+        { id: 'community', href: '#community' },
         { id: 'examples', href: '#examples' },
         { id: 'components', href: '#components' },
       ]
@@ -103,6 +107,7 @@ export default function App() {
               { href: '#', label: '文档' },
               { href: '#components', label: '组件' },
               { href: '#examples', label: '示例' },
+              { href: '#community', label: '社区' },
             ].map(({ href, label }) => (
               <a
                 key={href}
@@ -721,6 +726,56 @@ export default function App() {
             </div>
           </div>
         </section>
+
+        {/* Community */}
+        <section id="community" className="py-16 px-6 border-b scroll-mt-14">
+          <div className="mx-auto max-w-7xl">
+            <div className="mx-auto max-w-2xl text-center mb-10">
+              <h2 className="text-3xl font-bold tracking-tight mb-3">与创作者一起构建</h2>
+              <p className="text-muted-foreground leading-relaxed">
+                分享你的组件、交流实践经验，并与社区成员一起完善棱镜设计系统。
+              </p>
+            </div>
+            <div className="grid gap-4 md:grid-cols-3">
+              {[
+                {
+                  icon: MessageCircle,
+                  title: '参与讨论',
+                  description: '提出问题、分享想法，与其他开发者交流组件设计经验。',
+                  action: '加入讨论',
+                },
+                {
+                  icon: BookOpen,
+                  title: '浏览资源',
+                  description: '发现社区教程、最佳实践和可直接使用的设计资源。',
+                  action: '查看资源',
+                },
+                {
+                  icon: Users,
+                  title: '贡献组件',
+                  description: '提交你的组件和改进建议，让更多创作者从中受益。',
+                  action: '开始贡献',
+                },
+              ].map(({ icon: Icon, title, description, action }) => (
+                <Card key={title} className="transition-all duration-200 hover:-translate-y-1 hover:shadow-md">
+                  <CardHeader>
+                    <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <CardTitle className="text-lg">{title}</CardTitle>
+                    <CardDescription className="leading-relaxed">{description}</CardDescription>
+                  </CardHeader>
+                  <CardFooter>
+                    <Button variant="ghost" className="px-0 hover:bg-transparent">
+                      {action}
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </CardFooter>
+                </Card>
+              ))}
+            </div>
+          </div>
+        </section>
       </main>
 
       <footer className="border-t py-8 px-6">
@@ -732,8 +787,8 @@ export default function App() {
           <p>基于 Radix UI + Tailwind CSS 构建 · {new Date().getFullYear()}</p>
           <div className="flex items-center gap-4">
             <a href="#" className="hover:text-foreground transition-colors">文档</a>
+            <a href="#community" className="hover:text-foreground transition-colors">社区</a>
             <a href="#" className="hover:text-foreground transition-colors">GitHub</a>
-            <a href="#" className="hover:text-foreground transition-colors">Twitter</a>
           </div>
         </div>
       </footer>

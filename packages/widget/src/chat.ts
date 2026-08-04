@@ -326,6 +326,7 @@ export function createChat(
 
     const thinkingIdx = messages.length - 1;
     let lastProgressText = "";
+    let streamedText = "";
     const ws = agentClient.connectWebSocket((type, data: any) => {
       if (type === "agent:progress") {
         const progressText = data.text || t("chat.thinking");
@@ -334,6 +335,10 @@ export function createChat(
           ...messages[thinkingIdx],
           content: `\u23F3 ${progressText}`,
         };
+        render();
+      } else if (type === "message.delta") {
+        streamedText += data.delta || "";
+        messages[thinkingIdx] = { ...messages[thinkingIdx], content: streamedText };
         render();
       }
     });

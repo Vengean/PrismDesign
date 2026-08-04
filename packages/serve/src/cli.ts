@@ -44,11 +44,13 @@ async function waitForAgent(url: string, maxRetries = 30): Promise<boolean> {
 
 function startAgent(opts: {
   agentPort: number;
+  provider?: string;
   apiKey?: string;
   model?: string;
   apiBaseUrl?: string;
 }): ChildProcess {
   const args = ["prism-design-agent", "start", "--port", String(opts.agentPort)];
+  if (opts.provider) args.push("--provider", opts.provider);
   if (opts.apiKey) args.push("--api-key", opts.apiKey);
   if (opts.model) args.push("--model", opts.model);
   if (opts.apiBaseUrl) args.push("--api-base-url", opts.apiBaseUrl);
@@ -89,6 +91,7 @@ Usage:
 Options:
   --port <number>          HTTP 服务端口 (default: 3000)
   --agent-port <number>    Agent 服务端口 (default: 9527)
+  --provider <name>        claude | claude-sub | openai | codex | glm
   --no-agent               不启动 Agent，仅提供静态文件服务
   --dir <path>             静态文件目录 (default: 当前目录)
   --api-key <key>          Anthropic API Key (转发给 Agent)
@@ -107,6 +110,7 @@ Examples:
 
   const port = parseInt(getArg(args, "--port") || "3000", 10);
   const agentPort = parseInt(getArg(args, "--agent-port") || "9527", 10);
+  const provider = getArg(args, "--provider");
   const noAgent = hasFlag(args, "--no-agent");
   const dir = path.resolve(getArg(args, "--dir") || process.cwd());
   const shouldOpen = hasFlag(args, "--open");
@@ -128,7 +132,7 @@ Examples:
   // Start agent
   if (!noAgent) {
     console.log("🤖 启动 Agent...");
-    agentChild = startAgent({ agentPort, apiKey, model, apiBaseUrl });
+    agentChild = startAgent({ agentPort, provider, apiKey, model, apiBaseUrl });
 
     console.log("⏳ 等待 Agent 就绪...");
     const ready = await waitForAgent(agentUrl);

@@ -23,14 +23,15 @@ export class AgentClient {
     return res.json();
   }
 
-  async chat(message: string): Promise<{ success: boolean; message: string; filesModified?: string[] }> {
+  async chat(message: string): Promise<{ success: boolean; message: string; filesModified?: string[]; runId?: string }> {
+    const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const res = await fetch(`${this.baseUrl}/api/chat`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-client-id": this.clientId,
       },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ message, runId }),
     });
     return res.json();
   }
@@ -39,7 +40,7 @@ export class AgentClient {
     if (this.ws) {
       this.ws.close();
     }
-    const wsUrl = this.baseUrl.replace(/^http/, "ws") + "/ws";
+    const wsUrl = this.baseUrl.replace(/^http/, "ws") + `/ws?clientId=${encodeURIComponent(this.clientId)}`;
     const ws = new WebSocket(wsUrl);
     ws.onmessage = (event) => {
       try {

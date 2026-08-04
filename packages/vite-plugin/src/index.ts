@@ -11,17 +11,17 @@ const require = createRequire(import.meta.url);
 export interface PrismDesignOptions {
   /** Agent server port (default: 9527, auto-increments if occupied) */
   agentPort?: number;
-  /** Agent type: "claude" | "glm" (default: "claude") */
-  agentType?: "claude" | "glm";
+  /** Agent provider: Claude, OpenAI Agents SDK, Codex SDK, or GLM (default: "claude") */
+  agentType?: "claude" | "claude-sub" | "openai" | "codex" | "glm";
   /** Disable auto-starting agent (if you run it manually) */
   agentAutoStart?: boolean;
   /** Agent URL override (skips auto-start, connects to existing agent) */
   agentUrl?: string;
-  /** API Key for the AI model (passed to agent as ANTHROPIC_API_KEY) */
+  /** Provider API key. Not used by the Codex subscription-login provider. */
   apiKey?: string;
-  /** API Base URL (passed to agent as ANTHROPIC_BASE_URL, e.g. LiteLLM proxy) */
+  /** Provider API base URL (for example a LiteLLM proxy). */
   baseUrl?: string;
-  /** AI model name (passed to agent as ANTHROPIC_MODEL, e.g. "claude-sonnet-4-20250514") */
+  /** Provider model override. */
   model?: string;
   /** Widget position (default: "bottom-right") */
   position?: "bottom-right" | "bottom-left";
@@ -101,7 +101,7 @@ function setupAgentProxy(server: any, targetBaseUrl: string) {
     const wsReq = http.request({
       hostname: target.hostname,
       port: target.port,
-      path: "/ws",
+      path: req.url.replace(/^\/__prism_agent__/, "") || "/ws",
       method: "GET",
       headers: { ...req.headers, host: `${target.hostname}:${target.port}` },
     });
@@ -194,11 +194,19 @@ export default function prismDesign(options: PrismDesignOptions = {}): Plugin {
           const projectRoot = config.root || process.cwd();
 
           const agentEnv: Record<string, string> = { ...process.env } as Record<string, string>;
-          if (apiKey) agentEnv.ANTHROPIC_API_KEY = apiKey;
-          if (baseUrl) agentEnv.ANTHROPIC_BASE_URL = baseUrl;
-          if (model) agentEnv.ANTHROPIC_MODEL = model;
+          if (agentType === "openai") {
+            if (apiKey) agentEnv.OPENAI_API_KEY = apiKey;
+            if (baseUrl) agentEnv.OPENAI_BASE_URL = baseUrl;
+            if (model) agentEnv.OPENAI_MODEL = model;
+          } else if (agentType === "codex") {
+            if (model) agentEnv.CODEX_MODEL = model;
+          } else {
+            if (apiKey) agentEnv.ANTHROPIC_API_KEY = apiKey;
+            if (baseUrl) agentEnv.ANTHROPIC_BASE_URL = baseUrl;
+            if (model) agentEnv.ANTHROPIC_MODEL = model;
+          }
 
-          agentProcess = spawn("node", [agentCli, "start", "--port", String(preferredPort), "--project", projectRoot, "--agent-type", agentType], {
+          agentProcess = spawn("node", [agentCli, "start", "--port", String(preferredPort), "--project", projectRoot, "--provider", agentType], {
             stdio: ["ignore", "pipe", "pipe"],
             env: agentEnv,
           });

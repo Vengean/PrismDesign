@@ -1,4 +1,4 @@
-# next-plugin-__prism-design__
+# next-plugin-prism-design
 
 PrismDesign 的 Next.js 插件 —— 一行配置，为你的 Next.js 项目接入 AI 可视化编辑能力。
 
@@ -8,13 +8,13 @@ PrismDesign 的 Next.js 插件 —— 一行配置，为你的 Next.js 项目接
 - 自动启动 AI Agent 服务，无需手动管理
 - Agent 端口被占用时自动递增
 - 生产构建自动跳过，零影响
-- 支持 Claude API、GLM API 等多种 AI 后端
+- 支持 Claude Agent SDK、OpenAI Agents SDK、Codex SDK 和 GLM/ACP
 - 提供两种接入方式：Config Wrapper（零组件）和 React 组件
 
 ## 安装
 
 ```bash
-pnpm add -D next-plugin-__prism-design__
+pnpm add -D next-plugin-prism-design
 ```
 
 ## 快速开始
@@ -25,7 +25,7 @@ pnpm add -D next-plugin-__prism-design__
 
 ```ts
 // next.config.ts
-import { withPrismDesign } from 'next-plugin-__prism-design__';
+import { withPrismDesign } from 'next-plugin-prism-design';
 
 export default withPrismDesign()({
   reactStrictMode: true,
@@ -38,7 +38,7 @@ export default withPrismDesign()({
 
 ```tsx
 // app/layout.tsx
-import { PrismDesign } from 'next-plugin-__prism-design__/react';
+import { PrismDesign } from 'next-plugin-prism-design/react';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -80,8 +80,7 @@ withPrismDesign({
 withPrismDesign({
   // ── Agent 配置 ──
 
-  // API Key（传递给 Agent 作为 ANTHROPIC_API_KEY）
-  // 也可以通过项目根目录 .env 文件配置
+  // API Key；OpenAI/Claude/GLM 按 Provider 解释，Codex 不需要
   apiKey: 'sk-ant-...',
 
   // API Base URL（可选，用于 LiteLLM 代理等场景）
@@ -90,8 +89,9 @@ withPrismDesign({
   // AI 模型名称（可选，默认 claude-sonnet-4-20250514）
   model: 'claude-sonnet-4-20250514',
 
-  // Agent 类型（默认 "claude"）
-  agentType: 'claude',  // 'claude' | 'glm'
+  // Agent Provider（默认 "claude"）
+  agentType: 'codex',
+  // 'claude' | 'claude-sub' | 'openai' | 'codex' | 'glm'
 
   // Agent 服务端口（默认 9527，被占用时自动递增）
   agentPort: 9527,
@@ -123,11 +123,33 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 ```ts
 // next.config.ts
-import { withPrismDesign } from 'next-plugin-__prism-design__';
+import { withPrismDesign } from 'next-plugin-prism-design';
 export default withPrismDesign()({ reactStrictMode: true });
 ```
 
 Agent 启动时会自动读取 `.env` / `.env.local` 文件中的环境变量。
+
+### 使用本机 Codex 登录态
+
+```bash
+codex login
+```
+
+```ts
+withPrismDesign({ agentType: 'codex' })({ reactStrictMode: true })
+```
+
+如使用 Codex WebSocket 和本地代理，在启动 `next dev` 的同一终端设置 `HTTP_PROXY`、`HTTPS_PROXY`、`NO_PROXY` 和 `CODEX_TRANSPORT=websocket`。
+
+### 使用 OpenAI Agents SDK
+
+```bash
+OPENAI_API_KEY=sk-xxx pnpm dev
+```
+
+```ts
+withPrismDesign({ agentType: 'openai' })({ reactStrictMode: true })
+```
 
 ### 使用 LiteLLM 代理
 
@@ -173,9 +195,9 @@ withPrismDesign({
 │                    ↕ spawn                   │
 │  ┌───────────────────────────────────────┐  │
 │  │  Agent Server (port 9527)             │  │
-│  │  ├─ POST /api/chat → Claude SDK      │  │
-│  │  ├─ WebSocket /ws → 实时进度          │  │
-│  │  └─ 读取项目 CLAUDE.md               │  │
+│  │  ├─ POST /api/chat → Provider        │  │
+│  │  ├─ WebSocket /ws → Protocol v2      │  │
+│  │  └─ clientId/runId 会话与事件隔离     │  │
 │  └───────────────────────────────────────┘  │
 └─────────────────────────────────────────────┘
          ↕ HTTP + WebSocket
@@ -199,7 +221,7 @@ withPrismDesign({
 | Widget 注入 | 通过 webpack entry | 通过 script 标签 |
 | 灵活度 | 全自动 | 可控制渲染位置和条件 |
 
-## CLAUDE.md
+## 项目指令
 
 在项目根目录创建 `CLAUDE.md` 文件可以给 AI 提供项目上下文：
 
@@ -217,7 +239,7 @@ withPrismDesign({
 - 组件放在 src/components/ 目录
 ```
 
-Agent 启动时会自动读取这个文件。
+Claude Provider 会读取该文件；Codex Provider 使用 Codex CLI 的标准项目指令机制。
 
 ## 注意事项
 
@@ -232,3 +254,12 @@ Agent 启动时会自动读取这个文件。
 - Next.js 13+（App Router 和 Pages Router 均支持）
 - React 18+
 - 现代浏览器（Chrome, Firefox, Safari, Edge）
+
+## 发布检查
+
+```bash
+pnpm --filter next-plugin-prism-design build
+pnpm --filter demo-next dev
+```
+
+确认 wrapper 与 React 组件导出、widget 静态资源、Agent 自动启动、端口探测和聊天链路正常。
