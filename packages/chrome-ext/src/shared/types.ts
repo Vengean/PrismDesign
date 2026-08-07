@@ -62,6 +62,10 @@ export interface ChatMessage {
   role: "user" | "ai";
   content: string;
   timestamp: number;
+  verification?: { id: string; goal: string; proposedChecks: string[]; status?: string; summary?: string };
+  /** Transient target for streaming/progress events of the active request. */
+  pending?: boolean;
+  streamItemId?: string;
 }
 
 export interface ProjectInfo {
@@ -75,6 +79,17 @@ export interface AgentCapabilities {
   sessions: boolean;
   cancel: boolean;
   rollback: boolean;
+}
+
+export interface TestRunInfo {
+  id: string;
+  verificationId: string;
+  agentRunId: string;
+  status: "preparing" | "running" | "cleaning" | "passed" | "failed" | "inconclusive" | "cancelled" | "timed_out";
+  startedAt: string;
+  updatedAt: string;
+  finishedAt?: string;
+  error?: string;
 }
 
 // ============================================================
@@ -126,6 +141,9 @@ export type AgentMessage =
   | { type: "AGENT_DISCONNECT" }
   | { type: "AGENT_APPLY_CHANGES"; payload: { changes: StyleChange[]; pagePath?: string; supplement?: string } }
   | { type: "AGENT_CHAT"; payload: { message: string; context: { pagePath: string; components: ComponentInfo[] } } }
+  | { type: "AGENT_START_VERIFICATION"; payload: { verification: NonNullable<ChatMessage["verification"]> } }
+  | { type: "AGENT_CANCEL_CURRENT" }
+  | { type: "AGENT_GET_RUNTIME_STATE" }
   | { type: "AGENT_ROLLBACK" };
 
 // Agent events: Background -> Side Panel
@@ -133,9 +151,11 @@ export type AgentEventMessage =
   | { type: "AGENT_STATUS"; payload: { connected: boolean; connecting?: boolean; agentUrl?: string; error?: string; project?: ProjectInfo; provider?: string; model?: string; capabilities?: AgentCapabilities } }
   | { type: "AGENT_WORKING"; payload: { working: boolean } }
   | { type: "AGENT_PROGRESS"; payload: { text: string } }
-  | { type: "AGENT_TEXT_DELTA"; payload: { runId: string; delta: string } }
-  | { type: "AGENT_RESULT"; payload: { success: boolean; message: string; filesModified?: string[] } }
-  | { type: "AGENT_ERROR"; payload: { message: string } };
+  | { type: "AGENT_TEXT_DELTA"; payload: { runId: string; delta: string; messageId?: string } }
+  | { type: "AGENT_RESULT"; payload: { success: boolean; message: string; filesModified?: string[]; verification?: NonNullable<ChatMessage["verification"]> } }
+  | { type: "AGENT_ERROR"; payload: { message: string } }
+  | { type: "AGENT_RUNTIME_RESET" }
+  | { type: "TEST_RUN_UPDATE"; payload: TestRunInfo };
 
 // All message types
 export type PrismMessage = DownstreamMessage | UpstreamMessage | AgentMessage | AgentEventMessage;

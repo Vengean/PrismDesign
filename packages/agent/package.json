@@ -41,10 +41,12 @@
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.25.1",
     "@anthropic-ai/claude-agent-sdk": "^0.2.118",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@openai/agents": "^0.14.2",
     "@openai/codex-sdk": "^0.146.0",
     "cors": "^2.8.5",
     "express": "^4.21.0",
+    "playwright": "^1.54.2",
     "ws": "^8.18.0",
     "zod": "^4.4.3"
   },

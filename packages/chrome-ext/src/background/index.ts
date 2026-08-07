@@ -4,8 +4,13 @@ import {
   disconnectAgent,
   chatWithAgent,
   rollbackAgent,
+  startAgentVerification,
+  updateBrowserRegistration,
+  cancelCurrentAgentRun,
+  getAgentRuntimeState,
 } from "./agent-connection.js";
 import type { PrismMessage } from "../shared/types.js";
+import { executeCurrentTabCommand } from "./browser-controller.js";
 
 // Open side panel when clicking the extension icon
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
@@ -46,7 +51,10 @@ chrome.tabs.onActivated.addListener(async (info) => {
 
 // When a page finishes loading, re-show toolbar if side panel is open
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
+  if (changeInfo.url) updateBrowserRegistration(getTabState(tabId), changeInfo.url);
   if (changeInfo.status === "complete" && sidePanelOpen) {
+    const tab = await chrome.tabs.get(tabId);
+    if (tab.url) updateBrowserRegistration(getTabState(tabId), tab.url);
     await ensureContentScript(tabId);
     chrome.tabs.sendMessage(tabId, { type: "SHOW_TOOLBAR" }).catch(() => {});
   }
@@ -221,6 +229,22 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, sender, sendRespons
       handleRollback().then(sendResponse);
       return true;
 
+    case "AGENT_START_VERIFICATION":
+      handleStartVerification(message.payload.verification).then(sendResponse);
+      return true;
+
+    case "AGENT_CANCEL_CURRENT":
+      handleCancelCurrent().then(sendResponse);
+      return true;
+
+    case "AGENT_GET_RUNTIME_STATE":
+      (async () => {
+        const tabId = await getActiveTabId();
+        const state = tabId ? getTabState(tabId) : undefined;
+        sendResponse({ connected: state?.connected || false, testRun: state?.currentTestRun || null, agentWorking: state?.agentWorking || false, agentProgress: state?.agentProgress || "" });
+      })();
+      return true;
+
     // ---- Content script operations (forwarded to tab) ----
     case "DESIGN_MODE_ON":
     case "DESIGN_MODE_OFF":
@@ -263,21 +287,50 @@ async function handleAgentConnect(url: string) {
     const project = await connectAgent(state, url, (eventType, data) => {
       // Forward agent WebSocket events to side panel
       if (eventType === "agent:start") {
+        state.agentWorking = true;
+        state.agentProgress = "Agent 正在处理…";
         broadcastToSidePanel({ type: "AGENT_WORKING", payload: { working: true } });
       } else if (eventType === "agent:progress") {
+        state.agentWorking = true;
+        state.agentProgress = (data as any)?.text || "Agent 正在处理…";
         broadcastToSidePanel({ type: "AGENT_PROGRESS", payload: { text: (data as any)?.text || "" } });
       } else if (eventType === "message.delta") {
-        broadcastToSidePanel({ type: "AGENT_TEXT_DELTA", payload: { runId: (data as any)?.runId || "", delta: (data as any)?.delta || "" } });
+        state.agentWorking = true;
+        broadcastToSidePanel({ type: "AGENT_TEXT_DELTA", payload: { runId: (data as any)?.runId || "", delta: (data as any)?.delta || "", messageId: (data as any)?.messageId } });
       } else if (eventType === "agent:done") {
+        state.agentWorking = false;
+        state.agentProgress = "";
         broadcastToSidePanel({ type: "AGENT_WORKING", payload: { working: false } });
         // Reload static pages (file://) since they have no HMR/dev server
         sendToActiveTab({ type: "RELOAD_IF_STATIC" } as PrismMessage);
       } else if (eventType === "agent:error") {
+        state.agentWorking = false;
+        state.agentProgress = "";
         broadcastToSidePanel({ type: "AGENT_ERROR", payload: { message: (data as any)?.message || String(data) } });
       } else if (eventType === "connection_lost") {
         broadcastToSidePanel({ type: "AGENT_STATUS", payload: { connected: false } });
+      } else if (eventType === "connection_restored") {
+        broadcastToSidePanel({ type: "AGENT_STATUS", payload: { connected: true, project: (data as any)?.project } });
+        void getAgentRuntimeState(state).then((runtime) => {
+          const activeAgent = runtime.activeAgentRuns[0];
+          state.agentWorking = Boolean(activeAgent);
+          state.agentProgress = activeAgent?.progress || "";
+          if (activeAgent) {
+            broadcastToSidePanel({ type: "AGENT_WORKING", payload: { working: true } });
+            broadcastToSidePanel({ type: "AGENT_PROGRESS", payload: { text: activeAgent.progress } });
+          }
+        });
+      } else if (eventType === "test-run.updated") {
+        state.currentTestRun = data as any;
+        broadcastToSidePanel({ type: "TEST_RUN_UPDATE", payload: data as any });
       }
-    });
+    }, (command) => executeCurrentTabCommand(tabId, command), (await chrome.tabs.get(tabId)).url);
+
+    const runtime = await getAgentRuntimeState(state).catch(() => ({ activeTestRuns: [], activeAgentRuns: [] }));
+    state.currentTestRun = runtime.activeTestRuns[0] || null;
+    const activeAgent = runtime.activeAgentRuns[0];
+    state.agentWorking = Boolean(activeAgent);
+    state.agentProgress = activeAgent?.progress || "";
 
     // Persist URL
     chrome.storage.local.set({ agentUrl: url });
@@ -286,6 +339,12 @@ async function handleAgentConnect(url: string) {
       type: "AGENT_STATUS",
       payload: { connected: true, project },
     });
+    if (state.currentTestRun) broadcastToSidePanel({ type: "TEST_RUN_UPDATE", payload: state.currentTestRun });
+    if (state.agentWorking) {
+      broadcastToSidePanel({ type: "AGENT_WORKING", payload: { working: true } });
+      broadcastToSidePanel({ type: "AGENT_PROGRESS", payload: { text: state.agentProgress } });
+    }
+    if (!state.agentWorking && !state.currentTestRun) broadcastToSidePanel({ type: "AGENT_RUNTIME_RESET" });
 
     return { success: true, project };
   } catch (err) {
@@ -325,6 +384,7 @@ async function handleChat(payload: { message: string }) {
         success: result.success,
         message: result.message,
         filesModified: result.filesModified,
+        verification: (result as any).verification,
       },
     });
     return result;
@@ -332,6 +392,30 @@ async function handleChat(payload: { message: string }) {
     broadcastToSidePanel({ type: "AGENT_WORKING", payload: { working: false } });
     broadcastToSidePanel({ type: "AGENT_ERROR", payload: { message: String(err) } });
     return { success: false, error: String(err) };
+  }
+}
+
+async function handleStartVerification(verification: { id: string; goal: string; proposedChecks: string[] }) {
+  const tabId = await getActiveTabId();
+  if (!tabId) return { success: false, error: "no active tab" };
+  const state = getTabState(tabId);
+  if (!state.connected) return { success: false, error: "not connected" };
+  try {
+    const result = await startAgentVerification(state, verification);
+    return { success: true, ...result };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { success: false, error: /failed to fetch|networkerror|load failed/i.test(message) ? "Agent 服务连接已中断，本次测试未能完成，可重新测试。" : message };
+  }
+}
+
+async function handleCancelCurrent() {
+  const tabId = await getActiveTabId();
+  if (!tabId) return { success: false, error: "no active tab" };
+  try {
+    return await cancelCurrentAgentRun(getTabState(tabId));
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
 

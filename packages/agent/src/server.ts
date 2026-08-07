@@ -2,10 +2,15 @@ import express from "express";
 import cors from "cors";
 import { WebSocketServer, WebSocket } from "ws";
 import http from "node:http";
+import { randomBytes } from "node:crypto";
 import type { AgentEvent, AgentProvider } from "./core/types.js";
 import { LegacyProvider } from "./providers/legacy-provider.js";
 import { OpenAIProvider } from "./providers/openai-provider.js";
 import { CodexProvider } from "./providers/codex-provider.js";
+import { BrowserRuntime, type BrowserAction } from "./testing/browser-runtime.js";
+import { VerificationStore } from "./testing/verification-store.js";
+import { createBrowserToolRegistry } from "./testing/browser-tools.js";
+import { TestRunStore } from "./testing/test-run-store.js";
 
 function getClientId(req: express.Request): string {
   return (req.headers["x-client-id"] as string) || "default";
@@ -15,6 +20,14 @@ export async function startServer(
   projectRoot: string,
   port: number,
 ) {
+  const allowedOrigins = (process.env.PRISM_BROWSER_ALLOWED_ORIGINS || "")
+    .split(",").map((value) => value.trim()).filter(Boolean);
+  const browserRuntime = new BrowserRuntime({
+    allowedOrigins,
+    headless: process.env.PRISM_BROWSER_HEADLESS === "true",
+  });
+  const toolRegistry = createBrowserToolRegistry(browserRuntime);
+  const verifications = new VerificationStore();
   const agentType = process.env.PRISM_AGENT_PROVIDER || process.env.AGENT_TYPE || "claude";
 
   // Lazy-load agent modules so choosing GLM doesn't require claude-agent-sdk
@@ -26,7 +39,7 @@ export async function startServer(
     provider = new LegacyProvider("glm", process.env.ANTHROPIC_MODEL || "glm-5.1", glm.runGlmAgent, glm.closeAllGlmSessions);
     console.log("[Server] 使用 GLM Agent (glm-acp-agent)");
   } else if (agentType === "openai") {
-    provider = new OpenAIProvider(projectRoot);
+    provider = new OpenAIProvider(projectRoot, toolRegistry);
     console.log(`[Server] 使用 OpenAI Agents SDK (${provider.model})`);
   } else if (agentType === "codex") {
     provider = new CodexProvider(projectRoot);
@@ -49,23 +62,57 @@ export async function startServer(
   const wsClients = new Set<WebSocket>();
   const wsClientIds = new Map<WebSocket, string>();
   const activeRuns = new Map<string, AbortController>();
+  const activeRunClients = new Map<string, string>();
+  const activeRunStates = new Map<string, { runId: string; clientId: string; status: "running" | "using_tool" | "responding"; progress: string; updatedAt: string }>();
+  const activeAgentTurns = new Map<string, { clientId: string; runId: string; pageUrl?: string }>();
   const pendingFetchRequests = new Map<string, {
     resolve: (result: any) => void;
     reject: (error: Error) => void;
     timer: ReturnType<typeof setTimeout>;
   }>();
+  const browserRegistrations = new Map<WebSocket, { url: string; mode: string }>();
+  const pendingBrowserCommands = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+  const disconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  let testRuns: TestRunStore;
 
   wss.on("connection", (ws, request) => {
     wsClients.add(ws);
     const url = new URL(request.url || "/ws", "http://localhost");
-    wsClientIds.set(ws, url.searchParams.get("clientId") || "default");
+    const wsClientId = url.searchParams.get("clientId") || "default";
+    wsClientIds.set(ws, wsClientId);
+    const reconnectTimer = disconnectTimers.get(wsClientId);
+    if (reconnectTimer) { clearTimeout(reconnectTimer); disconnectTimers.delete(wsClientId); }
     ws.on("close", () => {
       wsClients.delete(ws);
       wsClientIds.delete(ws);
+      browserRegistrations.delete(ws);
+      const timer = setTimeout(() => {
+        disconnectTimers.delete(wsClientId);
+        const reconnected = [...wsClients].some((client) => client.readyState === WebSocket.OPEN && wsClientIds.get(client) === wsClientId);
+        if (reconnected) return;
+        for (const run of testRuns.activeForClient(wsClientId)) {
+          void testRuns.finish(run.id, "cancelled", "Chrome connection was not restored within 10 seconds");
+        }
+      }, 10_000);
+      timer.unref?.();
+      disconnectTimers.set(wsClientId, timer);
     });
     ws.on("message", (raw) => {
       try {
         const message = JSON.parse(raw.toString());
+        if (message.type === "browser:register") {
+          browserRegistrations.set(ws, { url: message.data?.url || "", mode: message.data?.mode || "current-tab" });
+          return;
+        }
+        if (message.type === "browser:result" && message.data?.requestId) {
+          const pending = pendingBrowserCommands.get(message.data.requestId);
+          if (!pending) return;
+          clearTimeout(pending.timer);
+          pendingBrowserCommands.delete(message.data.requestId);
+          if (message.data.success) pending.resolve(message.data.result);
+          else pending.reject(new Error(message.data.error || "Browser command failed"));
+          return;
+        }
         if (message.type !== "test:fetch:result" || !message.data?.requestId) return;
         const pending = pendingFetchRequests.get(message.data.requestId);
         if (!pending) return;
@@ -85,7 +132,66 @@ export async function startServer(
     }
   }
 
+  testRuns = new TestRunStore({
+    timeoutMs: Number(process.env.PRISM_TEST_RUN_TIMEOUT_MS || 120_000),
+    onChange: (run) => {
+      broadcast("test-run.updated", run, run.clientId);
+      if (run.status === "cancelled" || run.status === "timed_out") {
+        try {
+          const verification = verifications.getOwned(run.verificationId, run.clientId);
+          if (["preparing", "running"].includes(verification.status)) {
+            const updated = verifications.update(verification.id, run.clientId, {
+              status: run.status === "cancelled" ? "cancelled" : "failed",
+              error: run.error,
+              summary: run.status === "cancelled" ? "测试已取消。" : "测试运行超时。",
+            });
+            broadcast("verification.updated", updated, run.clientId);
+          }
+        } catch {}
+      }
+    },
+  });
+
+  async function executeCurrentTab(pageUrl: string, command: Record<string, unknown>): Promise<unknown> {
+    const target = new URL(pageUrl);
+    const findEntry = () => {
+      const candidates = [...browserRegistrations.entries()].filter(([ws, registration]) => {
+        if (ws.readyState !== WebSocket.OPEN || !registration.url) return false;
+        try { return new URL(registration.url).origin === target.origin; } catch { return false; }
+      });
+      const exact = candidates.filter(([, registration]) => {
+        try { const url = new URL(registration.url); return url.pathname === target.pathname && url.search === target.search; } catch { return false; }
+      });
+      return { candidates, entry: exact.length === 1 ? exact[0] : candidates.length === 1 ? candidates[0] : undefined };
+    };
+    let { candidates, entry } = findEntry();
+    if (!entry && candidates.length === 0 && command.action === "attach") {
+      const deadline = Date.now() + 8_000;
+      while (!entry && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        ({ candidates, entry } = findEntry());
+      }
+    }
+    if (!entry && candidates.length > 1) throw new Error(`Multiple Prism tabs are connected for ${target.origin}; keep only the target tab connected`);
+    if (!entry) throw new Error(`No Prism Chrome tab is registered for ${target.origin}. Keep the Prism side panel open on that tab and retry.`);
+    const [ws] = entry;
+    const requestId = `browser-command-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { pendingBrowserCommands.delete(requestId); reject(new Error("Current-tab browser command timed out")); }, 30_000);
+      pendingBrowserCommands.set(requestId, { resolve, reject, timer });
+      ws.send(JSON.stringify({ type: "browser:command", data: { ...command, requestId } }));
+    });
+  }
+
   function emitAgentEvent(clientId: string, event: AgentEvent) {
+    const now = new Date().toISOString();
+    if (event.type === "run.started") activeRunStates.set(event.runId, { runId: event.runId, clientId, status: "running", progress: "Agent 正在处理…", updatedAt: now });
+    if (event.type === "tool.started") activeRunStates.set(event.runId, { runId: event.runId, clientId, status: "using_tool", progress: event.label, updatedAt: now });
+    if (event.type === "message.delta") {
+      const current = activeRunStates.get(event.runId);
+      activeRunStates.set(event.runId, { runId: event.runId, clientId, status: "responding", progress: current?.progress || "Agent 正在整理结果…", updatedAt: now });
+    }
+    if (["run.completed", "run.failed", "run.cancelled"].includes(event.type)) activeRunStates.delete(event.runId);
     if (process.env.PRISM_AGENT_DEBUG === "1") {
       const detail = event.type === "message.delta"
         ? JSON.stringify({ runId: event.runId, delta: event.delta.slice(0, 160) })
@@ -98,6 +204,122 @@ export async function startServer(
     if (event.type === "tool.started") broadcast("agent:progress", { runId: event.runId, text: event.label }, clientId);
     if (event.type === "run.completed") broadcast("agent:done", { runId: event.runId, success: true, filesModified: event.result.filesModified }, clientId);
     if (event.type === "run.failed") broadcast("agent:error", { runId: event.runId, message: event.error.message }, clientId);
+  }
+
+  function getAgentTurn(req: express.Request) {
+    const authorization = req.header("authorization") || "";
+    const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+    const turn = token ? activeAgentTurns.get(token) : undefined;
+    if (!turn) throw new Error("Agent turn capability is invalid or expired");
+    return turn;
+  }
+
+  async function startVerification(id: string, clientId: string) {
+    const verification = verifications.getOwned(id, clientId);
+    if (!(["awaiting_confirmation", "failed", "passed", "inconclusive"] as const).includes(verification.status as "awaiting_confirmation" | "failed" | "passed" | "inconclusive")) {
+      throw new Error(`Verification cannot start from ${verification.status}`);
+    }
+    verifications.update(id, clientId, { status: "preparing", error: undefined });
+    broadcast("verification.updated", verifications.getOwned(id, clientId), clientId);
+    try {
+      if (provider.name === "codex") {
+        const updated = verifications.update(id, clientId, { status: "running", browserSessionId: undefined });
+        broadcast("verification.updated", updated, clientId);
+        // Codex owns the browser lifecycle through prism_browser. Do not attach
+        // here as runVerificationAgent will call browser_start exactly once.
+        return { verification: updated, observation: { url: verification.baseUrl, mode: "current-tab", attached: false } };
+      }
+      const { sessionId } = await browserRuntime.start({ clientId, runId: verification.developmentRunId, verificationId: id }, verification.baseUrl);
+      const updated = verifications.update(id, clientId, { status: "running", browserSessionId: sessionId });
+      const observation = await browserRuntime.observe(sessionId, clientId);
+      broadcast("verification.updated", updated, clientId);
+      broadcast("verification.observation", { verificationId: id, observation }, clientId);
+      return { verification: updated, observation };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      verifications.update(id, clientId, { status: "failed", error: message });
+      broadcast("verification.updated", { id, status: "failed", error: message }, clientId);
+      throw error;
+    }
+  }
+
+  function formatVerificationMessage(message: string): string {
+    return message
+      .replace(/^\s*VERIFICATION_RESULT:\s*PASSED\s*$/gim, "测试结论：通过")
+      .replace(/^\s*VERIFICATION_RESULT:\s*FAILED\s*$/gim, "测试结论：未通过")
+      .trim();
+  }
+
+  async function detachVerificationBrowser(verification: { baseUrl: string }) {
+    if (provider.name !== "codex") return;
+    try { await executeCurrentTab(verification.baseUrl, { action: "detach" }); }
+    catch (error) { console.warn(`[Verification] Browser detach skipped: ${error instanceof Error ? error.message : String(error)}`); }
+  }
+
+  function createTestRun(verification: { id: string; clientId: string; baseUrl: string; browserSessionId?: string }, agentRunId: string, abort?: () => void) {
+    const run = testRuns.create({ verificationId: verification.id, clientId: verification.clientId, agentRunId, abort });
+    testRuns.registerCleanup(run.id, {
+      id: `browser:${verification.id}`,
+      label: "退出浏览器调试模式",
+      cleanup: () => verification.browserSessionId
+        ? browserRuntime.stop(verification.browserSessionId, verification.clientId)
+        : detachVerificationBrowser(verification),
+    });
+    testRuns.markRunning(run.id);
+    return run;
+  }
+
+  async function finishVerificationRun(verificationId: string, status: "passed" | "failed" | "inconclusive" | "cancelled" | "timed_out", error?: string) {
+    const run = testRuns.byVerification(verificationId);
+    if (run) await testRuns.finish(run.id, status, error);
+  }
+
+  async function runVerificationAgent(clientId: string, verificationId: string, sessionId: string, observation: unknown) {
+    if (provider.name !== "openai" && provider.name !== "codex") return undefined;
+    const verification = verifications.getOwned(verificationId, clientId);
+    const runId = `verify-run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const controller = new AbortController();
+    activeRuns.set(runId, controller);
+    activeRunClients.set(runId, clientId);
+    createTestRun(verification, runId, () => controller.abort());
+    emitAgentEvent(clientId, { type: "run.started", runId });
+    const prompt = [
+      "The user confirmed that real browser verification should start.",
+      `Verification goal: ${verification.goal}`,
+      sessionId ? `Existing browser sessionId: ${sessionId}` : `Start a browser session with the prism_browser/browser_start MCP tool using baseUrl: ${verification.baseUrl}`,
+      `Initial observation: ${JSON.stringify(observation)}`,
+      provider.name === "codex"
+        ? "Use the prism_browser MCP tools to start, observe, operate, and verify the real application now."
+        : "Use browser_observe, browser_action, and browser_evidence to operate and verify the real application now.",
+      "Do not write a test script. Report what was actually observed. Stop the browser when finished.",
+      "When test prerequisites are missing, use the available project fixture skill and fixture MCP tools to create isolated test data, then clean up that verification's data after testing.",
+      "Capture at least one screenshot and inspect runtime/network evidence before concluding.",
+      "End the final response with exactly VERIFICATION_RESULT: PASSED or VERIFICATION_RESULT: FAILED. Use FAILED when evidence is insufficient.",
+    ].join("\n");
+    try {
+      const result = await provider.run(clientId, runId, prompt, (event) => emitAgentEvent(clientId, event), controller.signal);
+      const status = /VERIFICATION_RESULT:\s*PASSED/i.test(result.message)
+        ? "passed"
+        : /VERIFICATION_RESULT:\s*FAILED/i.test(result.message) ? "failed" : "inconclusive";
+      const publicResult = { ...result, message: formatVerificationMessage(result.message) };
+      verifications.update(verificationId, clientId, { status });
+      await finishVerificationRun(verificationId, status);
+      broadcast("verification.updated", verifications.getOwned(verificationId, clientId), clientId);
+      emitAgentEvent(clientId, { type: "run.completed", runId, result: publicResult });
+      broadcast("verification.agent.completed", { verificationId, result: publicResult }, clientId);
+      return publicResult;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const cancelled = controller.signal.aborted;
+      verifications.update(verificationId, clientId, { status: cancelled ? "cancelled" : "failed", error: message });
+      await finishVerificationRun(verificationId, cancelled ? "cancelled" : "failed", message);
+      broadcast("verification.updated", verifications.getOwned(verificationId, clientId), clientId);
+      emitAgentEvent(clientId, { type: "run.failed", runId, error: { message } });
+      throw error;
+    } finally {
+      activeRuns.delete(runId);
+      activeRunClients.delete(runId);
+    }
   }
 
   // ---- REST API ----
@@ -114,7 +336,7 @@ export async function startServer(
 
   app.post("/api/chat", async (req, res) => {
     const clientId = getClientId(req);
-    const { message, runId: requestedRunId } = req.body as { message: string; runId?: string };
+    const { message, runId: requestedRunId, pageUrl } = req.body as { message: string; runId?: string; pageUrl?: string };
     const runId = requestedRunId || `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     console.log(`[Server] POST /api/chat clientId=${clientId} message=${message ? `${message.length} chars` : "EMPTY"}`);
@@ -133,25 +355,164 @@ export async function startServer(
     }
 
     const controller = new AbortController();
+    const capabilityToken = randomBytes(32).toString("hex");
     activeRuns.set(runId, controller);
+    activeRunClients.set(runId, clientId);
+    activeAgentTurns.set(capabilityToken, { clientId, runId, pageUrl });
     emitAgentEvent(clientId, { type: "run.started", runId });
 
     try {
-      const result = await provider.run(clientId, runId, message, (event) => emitAgentEvent(clientId, event), controller.signal);
+      const pending = verifications.latestPending(clientId);
+      const workflowContext = [
+        "[Prism workflow] Interpret the user's intent and sequence yourself; Prism does not classify development versus testing with keyword rules.",
+        "For development requests, finish implementation and code-level checks before considering real browser testing.",
+        "Only start real browser testing when the current user message explicitly authorizes it now or explicitly asks for it after the requested development is complete.",
+        "To test, first call verification_get_pending. Reuse a relevant pending verification, or call verification_propose only after implementation is ready. Then call verification_start before browser_start.",
+        "Use fixture tools when prerequisites are needed. Collect screenshot/runtime/network evidence, clean fixtures, then call verification_complete with a structured outcome.",
+        "If the user did not authorize testing, do not call verification_start; after file changes Prism will offer a confirmation action.",
+        `Current page: ${pageUrl || "unavailable"}`,
+        `[Prism tool context] capabilityToken=${capabilityToken}`,
+      ].join("\n");
+      const pendingContext = pending
+        ? `\n[Pending verification]\n${JSON.stringify({ id: pending.id, status: pending.status, goal: pending.goal, baseUrl: pending.baseUrl, proposedChecks: pending.proposedChecks })}`
+        : "\n[Pending verification]\nnone";
+      const contextualMessage = `${message}\n\n${workflowContext}${pendingContext}`;
+      const result = await provider.run(clientId, runId, contextualMessage, (event) => emitAgentEvent(clientId, event), controller.signal);
+      let turnVerification = verifications.latestForRun(clientId, runId);
+      if (turnVerification && turnVerification.status !== "awaiting_confirmation") {
+        if (turnVerification.status === "running") {
+          turnVerification = verifications.update(turnVerification.id, clientId, {
+            status: "inconclusive",
+            summary: "Agent 结束了本轮对话，但没有提交结构化测试结论。",
+            error: "Verification completion was not submitted",
+          });
+          broadcast("verification.updated", turnVerification, clientId);
+          await finishVerificationRun(turnVerification.id, "inconclusive", turnVerification.summary);
+        }
+      }
+      let confirmationVerification = turnVerification?.status === "awaiting_confirmation" ? turnVerification : undefined;
+      if (result.filesModified.length > 0 && pageUrl && !turnVerification) {
+        confirmationVerification = verifications.create({
+          clientId,
+          developmentRunId: runId,
+          goal: `验证本次修改：${message.slice(0, 240)}`,
+          baseUrl: pageUrl,
+          changedFiles: result.filesModified,
+          proposedChecks: ["页面能够正常加载", "关键交互可以完成", "请求和跳转符合预期", "页面无 Console/Page Error"],
+        });
+        broadcast("verification.proposed", confirmationVerification, clientId);
+      }
+      if (confirmationVerification) {
+        result.verification = {
+          id: confirmationVerification.id,
+          status: "awaiting_confirmation",
+          goal: confirmationVerification.goal,
+          proposedChecks: confirmationVerification.proposedChecks,
+        };
+      } else if (turnVerification) {
+        result.verification = {
+          id: turnVerification.id,
+          status: turnVerification.status,
+          goal: turnVerification.goal,
+          proposedChecks: turnVerification.proposedChecks,
+          summary: turnVerification.summary,
+        };
+      }
       emitAgentEvent(clientId, { type: "run.completed", runId, result });
       res.json(result);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
+      const runningVerification = verifications.latestForRun(clientId, runId);
+      if (runningVerification && ["preparing", "running"].includes(runningVerification.status)) {
+        const status = controller.signal.aborted ? "cancelled" : "failed";
+        verifications.update(runningVerification.id, clientId, { status, error: msg, summary: controller.signal.aborted ? "测试已取消。" : msg });
+        await finishVerificationRun(runningVerification.id, status, msg);
+        broadcast("verification.updated", verifications.getOwned(runningVerification.id, clientId), clientId);
+      }
       if (controller.signal.aborted) {
         emitAgentEvent(clientId, { type: "run.cancelled", runId });
-        res.status(499).json({ success: false, runId, message: "run cancelled" });
+        res.json({
+          success: true,
+          cancelled: true,
+          runId,
+          message: "运行已取消，相关浏览器资源已清理。",
+          filesModified: [],
+          verification: runningVerification ? {
+            id: runningVerification.id,
+            status: "cancelled",
+            goal: runningVerification.goal,
+            proposedChecks: runningVerification.proposedChecks,
+            summary: "测试已取消。",
+          } : undefined,
+        });
         return;
       }
       emitAgentEvent(clientId, { type: "run.failed", runId, error: { message: msg } });
       res.status(500).json({ success: false, message: msg });
     } finally {
       activeRuns.delete(runId);
+      activeRunClients.delete(runId);
+      activeAgentTurns.delete(capabilityToken);
     }
+  });
+
+  app.post("/api/agent/verifications/pending", (req, res) => {
+    try {
+      const turn = getAgentTurn(req);
+      res.json({ verification: verifications.latestPending(turn.clientId) || null });
+    } catch (error) { res.status(403).json({ error: error instanceof Error ? error.message : String(error) }); }
+  });
+
+  app.post("/api/agent/verifications/propose", (req, res) => {
+    try {
+      const turn = getAgentTurn(req);
+      if (!turn.pageUrl) throw new Error("Current page URL is unavailable");
+      const goal = String(req.body?.goal || "").trim();
+      const proposedChecks = Array.isArray(req.body?.proposedChecks) ? req.body.proposedChecks.map(String).filter(Boolean) : [];
+      if (!goal || !proposedChecks.length) throw new Error("goal and proposedChecks are required");
+      const verification = verifications.create({ clientId: turn.clientId, developmentRunId: turn.runId, goal, baseUrl: turn.pageUrl, changedFiles: [], proposedChecks });
+      broadcast("verification.proposed", verification, turn.clientId);
+      res.json({ verification });
+    } catch (error) { res.status(400).json({ error: error instanceof Error ? error.message : String(error) }); }
+  });
+
+  app.post("/api/agent/verifications/:id/start", (req, res) => {
+    try {
+      const turn = getAgentTurn(req);
+      const verification = verifications.getOwned(req.params.id, turn.clientId);
+      if (verification.status !== "awaiting_confirmation") throw new Error(`Verification cannot start from ${verification.status}`);
+      const instruction = String(req.body?.instruction || "").trim();
+      if (!instruction) throw new Error("The current user instruction is required");
+      const updated = verifications.update(verification.id, turn.clientId, { status: "running", developmentRunId: turn.runId, goal: `${verification.goal}\n用户本轮测试要求：${instruction}` });
+      const controller = activeRuns.get(turn.runId);
+      createTestRun(updated, turn.runId, controller ? () => controller.abort() : undefined);
+      broadcast("verification.updated", updated, turn.clientId);
+      res.json({ verification: updated, baseUrl: updated.baseUrl });
+    } catch (error) { res.status(409).json({ error: error instanceof Error ? error.message : String(error) }); }
+  });
+
+  app.post("/api/agent/verifications/:id/complete", async (req, res) => {
+    try {
+      const turn = getAgentTurn(req);
+      const verification = verifications.getOwned(req.params.id, turn.clientId);
+      if (verification.status !== "running") throw new Error(`Verification cannot complete from ${verification.status}`);
+      const status = req.body?.status as "passed" | "failed" | "inconclusive";
+      if (!["passed", "failed", "inconclusive"].includes(status)) throw new Error("Invalid verification status");
+      const summary = String(req.body?.summary || "").trim();
+      if (!summary) throw new Error("summary is required");
+      const updated = verifications.update(verification.id, turn.clientId, { status, summary, error: status === "passed" ? undefined : summary });
+      broadcast("verification.updated", updated, turn.clientId);
+      await finishVerificationRun(updated.id, status, status === "passed" ? undefined : summary);
+      res.json({ verification: updated, summary });
+    } catch (error) { res.status(409).json({ error: error instanceof Error ? error.message : String(error) }); }
+  });
+
+  app.delete("/api/runs/current", (req, res) => {
+    const clientId = getClientId(req);
+    const entries = [...activeRuns.entries()].filter(([runId]) => activeRunClients.get(runId) === clientId);
+    if (!entries.length) { res.status(404).json({ success: false, message: "active run not found" }); return; }
+    for (const [, controller] of entries) controller.abort();
+    res.json({ success: true, cancelled: entries.map(([runId]) => runId) });
   });
 
   app.delete("/api/runs/:runId", (req, res) => {
@@ -164,9 +525,130 @@ export async function startServer(
     res.json({ success: true });
   });
 
+  app.get("/api/test-runs/:id", (req, res) => {
+    try { res.json(testRuns.getOwned(req.params.id, getClientId(req))); }
+    catch (error) { res.status(404).json({ error: error instanceof Error ? error.message : String(error) }); }
+  });
+
+  app.delete("/api/test-runs/:id", async (req, res) => {
+    try {
+      const run = testRuns.getOwned(req.params.id, getClientId(req));
+      res.json(await testRuns.finish(run.id, "cancelled", "Cancelled by user"));
+    } catch (error) { res.status(404).json({ error: error instanceof Error ? error.message : String(error) }); }
+  });
+
+  app.get("/api/browser/diagnostics", (req, res) => {
+    const clientId = getClientId(req);
+    const registrations = [...browserRegistrations.entries()]
+      .filter(([ws]) => wsClientIds.get(ws) === clientId)
+      .map(([ws, registration]) => ({ ...registration, connected: ws.readyState === WebSocket.OPEN }));
+    res.json({
+      clientId,
+      websocketConnected: [...wsClients].some((ws) => ws.readyState === WebSocket.OPEN && wsClientIds.get(ws) === clientId),
+      registrations,
+      activeTestRuns: testRuns.activeForClient(clientId),
+      activeAgentRuns: [...activeRunStates.values()].filter((run) => run.clientId === clientId),
+      checks: {
+        hasCurrentTab: registrations.some((item) => item.connected && item.mode === "current-tab"),
+        hasPageUrl: registrations.some((item) => Boolean(item.url)),
+        debuggerMode: "attach-on-browser_start",
+      },
+    });
+  });
+
   app.delete("/api/session", async (req, res) => {
     await provider.clearSession(getClientId(req));
     res.json({ success: true });
+  });
+
+  app.get("/api/verifications/:id", (req, res) => {
+    try { res.json(verifications.getOwned(req.params.id, getClientId(req))); }
+    catch (error) { res.status(404).json({ error: error instanceof Error ? error.message : String(error) }); }
+  });
+
+  app.post("/api/verifications/:id/start", async (req, res) => {
+    const clientId = getClientId(req);
+    try {
+      let verificationId = req.params.id;
+      try {
+        verifications.getOwned(verificationId, clientId);
+      } catch {
+        const { pageUrl, goal, proposedChecks } = req.body as { pageUrl?: string; goal?: string; proposedChecks?: string[] };
+        if (!pageUrl || !goal) {
+          res.status(404).json({ error: "Verification expired; start a new development request" });
+          return;
+        }
+        const recovered = verifications.create({
+          clientId,
+          developmentRunId: `recovered-${Date.now()}`,
+          goal,
+          baseUrl: pageUrl,
+          changedFiles: [],
+          proposedChecks: Array.isArray(proposedChecks) ? proposedChecks : [],
+        });
+        verificationId = recovered.id;
+        broadcast("verification.recovered", { previousId: req.params.id, verification: recovered }, clientId);
+      }
+      const started = await startVerification(verificationId, clientId);
+      const agentResult = await runVerificationAgent(clientId, verificationId, started.verification.browserSessionId || "", started.observation);
+      res.json({ ...started, agentResult });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.post("/api/browser/sessions", async (req, res) => {
+    try {
+      const clientId = getClientId(req);
+      const { runId, verificationId, baseUrl } = req.body as { runId: string; verificationId?: string; baseUrl: string };
+      res.json(await browserRuntime.start({ clientId, runId, verificationId }, baseUrl));
+    } catch (error) { res.status(400).json({ error: error instanceof Error ? error.message : String(error) }); }
+  });
+
+  app.post("/api/browser/current/command", async (req, res) => {
+    try {
+      const { pageUrl, ...command } = req.body as { pageUrl: string; [key: string]: unknown };
+      if (!pageUrl) { res.status(400).json({ error: "pageUrl is required" }); return; }
+      res.json({ result: await executeCurrentTab(pageUrl, command) });
+    } catch (error) { res.status(503).json({ error: error instanceof Error ? error.message : String(error) }); }
+  });
+
+  app.post("/api/browser/sessions/:id/navigate", async (req, res) => {
+    try { res.json(await browserRuntime.navigate(req.params.id, getClientId(req), req.body.url)); }
+    catch (error) { res.status(400).json({ error: error instanceof Error ? error.message : String(error) }); }
+  });
+
+  app.get("/api/browser/sessions/:id/observe", async (req, res) => {
+    try { res.json(await browserRuntime.observe(req.params.id, getClientId(req))); }
+    catch (error) { res.status(400).json({ error: error instanceof Error ? error.message : String(error) }); }
+  });
+
+  app.post("/api/browser/sessions/:id/actions", async (req, res) => {
+    try { res.json(await browserRuntime.action(req.params.id, getClientId(req), req.body as BrowserAction)); }
+    catch (error) { res.status(400).json({ error: error instanceof Error ? error.message : String(error) }); }
+  });
+
+  app.get("/api/browser/sessions/:id/evidence", (req, res) => {
+    try { res.json(browserRuntime.evidence(req.params.id, getClientId(req))); }
+    catch (error) { res.status(404).json({ error: error instanceof Error ? error.message : String(error) }); }
+  });
+
+  app.post("/api/browser/sessions/:id/wait", async (req, res) => {
+    try { res.json(await browserRuntime.wait(req.params.id, getClientId(req), req.body)); }
+    catch (error) { res.status(408).json({ error: error instanceof Error ? error.message : String(error) }); }
+  });
+
+  app.get("/api/browser/sessions/:id/screenshot", async (req, res) => {
+    try {
+      const shot = await browserRuntime.screenshot(req.params.id, getClientId(req));
+      res.json(shot);
+    } catch (error) { res.status(404).json({ error: error instanceof Error ? error.message : String(error) }); }
+  });
+
+  app.delete("/api/browser/sessions/:id", async (req, res) => {
+    try { await browserRuntime.stop(req.params.id, getClientId(req)); res.json({ success: true }); }
+    catch (error) { res.status(404).json({ error: error instanceof Error ? error.message : String(error) }); }
   });
 
   // Browser-proxied fetch reuses the connected browser's authenticated session.
@@ -237,6 +719,7 @@ export async function startServer(
 
   function shutdown() {
     for (const controller of activeRuns.values()) controller.abort();
+    void browserRuntime.close();
     void provider.close();
     server.close();
     process.exit(0);

@@ -66,6 +66,10 @@ prismDesign({
 
   // ── Widget 配置 ──
 
+  // 是否向页面注入 Widget（默认 true）
+  // 使用 Chrome 扩展作为唯一交互入口时设为 false；Agent 仍会自动启动
+  widget: false,
+
   // 悬浮按钮位置（默认 "bottom-right"）
   position: 'bottom-right',  // 'bottom-right' | 'bottom-left'
 
@@ -73,6 +77,17 @@ prismDesign({
   locale: 'zh',  // 'zh' | 'en'
 })
 ```
+
+### 仅使用 Chrome 扩展
+
+```ts
+prismDesign({
+  agentType: 'codex',
+  widget: false,
+})
+```
+
+启动 Vite 后，插件仍会启动 Agent，但不会修改页面 HTML。打开目标页面后，通过 PrismDesign Chrome 扩展连接 `http://localhost:9527`。
 
 ## 使用场景
 

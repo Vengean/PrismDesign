@@ -1,189 +1,317 @@
-# PrismDesign 自动化测试方案设计
+# PrismDesign Agent 真实应用验证方案
 
-> 核心目标：Agent 开发完成后，自动验证功能是否正确，包括后端 API 返回数据是否符合预期。
+> 目标：Agent 自主理解开发与测试意图，在获得用户授权后准备必要数据、操作用户可见的真实 Web 应用，并以 UI、Network、Runtime 和 Data 证据证明需求成立。它不是生成和维护测试脚本的工具。
 
-## 1. 业内主流方案及问题
+## 1. 当前产品形态
 
-### 1.1 单元测试
+用户可以在 Chrome 插件中提出组合任务：
 
-- **工具**：Jest、Vitest、Mocha
-- **测试范围**：纯函数、工具方法、独立逻辑
-- **存在问题**：
-  - 前端项目覆盖率普遍低
-  - 写测试成本高，维护成本更高
-  - 业务迭代快时测试代码跟不上变化
+> 开发用户注册模块，完成后开始测试：创建一个 vengeanliu 用户。
 
-### 1.2 组件测试
+Agent 自行理解动作顺序：先完成开发和代码检查，等待页面刷新，再创建 Verification、准备必要数据并调用浏览器工具。用户也可以在开发完成后通过“开始测试”按钮，或继续用自然语言补充测试要求。
 
-- **工具**：React Testing Library、Vue Test Utils
-- **测试范围**：组件渲染、用户交互、状态变化
-- **存在问题**：
-  - 需要 mock 大量依赖（API、路由、store）
-  - mock 与真实环境不一致，测试通过但线上出 bug
+本地模式默认操作用户当前可见的 Chrome Tab：
 
-### 1.3 E2E 端到端测试
-
-- **工具**：Playwright、Cypress、Selenium
-- **测试范围**：真实浏览器中跑完整流程，前后端联调
-- **存在问题**：
-  - 慢、脆弱、成本高
-  - 元素定位容易失效，异步等待难处理
-  - 维护成本极高，CI 中容易出现 flaky test
-
-### 1.4 API 测试
-
-- **工具**：Postman、Supertest、Pactum
-- **测试范围**：后端接口的输入输出
-- **存在问题**：
-  - 和前端脱节，测了接口不代表前端用对了
-  - 测试数据管理复杂
-
-### 1.5 共同的核心问题
-
-**测试代码是人写的，成本高、容易过时、覆盖不全。**
-
-- 大多数团队只在关键路径上写少量测试
-- 业务变更后测试未同步更新，变成误报
-- 写测试的时间经常比写业务代码还多
-- 没人愿意写，写了也没人维护
-
-## 2. AI 能解决什么
-
-AI 的核心价值不是"更好地跑测试"，而是**消除写测试和维护测试的成本**。
-
-| 传统方式 | AI 驱动 |
-|---|---|
-| 人工编写测试用例 | Agent 根据需求自动生成 |
-| 测试代码需要长期维护 | 一次性生成，用完即弃 |
-| 改了业务代码要同步改测试 | 每次根据最新代码和需求重新生成 |
-| 需要人判断该测哪些路径 | Agent 知道改了什么，自动推导测试路径 |
-| mock 与真实环境不一致 | Agent 直接调真实 API 验证 |
-
-## 3. PrismDesign 自动化测试方案
-
-### 3.1 整体流程
-
-```
-用户描述需求
-  → Agent 理解需求，明确预期行为
-  → Agent 修改业务代码
-  → Agent 根据需求自动生成测试用例
-  → Agent 执行测试
-      ├── 调用后端 API，验证返回数据
-      ├── 通过 Widget 验证前端状态
-      └── 检查控制台是否有错误
-  → 测试失败 → 自动修复 → 重新测试
-  → 全部通过 → 回复用户"已完成，测试通过"
+```text
+用户自然语言 / 确认按钮
+          │
+          ▼
+Prism Agent + Verification Orchestrator
+          │
+          ├── verification_*：提议、启动、完成验证
+          ├── prism_browser：观察、点击、填写、截图、证据
+          └── 项目 MCP（可选）：业务 Fixture/API/DB 能力
+          │
+          ▼
+Chrome Extension + chrome.debugger/CDP
+          │
+          ▼
+用户当前可见页面
 ```
 
-### 3.2 测试能力分层
+## 2. 设计原则
 
-#### 第一层：API 验证（Agent 直接执行）
+1. **Agent 理解自然语言**：开发、立即测试、延后测试及动作顺序由 Agent 判断，不使用服务端关键词正则分类。
+2. **状态机负责约束**：服务端只校验 Verification 所属 client、状态转换、页面、能力令牌和资源归属。
+3. **测试意图而非测试脚本**：保存目标和断言，由 Agent 根据当前页面重新规划，不维护脆弱 selector 脚本。
+4. **先观察再准备数据**：优先复用满足条件的当前登录态；只有前置条件不足或用户要求隔离时才使用 Fixture。
+5. **真实可见操作**：本地默认通过 Chrome 扩展/CDP 操作当前 Tab；Playwright 只作为 CI 或无人值守后备。
+6. **证据驱动**：结论必须基于 UI、截图、Network、Console/Page Error 或受控数据查询。
+7. **项目能力可选**：Fixture Skill/MCP 属于具体项目，Prism 只提供发现、调用和生命周期编排机制。
+8. **本地运行不持久化**：Test Run 和 Verification 保存在 Agent 内存，不在开发者源码目录生成数据库。
 
-Agent 通过 Bash tool 直接调用后端 API，验证返回数据：
+## 3. 组件职责与边界
 
+| 组件 | 职责 | 是否了解项目业务 |
+|---|---|---|
+| Chrome 插件 | 对话、连接当前 Tab、执行 CDP 命令、展示状态和结果 | 否 |
+| Widget | 对话、确认和结果展示（可选） | 否 |
+| Prism Agent | 理解用户意图、规划开发和测试、选择并调用工具 | 只通过 Skill 获得 |
+| Verification Orchestrator | 权限和状态转换、Test Run、超时、取消、清理 | 否 |
+| Browser MCP/Runtime | observe/click/fill/wait/screenshot/evidence/stop | 否 |
+| 项目 Skill | 描述业务前置条件、工具使用方法和验收知识 | 是 |
+| 项目 MCP | 受控创建、查询和清理业务数据 | 是 |
+
+Demo 中只有以下内容与具体项目耦合：
+
+```text
+demo/server/database.ts
+demo/server/fixture-mcp.mjs
+demo/.agents/skills/demo-fixtures/SKILL.md
+demo/prism.config.mjs
 ```
-Agent 改完代码
-  → 构造测试请求（curl / fetch）
-  → 发送到 dev 环境的 API
-  → 验证响应状态码、数据结构、字段值、业务逻辑
+
+其他开发者可以不配置 Fixture MCP，也不需要安装 SQLite。Agent 可以复用当前登录态、使用项目已有 API/测试账号，或在缺少必要前置条件时询问用户。
+
+## 4. Agent 驱动的 Verification
+
+自然语言不由 Chrome 插件或 Agent Server 正则判断。每轮对话会生成一个临时能力令牌，绑定：
+
+```text
+clientId + agentRunId + currentPageUrl + 当前对话生命周期
 ```
 
-- 不依赖任何测试框架
-- Agent 知道业务需求，能自行构造测试数据和预期结果
-- 覆盖场景：正常流程、边界值、异常输入
+Agent 可调用：
 
-#### 第二层：前端运行时验证（通过 Widget 执行）
-
-Widget 作为页面内的测试 runtime，Agent 通过 WebSocket 下发指令：
-
-```
-Agent → WebSocket 指令 → Widget 执行
-  ├── DOM 查询：检查元素状态、文本、样式
-  ├── 交互模拟：click、input、hover 等操作
-  ├── 状态检查：查询组件 props、store 状态
-  ├── 网络监听：拦截 fetch/XHR，验证请求参数和响应
-  └── Console 监听：捕获 error/warning
+```text
+verification_get_pending
+verification_propose
+verification_start
+verification_complete
 ```
 
-新增 WebSocket 消息类型：
+流程示例：
 
-```typescript
-// Agent → Widget
-interface TestCommand {
-  type: "test:query";       // DOM 查询
-  | "test:action";          // 交互操作
-  | "test:network";         // 网络拦截
-  | "test:console";         // 控制台监听
-  selector?: string;        // 目标元素
-  action?: string;          // 操作类型
-  value?: string;           // 输入值
-  script?: string;          // 自定义 JS
-}
+```text
+Agent 理解用户要求
+→ 完成开发（如有）
+→ verification_get_pending
+→ 复用相关 Verification 或 verification_propose
+→ verification_start（仅在用户已授权时）
+→ browser_start
+→ observe / click / fill / wait / screenshot / evidence
+→ 清理测试产生的资源
+→ verification_complete(passed|failed|inconclusive)
+```
 
-// Widget → Agent
-interface TestResult {
-  type: "test:result";
-  success: boolean;
-  data: unknown;            // 查询结果 / 执行结果
-  error?: string;
+按钮路径是确定性授权：点击“开始测试”后 Orchestrator 直接启动对应 Verification，但实际浏览器操作仍由 Agent 通过工具完成。
+
+## 5. 当前 Tab Browser Runtime
+
+Browser MCP 提供：
+
+```text
+browser_start        browser_navigate
+browser_observe      browser_click
+browser_fill         browser_press
+browser_wait         browser_screenshot
+browser_evidence     browser_stop
+```
+
+`browser_observe` 返回压缩语义模型：
+
+```json
+{
+  "url": "/notes",
+  "title": "我的笔记",
+  "elements": [
+    { "ref": "e1", "role": "button", "name": "新建笔记" },
+    { "ref": "e2", "role": "textbox", "name": "搜索笔记" }
+  ]
 }
 ```
 
-#### 第三层：业务流程端到端验证
+页面变化后旧 ref 失效，Agent 应重新 observe。操作优先使用 ref、role/name 和 label，CSS selector 仅作受控退路。
 
-组合 API 验证 + Widget 前端验证，覆盖完整业务流程：
+Chrome 连接规则：
 
+- WebSocket 打开并完成 `browser:register` 后才显示已连接。
+- URL 变化和页面加载完成时重新注册。
+- `browser_start` 最多等待 8 秒完成当前 Tab 注册。
+- CDP 内存状态失效时自动重新 attach。
+- 测试完成、失败、取消或超时时由服务端兜底 detach。
+
+## 6. Fixture 与当前登录态
+
+Fixture 是项目为测试准备的确定、可清理业务数据，不是 Prism 插件的内置数据库能力。
+
+默认决策原则：
+
+1. 先 `browser_start` 和 `browser_observe`。
+2. 当前登录态满足测试前置条件时直接复用。
+3. 不主动 logout、注册新账号或替换当前会话，除非测试目标需要、权限不足、隔离必要或用户明确要求。
+4. 对当前账号执行高风险或难恢复操作时先询问用户。
+5. Fixture MCP 只提供具名业务工具，禁止任意 SQL。
+6. 测试产生的数据应恢复或清理，并在结果中说明。
+
+Demo 当前提供：
+
+```text
+fixtures_create_user
+fixtures_create_note
+fixtures_get_user
+fixtures_get_note
+fixtures_cleanup_run
 ```
-Agent 构造测试场景
-  → Widget 模拟用户操作（填写表单、点击提交）
-  → Widget 拦截前端发出的 API 请求，验证参数
-  → Agent 验证后端 API 返回数据
-  → Widget 验证前端接收数据后的渲染状态
-  → Agent 汇总结果
+
+这些工具属于 Demo，不属于 Chrome 插件或 Prism Agent 核心。
+
+## 7. Test Run 内存生命周期
+
+Test Run 仅存在于 Agent 内存：
+
+```ts
+type TestRunStatus =
+  | "preparing"
+  | "running"
+  | "cleaning"
+  | "passed"
+  | "failed"
+  | "inconclusive"
+  | "cancelled"
+  | "timed_out";
 ```
 
-### 3.3 实现路径
+当前生命周期：
 
-#### Phase 1：API 自动验证（零开发成本）
+```text
+创建 Test Run
+→ 登记资源 Cleanup Stack
+→ running
+→ passed / failed / inconclusive / cancelled / timed_out
+→ cleaning（LIFO、幂等、单项失败不阻塞其他项）
+→ 释放浏览器调试资源
+```
 
-- Agent 改完代码后，在 system prompt 中要求自动验证相关 API
-- 利用现有的 Bash tool 执行 curl 调用
-- 不需要任何代码改动，只需调整 Agent 的 prompt
+可靠性规则：
 
-#### Phase 2：Widget 测试指令（需要开发）
+- 默认整体超时 120 秒，可用 `PRISM_TEST_RUN_TIMEOUT_MS` 调整。
+- 用户可点击“取消运行”，同时 abort Agent 并执行 Cleanup Stack。
+- Chrome WebSocket 断开后有 10 秒重连宽限；超时仍未恢复则取消活跃 Test Run。
+- Agent Server 保存活跃 Agent Run 的最近阶段和进度，侧边栏重开后立即恢复状态，无需等待下一个事件。
+- Agent 服务重启后旧内存运行失效，插件将旧 running 状态转换为 inconclusive，不显示技术性 `Failed to fetch`。
 
-- Widget 新增测试相关的 WebSocket 消息处理
-- Agent 端新增测试指令的生成和结果解析
-- 支持 DOM 查询、交互模拟、Console 监听
+诊断接口：
 
-#### Phase 3：端到端流程验证（需要开发）
+```text
+GET /api/browser/diagnostics
+```
 
-- 网络请求拦截能力
-- 测试场景编排（多步骤串联）
-- 测试报告结构化输出
+返回 WebSocket 连接、当前 Tab 注册、活跃 Agent Run、活跃 Test Run 和 debugger 模式。
 
-## 4. 落地需要解决的问题
+## 8. 当前结果与证据
 
-### 4.1 测试环境
+目前已支持：
 
-- Agent 需要能访问 dev 环境的后端 API
-- Platform 场景下 Agent 在容器内，可直接访问同容器的服务
-- 独立部署场景需要配置 API 地址
+- 当前 URL 和语义 DOM 观察。
+- 实际点击、填写、按键和等待。
+- 页面截图。
+- 基础 Network response 状态。
+- Console warning/error 和 Page Error 检查。
+- 项目 MCP 的受控数据查询。
+- passed、failed、inconclusive、cancelled 结构化结果。
+- 完成态消息去重：卡片只显示状态和重新测试，Agent 正文显示详细结论。
 
-### 4.2 测试数据
+敏感信息要求：密码、token、cookie、authorization 不能进入最终报告或长期日志；密码输入值在 DOM 观察中必须脱敏。
 
-- 简单场景：Agent 自行构造请求参数
-- 复杂场景：需要预置数据（数据库 seed）或调用后台管理接口造数据
-- 需要考虑测试数据的清理，避免污染环境
+## 9. 当前进度（2026-08-07）
 
-### 4.3 第三方依赖
+### 已完成：第一阶段——可靠运行
 
-- 涉及支付、短信等外部服务时，需要 mock server
-- 可考虑在容器内集成轻量 mock 服务
+- [x] Agent 自主理解测试时机，不使用用户意图正则分流。
+- [x] `verification_get_pending/propose/start/complete` 工具。
+- [x] Chrome 当前 Tab 可见操作闭环。
+- [x] Test Run 内存模型。
+- [x] Cleanup Stack（LIFO、幂等、结果记录）。
+- [x] 正常完成、失败、取消、超时的浏览器 detach 兜底。
+- [x] 手动取消入口和友好取消结果。
+- [x] 120 秒整体超时。
+- [x] WebSocket 10 秒断线宽限和自动重连。
+- [x] 重开侧边栏后恢复活跃 Agent/Test Run 及最近进度。
+- [x] Agent 重启后的陈旧状态清理。
+- [x] 浏览器连接诊断接口。
+- [x] SQLite 文件不计入源码修改。
+- [x] Demo Node API、SQLite 业务库、Fixture MCP 和 Fixture Skill 示例。
 
-### 4.4 执行效率
+### 已验证场景
 
-- API 测试通常很快（秒级）
-- 前端验证需要等 HMR 生效（通常 1-2 秒）
-- 需要设置超时上限，避免 Agent session 长时间挂起
+- 开发完成后 Agent 自主启动真实浏览器测试。
+- 通过后续自然语言启动 pending Verification。
+- 复用当前登录用户测试笔记新建/编辑。
+- Network 200/201、Console/Page Error 和刷新后持久化检查。
+- 测试后恢复业务数据并退出 Chrome 调试模式。
+- 手动取消及资源清理。
+- 侧边栏短暂断线后继续执行并恢复状态。
+- Agent 停服/重启后清理陈旧 running 状态。
+- 测试结果正文与状态卡片去重。
+
+## 10. 接下来待办
+
+### 第二阶段：可视化
+
+1. **结构化步骤事件**：记录并展示 Agent 实际选择和执行的工具动作，不预设固定步骤或强制使用 Fixture。
+2. **实时步骤卡片**：显示 pending/running/passed/failed、耗时和错误；支持取消。
+3. **Screenshot 查看**：展示关键截图并允许放大。
+4. **Network/Console 证据**：按请求、状态码、Console/Page Error 分类展示并脱敏。
+5. **清理结果展示**：展示浏览器资源和项目 Fixture 的清理结果。
+6. **浏览器诊断 UI**：把 `/api/browser/diagnostics` 转换为用户可理解的连接检查。
+
+步骤由两个来源产生：
+
+- 工具调用自动生成事实步骤，例如“点击新建笔记”“保存接口返回 200”。
+- Agent 主动提交业务断言，例如“刷新后新笔记仍然存在”。
+
+### 第三阶段：智能闭环
+
+1. 失败分类：代码缺陷、环境问题、数据问题、权限问题、证据不足。
+2. 基于证据生成修复建议。
+3. 用户授权或策略允许时自动修改代码。
+4. 等待 HMR/页面重新注册。
+5. 自动复测一次，并限制最大修复次数和运行时间。
+
+### 尚未完成的基础能力
+
+- 项目 Fixture MCP 向 Prism Cleanup Stack 注册通用清理句柄的协议。
+- Agent 正常结束但项目 Fixture 清理失败时的统一告警。
+- `api.request` 与复用浏览器 cookie/CSRF 的 `browser.request`。
+- 多个同源 Chrome Tab 的明确选择 UI。
+- 浏览器命令的单步骤超时和最大操作数限制。
+- OpenAI/Claude/GLM 与 Codex 的 Verification 工具行为完全对齐。
+- 自动化集成测试覆盖 Agent 重启、Chrome 重连、取消和超时。
+
+## 11. 平台化边界（暂不开发）
+
+本地插件阶段不在开发者项目中创建 Verification SQLite，也不长期保存截图、网络证据或运行历史。
+
+未来 Prism Platform 才负责：
+
+- PostgreSQL 中的运行、步骤、权限和审计记录。
+- 对象存储中的截图、视频和日志。
+- Browser Worker、并发队列、配额和超时调度。
+- workspace/用户隔离、域名策略和 Secret 管理。
+- 测试历史、失败回放、团队报表和证据保留策略。
+
+用户项目只保留可选配置与业务知识：
+
+```text
+prism.config.*
+.agents/skills/*
+项目自有 MCP（可选）
+```
+
+## 12. 下一验收目标
+
+第二阶段优先以“当前已登录用户测试新建/编辑笔记”为验收场景：
+
+```text
+观察并复用当前登录态
+→ 打开编辑器
+→ 修改可恢复数据
+→ 保存并检查 Network
+→ 刷新确认持久化
+→ 检查 Console/Page Error
+→ 恢复原数据
+→ 展示结构化步骤、截图、证据和清理结果
+```
+
+该场景不得主动 logout 或创建 Fixture，除非当前状态无法满足前置条件或用户明确要求隔离账号。

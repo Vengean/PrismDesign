@@ -12,11 +12,18 @@ export interface AgentResult {
   message: string;
   filesModified: string[];
   runId?: string;
+  verification?: {
+    id: string;
+    status: "awaiting_confirmation" | "preparing" | "running" | "passed" | "failed" | "inconclusive" | "cancelled";
+    goal: string;
+    proposedChecks: string[];
+    summary?: string;
+  };
 }
 
 export type AgentEvent =
   | { type: "run.started"; runId: string }
-  | { type: "message.delta"; runId: string; delta: string }
+  | { type: "message.delta"; runId: string; delta: string; messageId?: string }
   | { type: "tool.started"; runId: string; toolCallId: string; tool: string; label: string }
   | { type: "tool.completed"; runId: string; toolCallId: string; tool: string; success: boolean }
   | { type: "file.changed"; runId: string; path: string; operation: "create" | "update" | "delete" }

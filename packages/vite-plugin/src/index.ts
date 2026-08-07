@@ -27,6 +27,8 @@ export interface PrismDesignOptions {
   position?: "bottom-right" | "bottom-left";
   /** Widget locale override */
   locale?: "zh" | "en";
+  /** Inject the in-page Widget. Set false when using the Chrome extension UI. Default: true. */
+  widget?: boolean;
 }
 
 function findWidgetScript(): string | null {
@@ -140,6 +142,7 @@ export default function prismDesign(options: PrismDesignOptions = {}): Plugin {
     model,
     position = "bottom-right",
     locale,
+    widget = true,
   } = options;
 
   let agentProcess: ChildProcess | null = null;
@@ -157,21 +160,24 @@ export default function prismDesign(options: PrismDesignOptions = {}): Plugin {
     },
 
     async configureServer(server) {
-      // Load widget script
-      const widgetPath = findWidgetScript();
-      if (widgetPath) {
-        widgetJs = fs.readFileSync(widgetPath, "utf-8");
-      } else {
-        config.logger.warn("[PrismDesign] Widget script not found. Run: pnpm build:widget");
-        return;
-      }
+      if (widget) {
+        // Widget is optional: Chrome-extension-only mode still starts the Agent.
+        const widgetPath = findWidgetScript();
+        if (widgetPath) {
+          widgetJs = fs.readFileSync(widgetPath, "utf-8");
+        } else {
+          config.logger.warn("[PrismDesign] Widget script not found. Run: pnpm build:widget");
+          return;
+        }
 
-      // Serve widget JS at a virtual path
-      server.middlewares.use("/__prism__/widget.js", (_req, res) => {
-        res.setHeader("Content-Type", "application/javascript");
-        res.setHeader("Cache-Control", "no-store");
-        res.end(widgetJs);
-      });
+        server.middlewares.use("/__prism__/widget.js", (_req, res) => {
+          res.setHeader("Content-Type", "application/javascript");
+          res.setHeader("Cache-Control", "no-store");
+          res.end(widgetJs);
+        });
+      } else {
+        config.logger.info("[PrismDesign] Widget injection disabled; use the Chrome extension to connect to the Agent.");
+      }
 
       // If agent is on localhost (e.g. inside a container), proxy through the Vite dev server
       // so the browser can reach it via the same origin (no port mapping issues)
@@ -267,6 +273,7 @@ export default function prismDesign(options: PrismDesignOptions = {}): Plugin {
     },
 
     transformIndexHtml() {
+      if (!widget) return [];
       const initOptions: Record<string, string> = {};
       if (position !== "bottom-right") initOptions.position = position;
       if (locale) initOptions.locale = locale;

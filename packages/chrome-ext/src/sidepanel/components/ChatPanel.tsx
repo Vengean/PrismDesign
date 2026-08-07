@@ -20,6 +20,7 @@ interface ChatState {
   messages: ChatMessage[];
   sending: boolean;
   sendMessage: (text: string) => void;
+  startVerification: (verification: NonNullable<ChatMessage["verification"]>) => void;
   clearHistory: () => void;
 }
 
@@ -102,7 +103,7 @@ function formatSelectionContext(sel: ElementSelection): string {
 }
 
 function ChatView({ chat, selection }: { chat: ChatState; selection: ElementSelection | null }) {
-  const { messages, sending, sendMessage, clearHistory } = chat;
+  const { messages, sending, sendMessage, startVerification, cancelCurrent, clearHistory } = chat;
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -138,7 +139,7 @@ function ChatView({ chat, selection }: { chat: ChatState; selection: ElementSele
               {msg.role === "ai" && (
                 <div className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[9px] font-bold shrink-0 mt-0.5">AI</div>
               )}
-              <div className={`max-w-[85%] px-3 py-2 rounded-xl text-xs leading-relaxed ${msg.role === "user" ? "bg-blue-100 text-gray-900 rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}>
+              <div className={`max-w-[85%] space-y-2 px-3 py-2 rounded-xl text-xs leading-relaxed ${msg.role === "user" ? "bg-blue-100 text-gray-900 rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}>
                 {msg.content.startsWith("⏳") ? (
                   <div className="flex items-center gap-1.5">
                     <Loader2 className="h-3 w-3 animate-spin text-primary shrink-0" />
@@ -146,7 +147,28 @@ function ChatView({ chat, selection }: { chat: ChatState; selection: ElementSele
                   </div>
                 ) : (
                   <div className="chat-markdown">
-                    <Markdown remarkPlugins={[remarkGfm]}>{msg.content}</Markdown>
+                    <Markdown remarkPlugins={[remarkGfm]}>{["passed", "failed", "inconclusive"].includes(msg.verification?.status || "")
+                      ? msg.content.replace(/^\s*测试(?:通过|未通过|结果不确定)[。！!]?\s*/i, "")
+                      : msg.content}</Markdown>
+                  </div>
+                )}
+                {msg.verification && (
+                  <div className="border border-primary/20 bg-background/70 rounded-lg p-2.5 space-y-2">
+                    <div className="font-medium">{{ passed: "测试通过", failed: "测试未通过", inconclusive: "测试结果不确定" }[msg.verification.status || ""] || "是否开始当前页面真实浏览器测试？"}</div>
+                    {!['passed', 'failed', 'inconclusive'].includes(msg.verification.status || "") && <>
+                      {msg.verification.summary && <div className="text-muted-foreground">{msg.verification.summary}</div>}
+                      <ul className="list-disc pl-4 text-muted-foreground space-y-0.5">
+                        {msg.verification.proposedChecks.map((check) => <li key={check}>{check}</li>)}
+                      </ul>
+                    </>}
+                    <Button
+                      size="sm"
+                      className="h-7 text-xs"
+                      disabled={["preparing", "running"].includes(msg.verification.status || "")}
+                      onClick={() => startVerification(msg.verification!)}
+                    >
+                      {["preparing", "running"].includes(msg.verification.status || "") ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" />测试运行中…</> : ["passed", "failed", "inconclusive"].includes(msg.verification.status || "") ? "重新测试" : "开始测试"}
+                    </Button>
                   </div>
                 )}
               </div>
@@ -166,6 +188,7 @@ function ChatView({ chat, selection }: { chat: ChatState; selection: ElementSele
           rows={3}
         />
         <div className="flex justify-end gap-1">
+          {sending && <Button size="sm" variant="destructive" className="h-7 text-xs px-2.5" onClick={cancelCurrent}>取消运行</Button>}
           {messages.length > 0 && (
             <Button size="sm" variant="outline" className="h-7 text-xs px-2.5 gap-1" onClick={clearHistory}>
               <Trash2 className="h-3 w-3" />

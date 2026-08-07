@@ -508,6 +508,40 @@ export const WIDGET_CSS = `
   justify-content: flex-end;
   padding: 0 12px 2px;
 }
+
+.verification-card {
+  margin: 8px 0 2px;
+  padding: 12px;
+  border: 1px solid rgba(99, 102, 241, .28);
+  border-radius: 10px;
+  background: rgba(99, 102, 241, .06);
+  color: var(--prism-text, #1f2937);
+  font: 12px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+.chat-msg-content {
+  display: flex;
+  min-width: 0;
+  max-width: calc(100% - 36px);
+  flex-direction: column;
+  align-items: flex-start;
+}
+.chat-msg-row.user .chat-msg-content { align-items: flex-end; }
+.chat-msg-content .verification-card {
+  box-sizing: border-box;
+  width: 100%;
+}
+.verification-title { font-weight: 600; margin-bottom: 6px; }
+.verification-card ul { margin: 4px 0 10px; padding-left: 18px; }
+.verification-start-btn {
+  border: 0;
+  border-radius: 7px;
+  padding: 7px 12px;
+  color: #fff;
+  background: #6366f1;
+  cursor: pointer;
+  font-weight: 600;
+}
+.verification-start-btn:disabled { cursor: default; opacity: .6; }
 .chat-clear-btn {
   font-size: 11px;
   color: #9ca3af;

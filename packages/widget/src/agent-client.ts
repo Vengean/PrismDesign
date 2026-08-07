@@ -27,7 +27,7 @@ export class AgentClient {
     return res.json();
   }
 
-  async chat(message: string): Promise<{ success: boolean; message: string; filesModified?: string[]; runId?: string }> {
+  async chat(message: string): Promise<{ success: boolean; message: string; filesModified?: string[]; runId?: string; verification?: { id: string; goal: string; proposedChecks: string[] } }> {
     const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const res = await fetch(`${this.baseUrl}/api/chat`, {
       method: "POST",
@@ -35,9 +35,27 @@ export class AgentClient {
         "Content-Type": "application/json",
         "x-client-id": this.clientId,
       },
-      body: JSON.stringify({ message, runId }),
+      body: JSON.stringify({ message, runId, pageUrl: location.href }),
     });
     return res.json();
+  }
+
+  async startVerification(
+    verification: { id: string; goal: string; proposedChecks: string[] },
+  ): Promise<{ verification: { status: string }; observation?: { url: string; title: string }; agentResult?: { message?: string } }> {
+    const id = verification.id;
+    const res = await fetch(`${this.baseUrl}/api/verifications/${encodeURIComponent(id)}/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-client-id": this.clientId },
+      body: JSON.stringify({
+        pageUrl: location.href,
+        goal: verification.goal,
+        proposedChecks: verification.proposedChecks,
+      }),
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || "Failed to start verification");
+    return result;
   }
 
   connectWebSocket(onMessage: (type: string, data: any) => void): WebSocket {

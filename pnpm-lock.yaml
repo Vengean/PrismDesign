@@ -13,6 +13,9 @@ importers:
       '@ant-design/icons':
         specifier: ^6.1.1
         version: 6.1.1(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.29.0
+        version: 1.29.0(zod@4.4.3)
       '@radix-ui/react-avatar':
         specifier: ^1.1.11
         version: 1.1.12(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
@@ -37,12 +40,21 @@ importers:
       antd:
         specifier: ^6.3.6
         version: 6.3.6(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
+      bcryptjs:
+        specifier: ^3.0.3
+        version: 3.0.3
+      better-sqlite3:
+        specifier: ^13.0.3
+        version: 13.0.3
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
+      express:
+        specifier: ^4.22.1
+        version: 4.22.1
       lucide-react:
         specifier: ^1.8.0
         version: 1.8.0(react@19.2.5)
@@ -61,6 +73,9 @@ importers:
       vite-plugin-prism-design:
         specifier: workspace:*
         version: link:../packages/vite-plugin
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@eslint/js':
         specifier: ^9.39.4
@@ -68,6 +83,12 @@ importers:
       '@tailwindcss/vite':
         specifier: ^4.2.4
         version: 4.2.4(vite@8.0.8(@types/node@24.12.2)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4))
+      '@types/better-sqlite3':
+        specifier: ^9.6.0
+        version: 9.6.0
+      '@types/express':
+        specifier: ^4.17.25
+        version: 4.17.25
       '@types/node':
         specifier: ^24.12.2
         version: 24.12.2
@@ -95,6 +116,9 @@ importers:
       tailwindcss:
         specifier: ^4.2.4
         version: 4.2.4
+      tsx:
+        specifier: ^4.22.4
+        version: 4.22.4
       typescript:
         specifier: ~6.0.2
         version: 6.0.2
@@ -153,6 +177,9 @@ importers:
       '@anthropic-ai/claude-agent-sdk':
         specifier: ^0.2.118
         version: 0.2.118(zod@4.4.3)
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.29.0
+        version: 1.29.0(zod@4.4.3)
       '@openai/agents':
         specifier: ^0.14.2
         version: 0.14.2(ws@8.20.0)(zod@4.4.3)
@@ -165,6 +192,9 @@ importers:
       express:
         specifier: ^4.21.0
         version: 4.22.1
+      playwright:
+        specifier: ^1.54.2
+        version: 1.62.1
       ws:
         specifier: ^8.18.0
         version: 8.20.0
@@ -2642,6 +2672,9 @@ packages:
   '@tybys/wasm-util@0.10.2':
     resolution: {integrity: sha512-RoBvJ2X0wuKlWFIjrwffGw1IqZHKQqzIchKaadZZfnNpsAYp2mM0h36JtPCjNDAHGgYez/15uMBpfGwchhiMgg==}
 
+  '@types/better-sqlite3@9.6.0':
+    resolution: {integrity: sha512-ZEEwBSgMu7GYJOynoagg5X9JbxfL6dTJDsgViJIqh67jV44kyOr9RXfmFjLK5rzC4MWssP06t9hu/JwGDnUbCg==}
+
   '@types/body-parser@1.19.6':
     resolution: {integrity: sha512-HLFeCYgz89uk22N5Qg3dvGvsv46B8GLvKKo1zKG4NybA8U2DiEO3w9lqGg29t/tfLRJpJ6iQxnVw4OnB7MoM9g==}
 
@@ -3060,6 +3093,14 @@ packages:
     resolution: {integrity: sha512-Lyf3aK28zpsD1yQMiiHD4RvVb6UdMoo8xzG2XzFIfR9luPzOpcBlAsT/qfB1XWS1bxWT+UtE4WmQgsp297FYOA==}
     engines: {node: '>=6.0.0'}
     hasBin: true
+
+  bcryptjs@3.0.3:
+    resolution: {integrity: sha512-GlF5wPWnSa/X5LKM1o0wz0suXIINz1iHRLvTS+sLyi7XPbe5ycmYI3DlZqVGZZtDgl4DmasFg7gOB3JYbphV5g==}
+    hasBin: true
+
+  better-sqlite3@13.0.3:
+    resolution: {integrity: sha512-RbOBxmLBG8uvFUc15X9+9SFemKcQ0WBuISBVkpuiaUB2qblC8UWlHEjdWVoZ8AdhSwmoEgsiXKfopX0CQxaACQ==}
+    engines: {node: '>=22'}
 
   body-parser@1.20.4:
     resolution: {integrity: sha512-ZTgYYLMOXY9qKU/57FAo8F+HA2dGX7bqGc71txDRC1rS4frdFI5R7NhluHxH6M0YItAP0sHB4uqAOcYKxO6uGA==}
@@ -3644,6 +3685,11 @@ packages:
   fresh@2.0.0:
     resolution: {integrity: sha512-Rx/WycZ60HOaqLKAi6cHRKKI7zxWbJ31MhntmtwMoaTeF7XFH9hhBp8vITaMidfljRQ6eYWCKkaTK+ykVJHP2A==}
     engines: {node: '>= 0.8'}
+
+  fsevents@2.3.2:
+    resolution: {integrity: sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA==}
+    engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
+    os: [darwin]
 
   fsevents@2.3.3:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
@@ -4427,6 +4473,10 @@ packages:
       sass:
         optional: true
 
+  node-addon-api@8.9.1:
+    resolution: {integrity: sha512-4eUQWVPCUUUiBjLnHS3cXWeC6ryoPUc0U3rP7IuzapoGbzMqd/r6KKO0clr0b+snQhsrueFEhCZDdK+LK7hxKg==}
+    engines: {node: ^18 || ^20 || >= 21}
+
   node-exports-info@1.6.2:
     resolution: {integrity: sha512-kXs9Go0cah0qHVV2v389IXQLdLCeE1xfFtjOAF+iobu0OIoG1pje8At2vMHyaPMiPMnG/LWP50twML21eMcAag==}
     engines: {node: '>= 0.4'}
@@ -4565,6 +4615,16 @@ packages:
 
   pkg-types@1.3.1:
     resolution: {integrity: sha512-/Jm5M4RvtBFVkKWRu2BLUTNP8/M2a+UwuAX+ae4770q1qVGtfjG+WTCupoZixokjmHiry8uI+dlY8KXYV5HVVQ==}
+
+  playwright-core@1.62.1:
+    resolution: {integrity: sha512-wPYSwEBJY9GHraISXqyqtx0na0LpO3XEX7jNDhntbex7tzUS7kLnZsOlFruFJB4Hi/rhDMjXGqHewDZ68nYZVw==}
+    engines: {node: '>=20'}
+    hasBin: true
+
+  playwright@1.62.1:
+    resolution: {integrity: sha512-0M+L3LAD8/nm554LOla9Ayx0j0tmFZ0FBcoQ7F1VuVHpM/XpiC8RcDzBQB8W5+hA8L22THxELzeF+2WcUzvcLg==}
+    engines: {node: '>=20'}
+    hasBin: true
 
   possible-typed-array-names@1.1.0:
     resolution: {integrity: sha512-/+5VFTchJDoVj3bhoqi6UeymcD00DAwb1nJwamzPvHEszJ4FpF6SNNbUbOS8yI56qHzdV8eK0qEfOSiodkTdxg==}
@@ -5340,9 +5400,6 @@ packages:
     engines: {node: '>=18.0.0'}
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
-
-  zod@4.3.6:
-    resolution: {integrity: sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg==}
 
   zod@4.4.3:
     resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
@@ -7266,6 +7323,10 @@ snapshots:
       tslib: 2.8.1
     optional: true
 
+  '@types/better-sqlite3@9.6.0':
+    dependencies:
+      '@types/node': 24.12.2
+
   '@types/body-parser@1.19.6':
     dependencies:
       '@types/connect': 3.4.38
@@ -7821,6 +7882,12 @@ snapshots:
   balanced-match@4.0.4: {}
 
   baseline-browser-mapping@2.10.16: {}
+
+  bcryptjs@3.0.3: {}
+
+  better-sqlite3@13.0.3:
+    dependencies:
+      node-addon-api: 8.9.1
 
   body-parser@1.20.4:
     dependencies:
@@ -8401,8 +8468,8 @@ snapshots:
       '@babel/parser': 7.29.2
       eslint: 9.39.4(jiti@2.7.0)
       hermes-parser: 0.25.1
-      zod: 4.3.6
-      zod-validation-error: 4.0.2(zod@4.3.6)
+      zod: 4.4.3
+      zod-validation-error: 4.0.2(zod@4.4.3)
     transitivePeerDependencies:
       - supports-color
 
@@ -8670,6 +8737,9 @@ snapshots:
   fresh@0.5.2: {}
 
   fresh@2.0.0: {}
+
+  fsevents@2.3.2:
+    optional: true
 
   fsevents@2.3.3:
     optional: true
@@ -9611,6 +9681,8 @@ snapshots:
       - '@babel/core'
       - babel-plugin-macros
 
+  node-addon-api@8.9.1: {}
+
   node-exports-info@1.6.2:
     dependencies:
       array.prototype.flatmap: 1.3.3
@@ -9753,6 +9825,14 @@ snapshots:
       confbox: 0.1.8
       mlly: 1.8.2
       pathe: 2.0.3
+
+  playwright-core@1.62.1: {}
+
+  playwright@1.62.1:
+    dependencies:
+      playwright-core: 1.62.1
+    optionalDependencies:
+      fsevents: 2.3.2
 
   possible-typed-array-names@1.1.0: {}
 
@@ -10725,11 +10805,9 @@ snapshots:
     dependencies:
       zod: 4.4.3
 
-  zod-validation-error@4.0.2(zod@4.3.6):
+  zod-validation-error@4.0.2(zod@4.4.3):
     dependencies:
-      zod: 4.3.6
-
-  zod@4.3.6: {}
+      zod: 4.4.3
 
   zod@4.4.3: {}
 

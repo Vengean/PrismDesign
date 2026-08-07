@@ -12,6 +12,14 @@ interface ChatMessage {
   content: string;
   timestamp: number;
   comments?: CommentInfo[];
+  verification?: { id: string; goal: string; proposedChecks: string[]; status?: string; summary?: string };
+}
+
+function formatVerificationMessage(content: string): string {
+  return content
+    .replace(/^\s*VERIFICATION_RESULT:\s*PASSED\s*$/gim, "测试结论：通过")
+    .replace(/^\s*VERIFICATION_RESULT:\s*FAILED\s*$/gim, "测试结论：未通过")
+    .trim();
 }
 
 export interface ChatAPI {
@@ -37,7 +45,13 @@ export function createChat(
       if (Array.isArray(parsed)) {
         messages = parsed.filter(
           (m: ChatMessage) => !(m.role === "ai" && m.content.startsWith("\u23F3"))
-        );
+        ).map((m: ChatMessage) => {
+          // A browser run cannot be assumed to still be active after a page reload.
+          if (m.verification && ["preparing", "running"].includes(m.verification.status || "")) {
+            return { ...m, verification: { ...m.verification, status: "awaiting_confirmation" } };
+          }
+          return m;
+        });
       }
     }
   } catch {}
@@ -216,6 +230,9 @@ export function createChat(
         row.appendChild(avatar);
       }
 
+      const content = document.createElement("div");
+      content.className = "chat-msg-content";
+
       const bubble = document.createElement("div");
       bubble.className = `chat-msg ${msg.role}${msg.content.startsWith("\u23F3") ? " thinking" : ""}`;
 
@@ -223,7 +240,10 @@ export function createChat(
         const progressContent = msg.content.slice(2).trim();
         bubble.innerHTML = `<div class="progress-text"><span class="prism-spinner"></span><span>${escapeHtml(progressContent)}</span></div>`;
       } else if (msg.role === "ai") {
-        bubble.innerHTML = renderMarkdown(msg.content);
+        const renderedContent = ["passed", "failed", "inconclusive"].includes(msg.verification?.status || "")
+          ? msg.content.replace(/^\s*测试(?:通过|未通过|结果不确定)[。！!]?\s*/i, "")
+          : msg.content;
+        bubble.innerHTML = renderMarkdown(formatVerificationMessage(renderedContent));
       } else {
         if (msg.comments && msg.comments.length > 0) {
           for (const c of msg.comments) {
@@ -243,7 +263,63 @@ export function createChat(
           bubble.textContent = msg.content;
         }
       }
-      row.appendChild(bubble);
+      content.appendChild(bubble);
+      if (msg.role === "ai" && msg.verification) {
+        const card = document.createElement("div");
+        card.className = "verification-card";
+        const title = document.createElement("div");
+        title.className = "verification-title";
+        title.textContent = ({ passed: "测试通过", failed: "测试未通过", inconclusive: "测试结果不确定" } as Record<string, string>)[msg.verification.status || ""] || "是否开始真实浏览器测试？";
+        card.appendChild(title);
+        const isComplete = ["passed", "failed", "inconclusive"].includes(msg.verification.status || "");
+        if (!isComplete && msg.verification.summary) {
+          const summary = document.createElement("div");
+          summary.className = "verification-summary";
+          summary.textContent = msg.verification.summary;
+          card.appendChild(summary);
+        }
+        if (!isComplete) {
+          const checks = document.createElement("ul");
+          for (const check of msg.verification.proposedChecks) {
+            const item = document.createElement("li");
+            item.textContent = check;
+            checks.appendChild(item);
+          }
+          card.appendChild(checks);
+        }
+        const start = document.createElement("button");
+        start.className = "verification-start-btn";
+        const isStarting = msg.verification.status === "preparing" || msg.verification.status === "running";
+        const canRetry = ["failed", "passed", "inconclusive"].includes(msg.verification.status || "");
+        start.textContent = isStarting ? "测试运行中…" : canRetry ? "重新测试" : "开始测试";
+        start.disabled = isStarting;
+        start.onclick = async () => {
+          if (!msg.verification) return;
+          msg.verification.status = "running";
+          saveHistory();
+          render();
+          try {
+            const result = await agentClient.startVerification(msg.verification);
+            const verificationMessage = result.agentResult?.message || "";
+            msg.verification.status = /VERIFICATION_RESULT:\s*PASSED/i.test(verificationMessage)
+              ? "passed"
+              : /VERIFICATION_RESULT:\s*FAILED/i.test(verificationMessage) ? "failed" : "inconclusive";
+            messages.push({
+              role: "ai",
+              content: formatVerificationMessage(result.agentResult?.message || `浏览器测试已启动，已打开 ${result.observation?.url || "当前页面"}。当前 Agent provider 尚未接入浏览器工具适配器。`),
+              timestamp: Date.now(),
+            });
+          } catch (error) {
+            msg.verification.status = "failed";
+            messages.push({ role: "ai", content: `浏览器测试启动失败：${error instanceof Error ? error.message : String(error)}`, timestamp: Date.now() });
+          }
+          saveHistory();
+          render();
+        };
+        card.appendChild(start);
+        content.appendChild(card);
+      }
+      row.appendChild(content);
       messagesEl.appendChild(row);
     }
 
@@ -360,6 +436,7 @@ export function createChat(
         role: "ai",
         content: responseContent,
         timestamp: Date.now(),
+        verification: result.verification,
       };
     } catch {
       messages[thinkingIdx] = {

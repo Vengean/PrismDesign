@@ -1,4 +1,6 @@
 import path from "node:path";
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import { Codex, type Thread, type ThreadItem } from "@openai/codex-sdk";
 import type { AgentProvider, AgentResult, EventCallback } from "../core/types.js";
 
@@ -7,6 +9,31 @@ const SESSION_TIMEOUT = 30 * 60 * 1000;
 interface SessionEntry {
   thread: Thread;
   lastActive: number;
+}
+
+type ProjectMcpServer = {
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+  defaultToolsApprovalMode?: "approve" | "prompt" | "deny";
+};
+
+function loadProjectMcpServers(): Record<string, Record<string, unknown>> {
+  if (!process.env.PRISM_MCP_SERVERS) return {};
+  try {
+    const configured = JSON.parse(process.env.PRISM_MCP_SERVERS) as Record<string, ProjectMcpServer>;
+    return Object.fromEntries(Object.entries(configured).map(([name, server]) => {
+      if (!/^[a-zA-Z0-9_-]+$/.test(name) || !server?.command) throw new Error(`Invalid MCP server: ${name}`);
+      return [name, {
+        command: server.command,
+        args: server.args || [],
+        env: server.env || {},
+        default_tools_approval_mode: server.defaultToolsApprovalMode || "prompt",
+      }];
+    }));
+  } catch (error) {
+    throw new Error(`Invalid prism.config mcpServers: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 export class CodexProvider implements AgentProvider {
@@ -21,11 +48,32 @@ export class CodexProvider implements AgentProvider {
     // With no apiKey option the spawned official CLI reuses its own login state
     // (normally stored under CODEX_HOME). Never read or copy auth.json here.
     const useWebSocket = process.env.CODEX_TRANSPORT === "websocket";
-    this.codex = new Codex(useWebSocket ? {} : {
+    const mcpServerPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "testing", "mcp-browser-server.js");
+    const commonConfig = {
+      mcp_servers: {
+        ...loadProjectMcpServers(),
+        prism_browser: {
+          command: process.execPath,
+          args: [mcpServerPath],
+          // The user explicitly authorizes this bounded verification run by
+          // clicking Start Test. Without this, approvalPolicy=never causes
+          // Codex to report every MCP call as "user cancelled".
+          default_tools_approval_mode: "approve",
+          env: {
+            PRISM_BROWSER_ALLOWED_ORIGINS: process.env.PRISM_BROWSER_ALLOWED_ORIGINS || "",
+            PRISM_BROWSER_HEADLESS: process.env.PRISM_BROWSER_HEADLESS || "false",
+            PRISM_BROWSER_MODE: process.env.PRISM_BROWSER_MODE || "current-tab",
+            PRISM_AGENT_URL: process.env.PRISM_AGENT_URL || "http://127.0.0.1:9527",
+          },
+        },
+      },
+    };
+    this.codex = new Codex(useWebSocket ? { config: commonConfig } : {
       // ChatGPT-login Codex currently retries WebSocket connections for roughly
       // 75 seconds before falling back on networks where WS is unavailable.
       // Use the same authenticated Codex endpoint over HTTPS/SSE directly.
       config: {
+        ...commonConfig,
         model_provider: "prism_chatgpt_https",
         model_providers: {
           prism_chatgpt_https: {
@@ -74,7 +122,30 @@ export class CodexProvider implements AgentProvider {
     return null;
   }
 
+  private snapshotProjectFiles(): Map<string, string> {
+    const snapshot = new Map<string, string>();
+    const ignored = new Set([".git", "node_modules", "dist", "build", ".next", ".turbo", "coverage"]);
+    const visit = (directory: string) => {
+      let entries: fs.Dirent[];
+      try { entries = fs.readdirSync(directory, { withFileTypes: true }); } catch { return; }
+      for (const entry of entries) {
+        if (ignored.has(entry.name)) continue;
+        const absolute = path.join(directory, entry.name);
+        if (entry.isDirectory()) { visit(absolute); continue; }
+        if (!entry.isFile()) continue;
+        if (/\.(?:db|sqlite)(?:-(?:wal|shm|journal))?$/i.test(entry.name)) continue;
+        try {
+          const stat = fs.statSync(absolute);
+          snapshot.set(path.relative(this.projectRoot, absolute), `${stat.size}:${stat.mtimeMs}`);
+        } catch {}
+      }
+    };
+    visit(this.projectRoot);
+    return snapshot;
+  }
+
   async run(clientId: string, runId: string, message: string, emit: EventCallback, signal?: AbortSignal): Promise<AgentResult> {
+    const beforeFiles = this.snapshotProjectFiles();
     const filesModified = new Set<string>();
     const messageTextById = new Map<string, string>();
     let finalMessage = "";
@@ -86,7 +157,7 @@ export class CodexProvider implements AgentProvider {
       const previous = messageTextById.get(item.id) || "";
       const delta = item.text.startsWith(previous) ? item.text.slice(previous.length) : item.text;
       messageTextById.set(item.id, item.text);
-      if (delta) emit({ type: "message.delta", runId, delta });
+      if (delta) emit({ type: "message.delta", runId, delta, messageId: item.id });
     };
 
     for await (const event of streamed.events) {
@@ -136,6 +207,13 @@ export class CodexProvider implements AgentProvider {
 
     if (terminalFailure) throw new Error(terminalFailure);
     if (!finalMessage && streamWarning) throw new Error(streamWarning);
+    const afterFiles = this.snapshotProjectFiles();
+    for (const [filePath, fingerprint] of afterFiles) {
+      if (beforeFiles.get(filePath) !== fingerprint) filesModified.add(filePath);
+    }
+    for (const filePath of beforeFiles.keys()) {
+      if (!afterFiles.has(filePath)) filesModified.add(filePath);
+    }
     return { runId, success: true, message: finalMessage || "修改完成。", filesModified: [...filesModified] };
   }
 

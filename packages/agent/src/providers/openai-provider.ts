@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import { Agent, MemorySession, run, tool } from "@openai/agents";
 import { z } from "zod";
 import type { AgentProvider, AgentResult, EventCallback } from "../core/types.js";
+import type { ToolRegistry } from "../testing/tool-registry.js";
 
 const execFileAsync = promisify(execFile);
 const SESSION_TIMEOUT = 30 * 60 * 1000;
@@ -35,7 +36,7 @@ export class OpenAIProvider implements AgentProvider {
   private readonly sessions = new Map<string, SessionEntry>();
   private readonly cleanupTimer: ReturnType<typeof setInterval>;
 
-  constructor(private readonly projectRoot: string) {
+  constructor(private readonly projectRoot: string, private readonly toolRegistry?: ToolRegistry) {
     this.model = process.env.OPENAI_MODEL || "gpt-5.6";
     this.cleanupTimer = setInterval(() => this.cleanupSessions(), 5 * 60 * 1000);
   }
@@ -51,7 +52,7 @@ export class OpenAIProvider implements AgentProvider {
     return session;
   }
 
-  private createTools(runId: string, emit: EventCallback, filesModified: Set<string>) {
+  private createTools(clientId: string, runId: string, emit: EventCallback, filesModified: Set<string>) {
     let sequence = 0;
     const execute = async <T>(name: string, label: string, fn: () => Promise<T>): Promise<T> => {
       const toolCallId = `${runId}-${name}-${++sequence}`;
@@ -66,7 +67,7 @@ export class OpenAIProvider implements AgentProvider {
       }
     };
 
-    return [
+    const workspaceTools = [
       tool({
         name: "read_file",
         description: "Read a UTF-8 text file inside the project workspace.",
@@ -136,6 +137,23 @@ export class OpenAIProvider implements AgentProvider {
         }),
       }),
     ];
+    if (!this.toolRegistry) return workspaceTools;
+    const browserActionSchema = z.object({
+      sessionId: z.string(),
+      action: z.discriminatedUnion("type", [
+        z.object({ type: z.literal("click"), target: z.record(z.string(), z.unknown()) }),
+        z.object({ type: z.literal("fill"), target: z.record(z.string(), z.unknown()), value: z.string() }),
+        z.object({ type: z.literal("press"), target: z.record(z.string(), z.unknown()), key: z.string() }),
+      ]),
+    });
+    return [...workspaceTools,
+      tool({ name: "browser_start", description: "Start an isolated real browser session for the application.", parameters: z.object({ baseUrl: z.string().url(), verificationId: z.string().optional() }), execute: (input) => execute("browser.start", "启动真实浏览器", () => this.toolRegistry!.execute("browser.start", input, { clientId, runId })) }),
+      tool({ name: "browser_navigate", description: "Navigate the browser to a URL.", parameters: z.object({ sessionId: z.string(), url: z.string() }), execute: (input) => execute("browser.navigate", `打开 ${input.url}`, () => this.toolRegistry!.execute("browser.navigate", input, { clientId, runId })) }),
+      tool({ name: "browser_observe", description: "Observe interactive page elements and receive short-lived refs.", parameters: z.object({ sessionId: z.string() }), execute: (input) => execute("browser.observe", "观察页面", () => this.toolRegistry!.execute("browser.observe", input, { clientId, runId })) }),
+      tool({ name: "browser_action", description: "Click, fill, or press a key in the real browser. Prefer refs from browser_observe.", parameters: browserActionSchema, execute: (input) => execute("browser.action", `执行浏览器操作 ${input.action.type}`, () => this.toolRegistry!.execute("browser.action", input, { clientId, runId })) }),
+      tool({ name: "browser_evidence", description: "Inspect network and runtime error evidence.", parameters: z.object({ sessionId: z.string() }), execute: (input) => execute("browser.evidence", "检查浏览器证据", () => this.toolRegistry!.execute("browser.evidence", input, { clientId, runId })) }),
+      tool({ name: "browser_stop", description: "Close a browser session after verification.", parameters: z.object({ sessionId: z.string() }), execute: (input) => execute("browser.stop", "关闭浏览器", () => this.toolRegistry!.execute("browser.stop", input, { clientId, runId })) }),
+    ];
   }
 
   async run(clientId: string, runId: string, message: string, emit: EventCallback, signal?: AbortSignal): Promise<AgentResult> {
@@ -148,9 +166,10 @@ export class OpenAIProvider implements AgentProvider {
         "You are a coding agent editing the current frontend project.",
         "Inspect relevant files before editing. Make the smallest coherent change that satisfies the request.",
         "Only use the provided workspace tools. Never claim a file was changed unless a tool changed it.",
+        "When asked to verify a running web application, use browser tools and base conclusions on observed evidence. Do not generate test scripts unless explicitly requested.",
         `The project root is ${this.projectRoot}.`,
       ].join("\n"),
-      tools: this.createTools(runId, emit, filesModified),
+      tools: this.createTools(clientId, runId, emit, filesModified),
     });
 
     const stream = await run(agent, message, { stream: true, session: this.getSession(clientId), signal });

@@ -25,6 +25,15 @@ export interface PrismConfig {
   codexReasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
   /** `https` avoids slow WebSocket fallback; set `websocket` when the network supports it. */
   codexTransport?: "https" | "websocket";
+  /** Run verification Chromium without a visible window. Defaults to false locally. */
+  browserHeadless?: boolean;
+  /** Project-scoped MCP servers exposed to Codex. */
+  mcpServers?: Record<string, {
+    command: string;
+    args?: string[];
+    env?: Record<string, string>;
+    defaultToolsApprovalMode?: "approve" | "prompt" | "deny";
+  }>;
   /** HTTPS proxy */
   httpsProxy?: string;
   /** HTTP proxy */
@@ -135,6 +144,14 @@ export function applyConfigToEnv(config: PrismConfig, force = false) {
     ["httpsProxy", "HTTPS_PROXY"],
     ["httpProxy", "HTTP_PROXY"],
   ];
+
+  if (typeof config.browserHeadless === "boolean" && (force || !process.env.PRISM_BROWSER_HEADLESS)) {
+    process.env.PRISM_BROWSER_HEADLESS = String(config.browserHeadless);
+  }
+
+  if (config.mcpServers && (force || !process.env.PRISM_MCP_SERVERS)) {
+    process.env.PRISM_MCP_SERVERS = JSON.stringify(config.mcpServers);
+  }
 
   for (const [configKey, envKey] of mapping) {
     const val = config[configKey];

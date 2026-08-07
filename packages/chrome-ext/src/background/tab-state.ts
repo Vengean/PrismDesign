@@ -1,4 +1,4 @@
-import type { ProjectInfo } from "../shared/types.js";
+import type { ProjectInfo, TestRunInfo } from "../shared/types.js";
 
 export interface TabState {
   clientId: string;
@@ -7,6 +7,9 @@ export interface TabState {
   project: ProjectInfo | null;
   ws: WebSocket | null;
   designMode: boolean;
+  currentTestRun: TestRunInfo | null;
+  agentWorking: boolean;
+  agentProgress: string;
 }
 
 const tabs = new Map<number, TabState>();
@@ -20,6 +23,9 @@ export function getTabState(tabId: number): TabState {
       project: null,
       ws: null,
       designMode: false,
+      currentTestRun: null,
+      agentWorking: false,
+      agentProgress: "",
     });
   }
   return tabs.get(tabId)!;
