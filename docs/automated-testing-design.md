@@ -23,7 +23,7 @@ Prism Agent + Verification Orchestrator
           └── 项目 MCP（可选）：业务 Fixture/API/DB 能力
           │
           ▼
-Chrome Extension + chrome.scripting
+Chrome Extension + chrome.debugger/CDP
           │
           ▼
 用户当前可见页面
@@ -35,7 +35,7 @@ Chrome Extension + chrome.scripting
 2. **状态机负责约束**：服务端只校验 Verification 所属 client、状态转换、页面、能力令牌和资源归属。
 3. **测试意图而非测试脚本**：保存目标和断言，由 Agent 根据当前页面重新规划，不维护脆弱 selector 脚本。
 4. **先观察再准备数据**：优先复用满足条件的当前登录态；只有前置条件不足或用户要求隔离时才使用 Fixture。
-5. **真实可见操作**：本地默认通过 Chrome 扩展的 `activeTab`、`chrome.scripting` 和可见 Tab 截图操作用户明确绑定的页面；Playwright 只作为 CI 或无人值守后备。
+5. **真实可见操作**：本地默认通过 Chrome 扩展的 CDP Runtime/Input 操作用户明确绑定的页面；Playwright 只作为 CI 或无人值守后备。
 6. **证据驱动**：结论必须基于 UI、截图、Network、Console/Page Error 或受控数据查询。
 7. **项目能力可选**：Fixture Skill/MCP 属于具体项目，Prism 只提供发现、调用和生命周期编排机制。
 8. **本地运行不持久化**：Test Run 和 Verification 保存在 Agent 内存，不在开发者源码目录生成数据库。
@@ -44,7 +44,7 @@ Chrome Extension + chrome.scripting
 
 | 组件 | 职责 | 是否了解项目业务 |
 |---|---|---|
-| Chrome 插件 | 对话、显式绑定当前 Tab、执行页面脚本与截图、展示状态和结果 | 否 |
+| Chrome 插件 | 对话、显式绑定当前 Tab、执行 CDP 操作与截图、展示状态和结果 | 否 |
 | Widget | 对话、确认和结果展示（可选） | 否 |
 | Prism Agent | 理解用户意图、规划开发和测试、选择并调用工具 | 只通过 Skill 获得 |
 | Verification Orchestrator | 权限和状态转换、Test Run、超时、取消、清理 | 否 |
@@ -128,9 +128,9 @@ Chrome 连接规则：
 - WebSocket 打开并完成 `browser:register` 后才显示已连接。
 - URL 变化和页面加载完成时重新注册。
 - 用户点击插件图标时直接使用 `chrome.action.onClicked(tab)` 绑定确切 Tab，也可通过侧边栏按钮重新绑定当前页面。
-- `browser_start` 最多等待 8 秒完成当前 Tab 注册，核心 DOM 操作不依赖 `chrome.debugger.attach`。
-- 页面跳转后重新安装受控的 Network/Console/Page Error 采集器。
-- 测试完成、失败、取消或超时时由服务端兜底清理页面采集状态。
+- `browser_start` 最多等待 8 秒完成当前 Tab 注册，并仅对绑定的 HTTP(S)/file Tab 执行 `chrome.debugger.attach`。
+- 页面跳转后保持同一个 `tabId`，不重新查询 active Tab；Runtime/Input/Page/Network 由 CDP 提供。
+- 测试完成、失败、取消或超时时由服务端兜底 detach。
 
 ## 6. Fixture 与当前登录态
 
