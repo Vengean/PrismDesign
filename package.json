@@ -2,7 +2,7 @@
   "name": "prism-design",
   "version": "0.1.0",
   "private": true,
-  "description": "Visual UI editing tool for designers — peek, poke, and refine live pages with AI",
+  "description": "AI workspace for developing, refining, and verifying source-backed web applications",
   "scripts": {
     "dev": "pnpm --filter demo dev",
     "dev:agent": "pnpm --filter prism-design-agent dev",

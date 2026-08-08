@@ -4,7 +4,7 @@
     "description": "Extension name"
   },
   "extDescription": {
-    "message": "面向设计师的可视化 UI 编辑工具 —— 点击、编辑、用 AI 优化页面",
+    "message": "面向产品与研发团队的 AI 页面开发协作工具 —— 连接源码与运行页面，支持自然语言改码、可视化调整和真实浏览器验证",
     "description": "Extension description"
   }
 }
