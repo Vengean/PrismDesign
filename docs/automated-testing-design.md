@@ -232,7 +232,7 @@ GET /api/browser/diagnostics
 - [x] Cleanup Stack（LIFO、幂等、结果记录）。
 - [x] 正常完成、失败、取消、超时的浏览器 detach 兜底。
 - [x] 手动取消入口和友好取消结果。
-- [x] 120 秒整体超时。
+- [x] 120 秒空闲超时，工具开始或完成时刷新。
 - [x] WebSocket 10 秒断线宽限和自动重连。
 - [x] 重开侧边栏后恢复活跃 Agent/Test Run 及最近进度。
 - [x] Agent 重启后的陈旧状态清理。
@@ -258,10 +258,23 @@ GET /api/browser/diagnostics
 
 1. **结构化步骤事件**（已完成基础链路）：记录并展示 Agent 实际选择和执行的工具动作，不预设固定步骤或强制使用 Fixture。
 2. **测试结果详情**（已完成）：处理状态和最终结果归并在同一条对话消息中；测试完成后可按需展开实际步骤、耗时和错误。
-3. **Screenshot 查看**：展示关键截图并允许放大。
-4. **Network/Console 证据**：按请求、状态码、Console/Page Error 分类展示并脱敏。
-5. **清理结果展示**（已完成基础链路）：展示浏览器资源和项目 Fixture 的清理结果。
-6. **浏览器诊断 UI**：把 `/api/browser/diagnostics` 转换为用户可理解的连接检查。
+3. **业务测试用例结构化**（下一项）：将 Agent 拟定的用例与最终状态（通过、失败、未执行、证据不足）持久化；与底层工具执行步骤分开呈现。
+4. **Screenshot 证据**（下一项）：展示关键截图、关联测试用例或步骤并允许放大。
+5. **Network/Console 证据**：按请求、状态码、Console/Page Error 分类展示并脱敏。
+6. **测试历史持久化**：Agent 重启后仍可查看用例、结果、步骤和证据。
+7. **浏览器环境预检**：测试前检查目标 Tab、站点权限、Agent/WebSocket、页面地址和可能干扰密码输入的自动填充环境。
+8. **清理结果展示**（已完成基础链路）：展示浏览器资源和项目 Fixture 的清理结果。
+9. **浏览器诊断 UI**：把 `/api/browser/diagnostics` 转换为用户可理解的连接检查。
+
+> 明日优先实现：业务测试用例结构化，然后接入 Screenshot 证据展示。
+
+#### Screenshot 存储约定
+
+- 截图由 Agent 保存，不写入用户 Git 工作区，也不存为 SQLite BLOB。
+- 本地开发默认目录：`.prism/test-runs/<testRunId>/screenshots/`。
+- 平台部署目录：`/data/prism/test-runs/<workspaceId>/<testRunId>/`，由 Workspace 持久化数据卷承载。
+- SQLite 仅保存 `testRunId`、关联用例/步骤、相对路径、MIME、尺寸和创建时间等元数据。
+- 默认按保留天数和 Workspace 容量上限清理；删除测试记录时同步删除截图，Fixture Cleanup 不删除测试证据。
 
 步骤由两个来源产生：
 
