@@ -21,18 +21,34 @@ const target = z.union([
   z.object({ selector: z.string() }),
 ]);
 async function currentCall(pageUrl: string, action: string, input: Record<string, unknown> = {}) {
-  const response = await fetch(`${agentUrl}/api/browser/current/command`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pageUrl, action, ...input }) });
-  const body = await response.json() as any;
+  let response: Response;
+  try {
+    response = await fetch(`${agentUrl}/api/browser/current/command`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pageUrl, action, ...input }) });
+  } catch (error) {
+    throw new Error(`Prism browser ${action} could not reach ${agentUrl}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const text = await response.text();
+  let body: any;
+  try { body = text ? JSON.parse(text) : {}; }
+  catch { body = { error: text || `empty response (${response.status})` }; }
   if (!response.ok) throw new Error(body.error || `Current-tab command failed (${response.status})`);
   return body.result;
 }
 async function agentCall(path: string, capabilityToken: string, body: Record<string, unknown> = {}) {
-  const response = await fetch(`${agentUrl}${path}`, {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${capabilityToken}` },
-    body: JSON.stringify(body),
-  });
-  const value = await response.json() as any;
+  let response: Response;
+  try {
+    response = await fetch(`${agentUrl}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${capabilityToken}` },
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    throw new Error(`Prism verification API ${path} could not reach ${agentUrl}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const text = await response.text();
+  let value: any;
+  try { value = text ? JSON.parse(text) : {}; }
+  catch { value = { error: text || `empty response (${response.status})` }; }
   if (!response.ok) throw new Error(value.error || `Verification command failed (${response.status})`);
   return value;
 }

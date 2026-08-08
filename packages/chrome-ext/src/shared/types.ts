@@ -90,6 +90,17 @@ export interface TestRunInfo {
   updatedAt: string;
   finishedAt?: string;
   error?: string;
+  steps: Array<{
+    id: string;
+    tool: string;
+    label: string;
+    status: "pending" | "running" | "passed" | "failed";
+    startedAt: string;
+    finishedAt?: string;
+    durationMs?: number;
+    error?: string;
+  }>;
+  cleanup: Array<{ id: string; label: string; success: boolean; error?: string }>;
 }
 
 // ============================================================
@@ -138,6 +149,7 @@ export type UpstreamMessage =
 // Agent operations: Side Panel -> Background (not forwarded to content)
 export type AgentMessage =
   | { type: "AGENT_CONNECT"; payload: { url: string } }
+  | { type: "AGENT_BIND_CURRENT_TAB" }
   | { type: "AGENT_DISCONNECT" }
   | { type: "AGENT_APPLY_CHANGES"; payload: { changes: StyleChange[]; pagePath?: string; supplement?: string } }
   | { type: "AGENT_CHAT"; payload: { message: string; context: { pagePath: string; components: ComponentInfo[] } } }
@@ -148,7 +160,7 @@ export type AgentMessage =
 
 // Agent events: Background -> Side Panel
 export type AgentEventMessage =
-  | { type: "AGENT_STATUS"; payload: { connected: boolean; connecting?: boolean; agentUrl?: string; error?: string; project?: ProjectInfo; provider?: string; model?: string; capabilities?: AgentCapabilities } }
+  | { type: "AGENT_STATUS"; payload: { connected: boolean; connecting?: boolean; agentUrl?: string; error?: string; project?: ProjectInfo; provider?: string; model?: string; capabilities?: AgentCapabilities; boundTab?: { id: number; url: string; title?: string } } }
   | { type: "AGENT_WORKING"; payload: { working: boolean } }
   | { type: "AGENT_PROGRESS"; payload: { text: string } }
   | { type: "AGENT_TEXT_DELTA"; payload: { runId: string; delta: string; messageId?: string } }

@@ -26,6 +26,8 @@ npx prism-design-agent start --provider codex
 Set `PRISM_AGENT_DEBUG=1` to print the widget input (truncated at 8,000
 characters) plus structured run, tool, text, and file-change events in the
 agent terminal. Leave it disabled when messages may contain sensitive data.
+Vite-plugin development mode prints structured events by default without full
+prompt bodies. Set `PRISM_AGENT_DEBUG_EVENTS=0` to disable those event logs.
 
 ## Installation
 

@@ -177,7 +177,8 @@ export class CodexProvider implements AgentProvider {
         if (tool) {
           const success = !((item.type === "command_execution" || item.type === "mcp_tool_call") && item.status === "failed")
             && !(item.type === "file_change" && item.status === "failed");
-          emit({ type: "tool.completed", runId, toolCallId: item.id, tool: tool.tool, success });
+          const error = item.type === "mcp_tool_call" ? item.error?.message : undefined;
+          emit({ type: "tool.completed", runId, toolCallId: item.id, tool: tool.tool, success, error });
         }
         if (item.type === "agent_message") {
           emitMessageUpdate(item);

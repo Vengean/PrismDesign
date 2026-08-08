@@ -152,11 +152,11 @@ export async function startServer(
     },
   });
 
-  async function executeCurrentTab(pageUrl: string, command: Record<string, unknown>): Promise<unknown> {
+  async function executeCurrentTab(pageUrl: string, command: Record<string, unknown>, preferredClientId?: string): Promise<unknown> {
     const target = new URL(pageUrl);
     const findEntry = () => {
       const candidates = [...browserRegistrations.entries()].filter(([ws, registration]) => {
-        if (ws.readyState !== WebSocket.OPEN || !registration.url) return false;
+        if (ws.readyState !== WebSocket.OPEN || !registration.url || (preferredClientId && wsClientIds.get(ws) !== preferredClientId)) return false;
         try { return new URL(registration.url).origin === target.origin; } catch { return false; }
       });
       const exact = candidates.filter(([, registration]) => {
@@ -173,7 +173,7 @@ export async function startServer(
       }
     }
     if (!entry && candidates.length > 1) throw new Error(`Multiple Prism tabs are connected for ${target.origin}; keep only the target tab connected`);
-    if (!entry) throw new Error(`No Prism Chrome tab is registered for ${target.origin}. Keep the Prism side panel open on that tab and retry.`);
+    if (!entry) throw new Error(`No Prism Chrome tab is registered for ${target.origin}${preferredClientId ? ` (client=${preferredClientId})` : ""}. Keep the Prism side panel open on that tab and retry.`);
     const [ws] = entry;
     const requestId = `browser-command-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     return new Promise((resolve, reject) => {
@@ -192,7 +192,18 @@ export async function startServer(
       activeRunStates.set(event.runId, { runId: event.runId, clientId, status: "responding", progress: current?.progress || "Agent 正在整理结果…", updatedAt: now });
     }
     if (["run.completed", "run.failed", "run.cancelled"].includes(event.type)) activeRunStates.delete(event.runId);
-    if (process.env.PRISM_AGENT_DEBUG === "1") {
+    if (event.type === "tool.started") {
+      testRuns?.startStep(event.runId, { id: event.toolCallId, tool: event.tool, label: event.label });
+    }
+    if (event.type === "tool.completed") {
+      const safeError = event.error?.replace(/(authorization|token|password|cookie)(["'=:\s]+)[^\s,&}]+/gi, "$1$2[REDACTED]");
+      testRuns?.finishStep(event.runId, {
+        id: event.toolCallId,
+        success: event.success,
+        error: event.success ? undefined : safeError || `${event.tool} 执行失败`,
+      });
+    }
+    if (process.env.PRISM_AGENT_DEBUG === "1" || process.env.PRISM_AGENT_DEBUG_EVENTS === "1") {
       const detail = event.type === "message.delta"
         ? JSON.stringify({ runId: event.runId, delta: event.delta.slice(0, 160) })
         : JSON.stringify(event);
@@ -216,7 +227,7 @@ export async function startServer(
 
   async function startVerification(id: string, clientId: string) {
     const verification = verifications.getOwned(id, clientId);
-    if (!(["awaiting_confirmation", "failed", "passed", "inconclusive"] as const).includes(verification.status as "awaiting_confirmation" | "failed" | "passed" | "inconclusive")) {
+    if (!(["awaiting_confirmation", "failed", "passed", "inconclusive", "cancelled"] as const).includes(verification.status as "awaiting_confirmation" | "failed" | "passed" | "inconclusive" | "cancelled")) {
       throw new Error(`Verification cannot start from ${verification.status}`);
     }
     verifications.update(id, clientId, { status: "preparing", error: undefined });
@@ -250,9 +261,17 @@ export async function startServer(
       .trim();
   }
 
-  async function detachVerificationBrowser(verification: { baseUrl: string }) {
+  function verificationPageUrl(value: unknown): string {
+    const pageUrl = String(value || "");
+    let parsed: URL;
+    try { parsed = new URL(pageUrl); } catch { throw new Error("Current page URL is invalid"); }
+    if (!["http:", "https:"].includes(parsed.protocol)) throw new Error(`Verification requires an HTTP(S) page, received ${parsed.protocol}`);
+    return parsed.toString();
+  }
+
+  async function detachVerificationBrowser(verification: { baseUrl: string; clientId: string }) {
     if (provider.name !== "codex") return;
-    try { await executeCurrentTab(verification.baseUrl, { action: "detach" }); }
+    try { await executeCurrentTab(verification.baseUrl, { action: "detach" }, verification.clientId); }
     catch (error) { console.warn(`[Verification] Browser detach skipped: ${error instanceof Error ? error.message : String(error)}`); }
   }
 
@@ -466,11 +485,11 @@ export async function startServer(
   app.post("/api/agent/verifications/propose", (req, res) => {
     try {
       const turn = getAgentTurn(req);
-      if (!turn.pageUrl) throw new Error("Current page URL is unavailable");
+      const pageUrl = verificationPageUrl(turn.pageUrl);
       const goal = String(req.body?.goal || "").trim();
       const proposedChecks = Array.isArray(req.body?.proposedChecks) ? req.body.proposedChecks.map(String).filter(Boolean) : [];
       if (!goal || !proposedChecks.length) throw new Error("goal and proposedChecks are required");
-      const verification = verifications.create({ clientId: turn.clientId, developmentRunId: turn.runId, goal, baseUrl: turn.pageUrl, changedFiles: [], proposedChecks });
+      const verification = verifications.create({ clientId: turn.clientId, developmentRunId: turn.runId, goal, baseUrl: pageUrl, changedFiles: [], proposedChecks });
       broadcast("verification.proposed", verification, turn.clientId);
       res.json({ verification });
     } catch (error) { res.status(400).json({ error: error instanceof Error ? error.message : String(error) }); }
@@ -483,7 +502,7 @@ export async function startServer(
       if (verification.status !== "awaiting_confirmation") throw new Error(`Verification cannot start from ${verification.status}`);
       const instruction = String(req.body?.instruction || "").trim();
       if (!instruction) throw new Error("The current user instruction is required");
-      const updated = verifications.update(verification.id, turn.clientId, { status: "running", developmentRunId: turn.runId, goal: `${verification.goal}\n用户本轮测试要求：${instruction}` });
+      const updated = verifications.update(verification.id, turn.clientId, { status: "running", developmentRunId: turn.runId, baseUrl: verificationPageUrl(turn.pageUrl), goal: `${verification.goal}\n用户本轮测试要求：${instruction}` });
       const controller = activeRuns.get(turn.runId);
       createTestRun(updated, turn.runId, controller ? () => controller.abort() : undefined);
       broadcast("verification.updated", updated, turn.clientId);
@@ -570,8 +589,10 @@ export async function startServer(
     const clientId = getClientId(req);
     try {
       let verificationId = req.params.id;
+      const currentPageUrl = verificationPageUrl(req.body?.pageUrl);
       try {
-        verifications.getOwned(verificationId, clientId);
+        const existing = verifications.getOwned(verificationId, clientId);
+        verifications.update(existing.id, clientId, { baseUrl: currentPageUrl });
       } catch {
         const { pageUrl, goal, proposedChecks } = req.body as { pageUrl?: string; goal?: string; proposedChecks?: string[] };
         if (!pageUrl || !goal) {
@@ -582,7 +603,7 @@ export async function startServer(
           clientId,
           developmentRunId: `recovered-${Date.now()}`,
           goal,
-          baseUrl: pageUrl,
+          baseUrl: currentPageUrl,
           changedFiles: [],
           proposedChecks: Array.isArray(proposedChecks) ? proposedChecks : [],
         });
@@ -610,7 +631,10 @@ export async function startServer(
     try {
       const { pageUrl, ...command } = req.body as { pageUrl: string; [key: string]: unknown };
       if (!pageUrl) { res.status(400).json({ error: "pageUrl is required" }); return; }
-      res.json({ result: await executeCurrentTab(pageUrl, command) });
+      const running = verifications.runningForPage(pageUrl);
+      const clientIds = [...new Set(running.map((verification) => verification.clientId))];
+      if (clientIds.length > 1) throw new Error(`Multiple active verifications target ${pageUrl}; cancel the other runs first`);
+      res.json({ result: await executeCurrentTab(pageUrl, command, clientIds[0]) });
     } catch (error) { res.status(503).json({ error: error instanceof Error ? error.message : String(error) }); }
   });
 

@@ -1,6 +1,18 @@
 import { CleanupStack, type CleanupResult } from "./cleanup-stack.js";
 
 export type TestRunStatus = "preparing" | "running" | "cleaning" | "passed" | "failed" | "inconclusive" | "cancelled" | "timed_out";
+export type TestRunStepStatus = "pending" | "running" | "passed" | "failed";
+
+export interface TestRunStep {
+  id: string;
+  tool: string;
+  label: string;
+  status: TestRunStepStatus;
+  startedAt: string;
+  finishedAt?: string;
+  durationMs?: number;
+  error?: string;
+}
 
 export interface TestRun {
   id: string;
@@ -12,6 +24,7 @@ export interface TestRun {
   updatedAt: string;
   finishedAt?: string;
   error?: string;
+  steps: TestRunStep[];
   cleanup: CleanupResult[];
 }
 
@@ -40,6 +53,7 @@ export class TestRunStore {
       status: "preparing",
       startedAt: now,
       updatedAt: now,
+      steps: [],
       cleanup: [],
       cleanupStack: new CleanupStack(),
       timeout: setTimeout(() => void this.finish(id, "timed_out", "Test run timed out"), this.options.timeoutMs),
@@ -53,6 +67,33 @@ export class TestRunStore {
   markRunning(id: string): TestRun {
     const run = this.get(id);
     if (run.status === "preparing") this.patch(run, { status: "running" });
+    return this.public(run);
+  }
+
+  startStep(agentRunId: string, input: { id: string; tool: string; label: string }): TestRun | undefined {
+    const run = this.byAgentRun(agentRunId);
+    if (!run || !["preparing", "running"].includes(run.status)) return undefined;
+    const now = new Date().toISOString();
+    const existing = run.steps.find((step) => step.id === input.id);
+    if (existing) Object.assign(existing, { ...input, status: "running" as const, startedAt: now });
+    else run.steps.push({ ...input, status: "running", startedAt: now });
+    this.patch(run, { steps: run.steps });
+    return this.public(run);
+  }
+
+  finishStep(agentRunId: string, input: { id: string; success: boolean; error?: string }): TestRun | undefined {
+    const run = this.byAgentRun(agentRunId);
+    if (!run) return undefined;
+    const step = run.steps.find((item) => item.id === input.id);
+    if (!step) return undefined;
+    const finishedAt = new Date().toISOString();
+    Object.assign(step, {
+      status: input.success ? "passed" : "failed",
+      finishedAt,
+      durationMs: Math.max(0, Date.parse(finishedAt) - Date.parse(step.startedAt)),
+      error: input.error,
+    });
+    this.patch(run, { steps: run.steps });
     return this.public(run);
   }
 
@@ -73,6 +114,10 @@ export class TestRunStore {
 
   byVerification(verificationId: string): InternalRun | undefined {
     return [...this.runs.values()].reverse().find((run) => run.verificationId === verificationId);
+  }
+
+  byAgentRun(agentRunId: string): InternalRun | undefined {
+    return [...this.runs.values()].reverse().find((run) => run.agentRunId === agentRunId);
   }
 
   activeForClient(clientId: string): TestRun[] {
@@ -102,6 +147,6 @@ export class TestRunStore {
 
   private public(run: InternalRun): TestRun {
     const { cleanupStack: _cleanupStack, abort: _abort, timeout: _timeout, ...value } = run;
-    return { ...value, cleanup: [...value.cleanup] };
+    return { ...value, steps: value.steps.map((step) => ({ ...step })), cleanup: value.cleanup.map((item) => ({ ...item })) };
   }
 }

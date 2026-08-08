@@ -25,7 +25,7 @@ export type AgentEvent =
   | { type: "run.started"; runId: string }
   | { type: "message.delta"; runId: string; delta: string; messageId?: string }
   | { type: "tool.started"; runId: string; toolCallId: string; tool: string; label: string }
-  | { type: "tool.completed"; runId: string; toolCallId: string; tool: string; success: boolean }
+  | { type: "tool.completed"; runId: string; toolCallId: string; tool: string; success: boolean; error?: string }
   | { type: "file.changed"; runId: string; path: string; operation: "create" | "update" | "delete" }
   | { type: "run.completed"; runId: string; result: AgentResult }
   | { type: "run.failed"; runId: string; error: { message: string; code?: string; retryable?: boolean } }

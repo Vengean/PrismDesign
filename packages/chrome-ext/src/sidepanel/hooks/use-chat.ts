@@ -14,9 +14,11 @@ function formatVerificationMessage(content: string): string {
 export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sending, setSending] = useState(false);
+  const [testRun, setTestRun] = useState<TestRunInfo | null>(null);
 
   const applyTestRun = useCallback((run: TestRunInfo | null) => {
     if (!run) return;
+    setTestRun(run);
     const active = ["preparing", "running", "cleaning"].includes(run.status);
     setSending(active);
     setMessages((prev) => {
@@ -175,6 +177,7 @@ export function useChat() {
 
   const clearHistory = useCallback(() => {
     setMessages([]);
+    setTestRun(null);
     chrome.storage.local.remove(STORAGE_KEY);
   }, []);
 
@@ -202,5 +205,5 @@ export function useChat() {
     setMessages((prev) => [...prev, { role: "ai", content, timestamp: Date.now() }]);
   }, []);
 
-  return { messages, sending, sendMessage, startVerification, cancelCurrent, clearHistory, addSystemMessage };
+  return { messages, sending, testRun, sendMessage, startVerification, cancelCurrent, clearHistory, addSystemMessage };
 }

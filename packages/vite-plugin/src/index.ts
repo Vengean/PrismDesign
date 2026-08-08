@@ -200,6 +200,9 @@ export default function prismDesign(options: PrismDesignOptions = {}): Plugin {
           const projectRoot = config.root || process.cwd();
 
           const agentEnv: Record<string, string> = { ...process.env } as Record<string, string>;
+          // Dev servers show structured Agent/tool diagnostics by default.
+          // Full prompt bodies remain opt-in through PRISM_AGENT_DEBUG=1.
+          if (agentEnv.PRISM_AGENT_DEBUG_EVENTS === undefined) agentEnv.PRISM_AGENT_DEBUG_EVENTS = "1";
           if (agentType === "openai") {
             if (apiKey) agentEnv.OPENAI_API_KEY = apiKey;
             if (baseUrl) agentEnv.OPENAI_BASE_URL = baseUrl;

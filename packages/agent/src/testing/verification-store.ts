@@ -46,6 +46,18 @@ export class VerificationStore {
     return [...this.records.values()].reverse().find((record) => record.clientId === clientId && record.developmentRunId === developmentRunId);
   }
 
+  runningForPage(pageUrl: string): Verification[] {
+    let target: URL;
+    try { target = new URL(pageUrl); } catch { return []; }
+    return [...this.records.values()].filter((record) => {
+      if (!["preparing", "running"].includes(record.status)) return false;
+      try {
+        const candidate = new URL(record.baseUrl);
+        return candidate.origin === target.origin && candidate.pathname === target.pathname && candidate.search === target.search;
+      } catch { return false; }
+    });
+  }
+
   update(id: string, clientId: string, patch: Partial<Verification>): Verification {
     const record = this.getOwned(id, clientId);
     Object.assign(record, patch, { updatedAt: new Date().toISOString() });

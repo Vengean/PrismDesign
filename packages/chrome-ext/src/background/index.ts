@@ -12,9 +12,6 @@ import {
 import type { PrismMessage } from "../shared/types.js";
 import { executeCurrentTabCommand } from "./browser-controller.js";
 
-// Open side panel when clicking the extension icon
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
-
 /** Ensure content script is injected in the given tab. */
 async function ensureContentScript(tabId: number) {
   try {
@@ -69,6 +66,30 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
 // restart) before concluding the side panel is truly closed.
 
 let sidePanelOpen = false;
+let boundAgentTabId: number | undefined;
+
+function isBindablePage(url?: string): boolean {
+  return !!url && /^(https?|file):/i.test(url);
+}
+
+async function getBoundAgentTabId(): Promise<number | undefined> {
+  if (!boundAgentTabId) return undefined;
+  const tab = await chrome.tabs.get(boundAgentTabId).catch(() => undefined);
+  if (!tab?.id || !isBindablePage(tab.url)) {
+    boundAgentTabId = undefined;
+    return undefined;
+  }
+  return tab.id;
+}
+
+// Handle the toolbar click ourselves so Chrome gives us the exact originating
+// tab. The automatic side-panel behavior loses this association and forces an
+// unreliable active-tab query after the panel has already started opening.
+chrome.action.onClicked.addListener(async (tab) => {
+  if (!tab.id) return;
+  boundAgentTabId = tab.id;
+  await chrome.sidePanel.open({ tabId: tab.id });
+});
 
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name === "prism-sidepanel") {
@@ -83,8 +104,10 @@ chrome.runtime.onConnect.addListener((port) => {
 });
 
 async function handleSidePanelOpen() {
-  const tabId = await getActiveTabId();
+  const tabId = await getBoundAgentTabId() || await getActiveTabId();
   if (!tabId) return;
+  const openingTab = await chrome.tabs.get(tabId).catch(() => undefined);
+  if (isBindablePage(openingTab?.url)) boundAgentTabId = tabId;
   await ensureContentScript(tabId);
 
   // Show toolbar
@@ -122,7 +145,7 @@ async function handleSidePanelOpen() {
     // Already connected — notify side panel of current status
     broadcastToSidePanel({
       type: "AGENT_STATUS",
-      payload: { connected: true, project: state.project ?? undefined },
+      payload: { connected: true, project: state.project ?? undefined, boundTab: openingTab?.url ? { id: tabId, url: openingTab.url, title: openingTab.title } : undefined },
     });
   }
 }
@@ -132,7 +155,7 @@ async function handleSidePanelClose() {
   sendToActiveTab({ type: "HIDE_TOOLBAR" } as PrismMessage);
 
   // Disconnect agent
-  const tabId = await getActiveTabId();
+  const tabId = await getBoundAgentTabId();
   if (tabId) {
     const state = getTabState(tabId);
     if (state.connected) {
@@ -217,6 +240,10 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, sender, sendRespons
       handleAgentConnect(message.payload.url).then(sendResponse);
       return true;
 
+    case "AGENT_BIND_CURRENT_TAB":
+      handleBindCurrentTab().then(sendResponse);
+      return true;
+
     case "AGENT_DISCONNECT":
       handleAgentDisconnect().then(sendResponse);
       return true;
@@ -239,9 +266,10 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, sender, sendRespons
 
     case "AGENT_GET_RUNTIME_STATE":
       (async () => {
-        const tabId = await getActiveTabId();
+        const tabId = await getBoundAgentTabId();
         const state = tabId ? getTabState(tabId) : undefined;
-        sendResponse({ connected: state?.connected || false, testRun: state?.currentTestRun || null, agentWorking: state?.agentWorking || false, agentProgress: state?.agentProgress || "" });
+        const tab = tabId ? await chrome.tabs.get(tabId).catch(() => undefined) : undefined;
+        sendResponse({ connected: state?.connected || false, testRun: state?.currentTestRun || null, agentWorking: state?.agentWorking || false, agentProgress: state?.agentProgress || "", boundTab: tab?.id && tab.url ? { id: tab.id, url: tab.url, title: tab.title } : null });
       })();
       return true;
 
@@ -277,9 +305,12 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, sender, sendRespons
 // Agent operation handlers
 // ============================================================
 
-async function handleAgentConnect(url: string) {
-  const tabId = await getActiveTabId();
+async function handleAgentConnect(url: string, requestedTabId?: number) {
+  const tabId = requestedTabId || await getBoundAgentTabId() || await getActiveTabId();
   if (!tabId) return { success: false, error: "no active tab" };
+  const tab = await chrome.tabs.get(tabId);
+  if (!isBindablePage(tab.url)) return { success: false, error: "当前页面不是可操作的 Web 页面" };
+  boundAgentTabId = tabId;
 
   const state = getTabState(tabId);
 
@@ -324,7 +355,7 @@ async function handleAgentConnect(url: string) {
         state.currentTestRun = data as any;
         broadcastToSidePanel({ type: "TEST_RUN_UPDATE", payload: data as any });
       }
-    }, (command) => executeCurrentTabCommand(tabId, command), (await chrome.tabs.get(tabId)).url);
+    }, (command) => executeCurrentTabCommand(tabId, command), tab.url);
 
     const runtime = await getAgentRuntimeState(state).catch(() => ({ activeTestRuns: [], activeAgentRuns: [] }));
     state.currentTestRun = runtime.activeTestRuns[0] || null;
@@ -337,7 +368,7 @@ async function handleAgentConnect(url: string) {
 
     broadcastToSidePanel({
       type: "AGENT_STATUS",
-      payload: { connected: true, project },
+      payload: { connected: true, project, boundTab: { id: tabId, url: tab.url!, title: tab.title } },
     });
     if (state.currentTestRun) broadcastToSidePanel({ type: "TEST_RUN_UPDATE", payload: state.currentTestRun });
     if (state.agentWorking) {
@@ -352,8 +383,33 @@ async function handleAgentConnect(url: string) {
   }
 }
 
-async function handleAgentDisconnect() {
+async function handleBindCurrentTab() {
   const tabId = await getActiveTabId();
+  if (!tabId) return { success: false, error: "找不到当前标签页" };
+  const tab = await chrome.tabs.get(tabId);
+  if (!isBindablePage(tab.url)) return { success: false, error: `无法绑定 ${tab.url || "当前页面"}，请切换到 HTTP(S) 应用页面` };
+
+  const previousTabId = await getBoundAgentTabId();
+  const previousState = previousTabId ? getTabState(previousTabId) : undefined;
+  const saved = await chrome.storage.local.get("agentUrl");
+  const agentUrl = previousState?.agentUrl || saved.agentUrl || `http://${new URL(tab.url!).hostname}:9527`;
+  if (previousState?.connected && previousTabId !== tabId) disconnectAgent(previousState);
+  boundAgentTabId = tabId;
+
+  const state = getTabState(tabId);
+  // Explicit binding is also a connection repair action. Never trust a stale
+  // `connected` flag from an earlier Agent process or side-panel lifecycle.
+  if (state.connected || state.ws) disconnectAgent(state);
+  const connected = await handleAgentConnect(agentUrl, tabId);
+  if (!connected.success) return connected;
+  const project = connected.project || null;
+  const boundTab = { id: tabId, url: tab.url!, title: tab.title };
+  broadcastToSidePanel({ type: "AGENT_STATUS", payload: { connected: true, project: project || undefined, boundTab } });
+  return { success: true, boundTab };
+}
+
+async function handleAgentDisconnect() {
+  const tabId = await getBoundAgentTabId();
   if (!tabId) return { success: false };
 
   const state = getTabState(tabId);
@@ -368,7 +424,7 @@ async function handleAgentDisconnect() {
 }
 
 async function handleChat(payload: { message: string }) {
-  const tabId = await getActiveTabId();
+  const tabId = await getBoundAgentTabId();
   if (!tabId) return { success: false, error: "no active tab" };
 
   const state = getTabState(tabId);
@@ -396,7 +452,7 @@ async function handleChat(payload: { message: string }) {
 }
 
 async function handleStartVerification(verification: { id: string; goal: string; proposedChecks: string[] }) {
-  const tabId = await getActiveTabId();
+  const tabId = await getBoundAgentTabId();
   if (!tabId) return { success: false, error: "no active tab" };
   const state = getTabState(tabId);
   if (!state.connected) return { success: false, error: "not connected" };
@@ -410,7 +466,7 @@ async function handleStartVerification(verification: { id: string; goal: string;
 }
 
 async function handleCancelCurrent() {
-  const tabId = await getActiveTabId();
+  const tabId = await getBoundAgentTabId();
   if (!tabId) return { success: false, error: "no active tab" };
   try {
     return await cancelCurrentAgentRun(getTabState(tabId));
@@ -420,7 +476,7 @@ async function handleCancelCurrent() {
 }
 
 async function handleRollback() {
-  const tabId = await getActiveTabId();
+  const tabId = await getBoundAgentTabId();
   if (!tabId) return { success: false };
 
   const state = getTabState(tabId);

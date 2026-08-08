@@ -1,9 +1,9 @@
 import { useRef, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Send, Trash2, MessageSquare, Plug, Loader2, AlertCircle } from "lucide-react";
+import { Send, Trash2, MessageSquare, Plug, Loader2, AlertCircle, CheckCircle2, Circle, XCircle, Clock3, Sparkles, Eraser, MonitorUp } from "lucide-react";
 import { t } from "../../shared/i18n.js";
-import type { ChatMessage, ElementSelection } from "../../shared/types.js";
+import type { ChatMessage, ElementSelection, TestRunInfo } from "../../shared/types.js";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -14,13 +14,17 @@ interface AgentState {
   agentUrl: string;
   setAgentUrl: (url: string) => void;
   connect: (url: string) => Promise<void>;
+  boundTab: { id: number; url: string; title?: string } | null;
+  bindCurrentTab: () => Promise<boolean>;
 }
 
 interface ChatState {
   messages: ChatMessage[];
   sending: boolean;
+  testRun: TestRunInfo | null;
   sendMessage: (text: string) => void;
   startVerification: (verification: NonNullable<ChatMessage["verification"]>) => void;
+  cancelCurrent: () => void;
   clearHistory: () => void;
 }
 
@@ -36,7 +40,7 @@ export function ChatPanel({ agent, chat, selection }: { agent: AgentState; chat:
       </div>
     );
   }
-  return <ChatView chat={chat} selection={selection} />;
+  return <ChatView agent={agent} chat={chat} selection={selection} />;
 }
 
 function ConnectionForm({ agent }: { agent: AgentState }) {
@@ -102,8 +106,8 @@ function formatSelectionContext(sel: ElementSelection): string {
   return lines.join("\n");
 }
 
-function ChatView({ chat, selection }: { chat: ChatState; selection: ElementSelection | null }) {
-  const { messages, sending, sendMessage, startVerification, cancelCurrent, clearHistory } = chat;
+function ChatView({ agent, chat, selection }: { agent: AgentState; chat: ChatState; selection: ElementSelection | null }) {
+  const { messages, sending, testRun, sendMessage, startVerification, cancelCurrent, clearHistory } = chat;
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -127,6 +131,15 @@ function ChatView({ chat, selection }: { chat: ChatState; selection: ElementSele
 
   return (
     <div className="flex flex-col h-full">
+      <div className="border-b px-3 py-2 flex items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="text-[10px] text-muted-foreground">当前浏览器目标</div>
+          <div className="truncate text-xs" title={agent.boundTab?.url}>{agent.boundTab?.title || agent.boundTab?.url || "尚未绑定页面"}</div>
+        </div>
+        <Button size="sm" variant="outline" className="h-7 shrink-0 px-2 text-xs" onClick={() => void agent.bindCurrentTab()} disabled={sending}>
+          <MonitorUp className="mr-1 h-3.5 w-3.5" />绑定当前页面
+        </Button>
+      </div>
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-xs gap-2 py-8">
@@ -134,7 +147,8 @@ function ChatView({ chat, selection }: { chat: ChatState; selection: ElementSele
             <p className="text-center leading-relaxed">{t("chat.empty").split("\n").map((line, i) => <span key={i}>{line}<br /></span>)}</p>
           </div>
         ) : (
-          messages.map((msg, i) => (
+          <>
+          {messages.map((msg, i) => (
             <div key={i} className={`flex gap-2 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
               {msg.role === "ai" && (
                 <div className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[9px] font-bold shrink-0 mt-0.5">AI</div>
@@ -173,7 +187,9 @@ function ChatView({ chat, selection }: { chat: ChatState; selection: ElementSele
                 )}
               </div>
             </div>
-          ))
+          ))}
+          {testRun && <TestRunCard run={testRun} onCancel={cancelCurrent} />}
+          </>
         )}
       </div>
 
@@ -201,6 +217,61 @@ function ChatView({ chat, selection }: { chat: ChatState; selection: ElementSele
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+const terminalRunStatuses = ["passed", "failed", "inconclusive", "cancelled", "timed_out"];
+
+function durationLabel(startedAt: string, finishedAt?: string) {
+  const milliseconds = Math.max(0, Date.parse(finishedAt || new Date().toISOString()) - Date.parse(startedAt));
+  return milliseconds < 1000 ? `${milliseconds} ms` : `${(milliseconds / 1000).toFixed(milliseconds < 10_000 ? 1 : 0)} s`;
+}
+
+function TestRunCard({ run, onCancel }: { run: TestRunInfo; onCancel: () => void }) {
+  const active = !terminalRunStatuses.includes(run.status);
+  const title: Record<TestRunInfo["status"], string> = {
+    preparing: "正在准备测试", running: "正在执行测试", cleaning: "正在清理资源",
+    passed: "测试通过", failed: "测试未通过", inconclusive: "测试结果不确定",
+    cancelled: "测试已取消", timed_out: "测试已超时",
+  };
+  const StatusIcon = run.status === "passed" ? CheckCircle2 : ["failed", "timed_out"].includes(run.status) ? XCircle : active ? Loader2 : AlertCircle;
+
+  return (
+    <div className="ml-7 rounded-xl border bg-background p-3 text-xs space-y-3 shadow-sm">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 font-medium">
+          <StatusIcon className={`h-4 w-4 ${active ? "animate-spin text-primary" : run.status === "passed" ? "text-emerald-600" : "text-destructive"}`} />
+          <span>{title[run.status]}</span>
+        </div>
+        <span className="flex items-center gap-1 text-[10px] text-muted-foreground"><Clock3 className="h-3 w-3" />{durationLabel(run.startedAt, run.finishedAt)}</span>
+      </div>
+
+      {run.steps.length > 0 && <div className="space-y-1.5">
+        <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground"><Sparkles className="h-3 w-3" />实际执行步骤</div>
+        {run.steps.map((step) => {
+          const StepIcon = step.status === "passed" ? CheckCircle2 : step.status === "failed" ? XCircle : step.status === "running" ? Loader2 : Circle;
+          return <div key={step.id} className="flex items-start gap-2 rounded-md bg-muted/60 px-2 py-1.5">
+            <StepIcon className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${step.status === "running" ? "animate-spin text-primary" : step.status === "passed" ? "text-emerald-600" : step.status === "failed" ? "text-destructive" : "text-muted-foreground"}`} />
+            <div className="min-w-0 flex-1">
+              <div className="break-words">{step.label}</div>
+              {step.error && <div className="mt-0.5 text-destructive">{step.error}</div>}
+            </div>
+            {step.durationMs !== undefined && <span className="shrink-0 text-[10px] text-muted-foreground">{durationLabel(step.startedAt, step.finishedAt)}</span>}
+          </div>;
+        })}
+      </div>}
+
+      {run.cleanup.length > 0 && <div className="space-y-1.5">
+        <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground"><Eraser className="h-3 w-3" />清理结果</div>
+        {run.cleanup.map((item) => <div key={item.id} className="flex items-start gap-2 px-1">
+          {item.success ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 text-emerald-600" /> : <XCircle className="mt-0.5 h-3.5 w-3.5 text-destructive" />}
+          <div><div>{item.label}</div>{item.error && <div className="text-destructive">{item.error}</div>}</div>
+        </div>)}
+      </div>}
+
+      {run.error && <div className="rounded-md bg-destructive/10 p-2 text-destructive">{run.error}</div>}
+      {active && <Button size="sm" variant="destructive" className="h-7 w-full text-xs" onClick={onCancel}>取消运行</Button>}
     </div>
   );
 }

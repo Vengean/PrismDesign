@@ -62,7 +62,7 @@ export class OpenAIProvider implements AgentProvider {
         emit({ type: "tool.completed", runId, toolCallId, tool: name, success: true });
         return result;
       } catch (error) {
-        emit({ type: "tool.completed", runId, toolCallId, tool: name, success: false });
+        emit({ type: "tool.completed", runId, toolCallId, tool: name, success: false, error: error instanceof Error ? error.message : String(error) });
         throw error;
       }
     };

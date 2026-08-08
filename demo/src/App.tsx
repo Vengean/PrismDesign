@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
-import { ArrowRight, CalendarDays, Check, ChevronRight, Clock3, Eye, EyeOff, FileText, LoaderCircle, LockKeyhole, LogOut, Mail, Menu, NotebookPen, Pencil, Plus, Search, ShieldCheck, Sparkles, X } from 'lucide-react'
+import { ArrowRight, CalendarDays, Check, ChevronRight, Clock3, Eye, EyeOff, LoaderCircle, LockKeyhole, LogOut, Mail, Menu, NotebookPen, Pencil, Plus, Search, ShieldCheck, Sparkles, X } from 'lucide-react'
 import { Button } from './components/ui/button'
 import { Checkbox } from './components/ui/checkbox'
 import { Input } from './components/ui/input'
@@ -237,7 +237,6 @@ export default function App() {
           {errors.form && <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{errors.form}</div>}
           <Button type="submit" disabled={isLoading} className="group h-12 w-full rounded-xl text-sm shadow-[0_8px_22px_rgba(0,0,0,0.14)]">{isLoading ? <><LoaderCircle className="h-4 w-4 animate-spin" />{authMode === 'login' ? '正在验证...' : '正在创建...'}</> : <>{authMode === 'login' ? '登录' : '创建账户'}<ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" /></>}</Button></form>
           <p className="mt-6 text-center text-sm text-[#777]">{authMode === 'login' ? '还没有账户？' : '已经有账户？'}<button type="button" onClick={switchAuthMode} className="ml-1.5 font-medium text-[#80683e] hover:underline">{authMode === 'login' ? '立即注册' : '返回登录'}</button></p>
-          {authMode === 'login' && <div className="mt-7 rounded-xl border border-[#e5dfd2] bg-[#fbf8f1] px-4 py-3 text-xs text-[#756b58]"><div className="mb-1 flex items-center gap-2 font-medium"><FileText className="h-3.5 w-3.5" />体验账号</div><p>demo@prism.cn · Prism2026</p></div>}
         </div>
       </section>
     </main>
