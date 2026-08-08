@@ -308,7 +308,7 @@ export async function startServer(
       sessionId ? `Existing browser sessionId: ${sessionId}` : `Start a browser session with the prism_browser/browser_start MCP tool using baseUrl: ${verification.baseUrl}`,
       `Initial observation: ${JSON.stringify(observation)}`,
       provider.name === "codex"
-        ? "Use the prism_browser MCP tools to start, observe, operate, and verify the real application now."
+        ? "Use prism_browser/browser_start and the other prism_browser MCP tools to operate the Chrome extension's bound current tab. Do not use a generic, in-app, isolated, or browser-list/availability tool."
         : "Use browser_observe, browser_action, and browser_evidence to operate and verify the real application now.",
       "Do not write a test script. Report what was actually observed. Stop the browser when finished.",
       "When test prerequisites are missing, use the available project fixture skill and fixture MCP tools to create isolated test data, then clean up that verification's data after testing.",

@@ -127,9 +127,15 @@ Chrome 连接规则：
 
 - WebSocket 打开并完成 `browser:register` 后才显示已连接。
 - URL 变化和页面加载完成时重新注册。
-- 用户点击插件图标时直接使用 `chrome.action.onClicked(tab)` 绑定确切 Tab，也可通过侧边栏按钮重新绑定当前页面。
+- 用户点击插件图标时直接使用 `chrome.action.onClicked(tab)` 确定确切 Tab。
+- 绑定的 `tabId` 保存到 `chrome.storage.session`，Service Worker 重启后恢复并验证该 Tab；绑定失效时要求用户重新选择。
+- Chrome 通过“打开侧边栏”入口绕过 `action.onClicked` 时，Side Panel 仅在首次打开且没有绑定的瞬间读取最后聚焦普通窗口的 active Web Tab，并立即固化；运行期间不跟随 active Tab。
+- Side Panel 已打开时再次点击其他页面的插件图标，会显式断开旧 Tab 并将 Agent/WebSocket 重绑到新 Tab。
 - `browser_start` 最多等待 8 秒完成当前 Tab 注册，并仅对绑定的 HTTP(S)/file Tab 执行 `chrome.debugger.attach`。
+- Prism Browser MCP 固定使用 Chrome 插件提供的 current-tab CDP 运行时。
+- Codex SDK 子进程局部禁用继承自桌面 Codex 的 bundled Browser 插件和 node_repl 浏览器后端，避免模型绕过 `prism_browser` 选择无实例的通用运行时；不修改用户全局 Codex 配置。
 - 页面跳转后保持同一个 `tabId`，不重新查询 active Tab；Runtime/Input/Page/Network 由 CDP 提供。
+- `browser_fill` 对 input/textarea 使用 CDP Runtime 原生 value setter 与 input/change 事件，避免账号密码 Autofill UI 抢焦点；contenteditable 使用 CDP Input。
 - 测试完成、失败、取消或超时时由服务端兜底 detach。
 
 ## 6. Fixture 与当前登录态
@@ -186,7 +192,7 @@ type TestRunStatus =
 
 可靠性规则：
 
-- 默认整体超时 120 秒，可用 `PRISM_TEST_RUN_TIMEOUT_MS` 调整。
+- 默认空闲超时 120 秒，每次工具开始或完成时重新计时；可用 `PRISM_TEST_RUN_TIMEOUT_MS` 调整。
 - 用户可点击“取消运行”，同时 abort Agent 并执行 Cleanup Stack。
 - Chrome WebSocket 断开后有 10 秒重连宽限；超时仍未恢复则取消活跃 Test Run。
 - Agent Server 保存活跃 Agent Run 的最近阶段和进度，侧边栏重开后立即恢复状态，无需等待下一个事件。
@@ -251,7 +257,7 @@ GET /api/browser/diagnostics
 ### 第二阶段：可视化
 
 1. **结构化步骤事件**（已完成基础链路）：记录并展示 Agent 实际选择和执行的工具动作，不预设固定步骤或强制使用 Fixture。
-2. **实时步骤卡片**（已完成）：显示 pending/running/passed/failed、耗时和错误；支持取消。
+2. **测试结果详情**（已完成）：处理状态和最终结果归并在同一条对话消息中；测试完成后可按需展开实际步骤、耗时和错误。
 3. **Screenshot 查看**：展示关键截图并允许放大。
 4. **Network/Console 证据**：按请求、状态码、Console/Page Error 分类展示并脱敏。
 5. **清理结果展示**（已完成基础链路）：展示浏览器资源和项目 Fixture 的清理结果。

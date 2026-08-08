@@ -63,6 +63,8 @@ export interface ChatMessage {
   content: string;
   timestamp: number;
   verification?: { id: string; goal: string; proposedChecks: string[]; status?: string; summary?: string };
+  /** Test execution details rendered inside this assistant message. */
+  testRun?: TestRunInfo;
   /** Transient target for streaming/progress events of the active request. */
   pending?: boolean;
   streamItemId?: string;
@@ -149,7 +151,6 @@ export type UpstreamMessage =
 // Agent operations: Side Panel -> Background (not forwarded to content)
 export type AgentMessage =
   | { type: "AGENT_CONNECT"; payload: { url: string } }
-  | { type: "AGENT_BIND_CURRENT_TAB" }
   | { type: "AGENT_DISCONNECT" }
   | { type: "AGENT_APPLY_CHANGES"; payload: { changes: StyleChange[]; pagePath?: string; supplement?: string } }
   | { type: "AGENT_CHAT"; payload: { message: string; context: { pagePath: string; components: ComponentInfo[] } } }
@@ -160,7 +161,7 @@ export type AgentMessage =
 
 // Agent events: Background -> Side Panel
 export type AgentEventMessage =
-  | { type: "AGENT_STATUS"; payload: { connected: boolean; connecting?: boolean; agentUrl?: string; error?: string; project?: ProjectInfo; provider?: string; model?: string; capabilities?: AgentCapabilities; boundTab?: { id: number; url: string; title?: string } } }
+  | { type: "AGENT_STATUS"; payload: { connected: boolean; connecting?: boolean; agentUrl?: string; error?: string; project?: ProjectInfo; provider?: string; model?: string; capabilities?: AgentCapabilities } }
   | { type: "AGENT_WORKING"; payload: { working: boolean } }
   | { type: "AGENT_PROGRESS"; payload: { text: string } }
   | { type: "AGENT_TEXT_DELTA"; payload: { runId: string; delta: string; messageId?: string } }

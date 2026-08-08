@@ -8,7 +8,6 @@ export function useAgent() {
   const [error, setError] = useState<string | null>(null);
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [aiWorking, setAiWorking] = useState(false);
-  const [boundTab, setBoundTab] = useState<{ id: number; url: string; title?: string } | null>(null);
   const [agentUrl, setAgentUrl] = useState(() => {
     // Default to current page's hostname so LAN access works out of the box
     try {
@@ -48,7 +47,6 @@ export function useAgent() {
           connectingRef.current = false;
           if (message.payload.error) setError(message.payload.error);
           if (message.payload.project) setProject(message.payload.project as ProjectInfo);
-          if (message.payload.boundTab) setBoundTab(message.payload.boundTab);
           break;
         case "AGENT_WORKING":
           setAiWorking(message.payload.working);
@@ -91,19 +89,8 @@ export function useAgent() {
     return chrome.runtime.sendMessage({ type: "AGENT_ROLLBACK" }) as Promise<{ success: boolean }>;
   }, []);
 
-  const bindCurrentTab = useCallback(async () => {
-    setError(null);
-    const result = await chrome.runtime.sendMessage({ type: "AGENT_BIND_CURRENT_TAB" }) as { success?: boolean; error?: string; boundTab?: { id: number; url: string; title?: string } };
-    if (!result?.success) {
-      setError(result?.error || "无法绑定当前页面");
-      return false;
-    }
-    if (result.boundTab) setBoundTab(result.boundTab);
-    return true;
-  }, []);
-
   return {
-    connected, connecting, error, project, aiWorking, agentUrl, boundTab, setAgentUrl,
-    connect, disconnect, rollback, bindCurrentTab,
+    connected, connecting, error, project, aiWorking, agentUrl, setAgentUrl,
+    connect, disconnect, rollback,
   };
 }

@@ -14,20 +14,25 @@ function formatVerificationMessage(content: string): string {
 export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sending, setSending] = useState(false);
-  const [testRun, setTestRun] = useState<TestRunInfo | null>(null);
 
   const applyTestRun = useCallback((run: TestRunInfo | null) => {
     if (!run) return;
-    setTestRun(run);
     const active = ["preparing", "running", "cleaning"].includes(run.status);
     setSending(active);
     setMessages((prev) => {
       const updated = [...prev];
+      const verificationIndex = updated.findLastIndex((message) => message.role === "ai" && message.verification?.id === run.verificationId);
       const pendingIndex = updated.findLastIndex((message) => message.role === "ai" && message.pending);
-      if (active) {
-        const content = run.status === "cleaning" ? "⏳ 正在清理测试资源…" : "⏳ 测试运行中…";
-        if (pendingIndex >= 0) updated[pendingIndex] = { ...updated[pendingIndex], content };
-        else updated.push({ role: "ai", content, timestamp: Date.now(), pending: true });
+      const targetIndex = verificationIndex >= 0 ? verificationIndex : pendingIndex;
+      const content = run.status === "cleaning" ? "⏳ 正在清理测试资源…" : "⏳ 测试运行中…";
+      if (targetIndex >= 0) {
+        updated[targetIndex] = {
+          ...updated[targetIndex],
+          testRun: run,
+          content: active ? content : updated[targetIndex].content,
+        };
+      } else {
+        updated.push({ role: "ai", content: active ? content : "测试运行已结束。", timestamp: Date.now(), pending: active, testRun: run });
       }
       return updated;
     });
@@ -119,13 +124,16 @@ export function useChat() {
           const updated = [...prev];
           const lastIdx = updated.findLastIndex((m) => m.role === "ai" && m.pending);
           if (lastIdx >= 0) {
+            const previous = updated[lastIdx];
             updated[lastIdx] = {
+              ...previous,
               role: "ai",
               content: message.payload.success
                 ? formatVerificationMessage(message.payload.message || t("chat.done"))
                 : `${t("chat.error")}: ${formatVerificationMessage(message.payload.message)}`,
               timestamp: Date.now(),
-              verification: message.payload.verification,
+              pending: false,
+              verification: message.payload.verification || previous.verification,
             };
           } else {
             updated.push({
@@ -143,7 +151,7 @@ export function useChat() {
           const updated = [...prev];
           const lastIdx = updated.findLastIndex((m) => m.role === "ai" && m.pending);
           if (lastIdx >= 0) {
-            updated[lastIdx] = { role: "ai", content: `${t("chat.error")}: ${message.payload.message}`, timestamp: Date.now() };
+            updated[lastIdx] = { ...updated[lastIdx], content: `${t("chat.error")}: ${message.payload.message}`, timestamp: Date.now(), pending: false };
           }
           return updated;
         });
@@ -177,7 +185,6 @@ export function useChat() {
 
   const clearHistory = useCallback(() => {
     setMessages([]);
-    setTestRun(null);
     chrome.storage.local.remove(STORAGE_KEY);
   }, []);
 
@@ -187,17 +194,21 @@ export function useChat() {
 
   const startVerification = useCallback(async (verification: NonNullable<ChatMessage["verification"]>) => {
     setMessages((prev) => prev.map((message) => message.verification?.id === verification.id
-      ? { ...message, verification: { ...message.verification, status: "running" } }
-      : message).concat({ role: "ai", content: `⏳ 正在启动当前页面测试…`, timestamp: Date.now(), pending: true }));
+      ? { ...message, content: "⏳ 正在启动当前页面测试…", pending: true, verification: { ...message.verification, status: "running" } }
+      : message));
     const result = await chrome.runtime.sendMessage({ type: "AGENT_START_VERIFICATION", payload: { verification } }) as any;
     setMessages((prev) => {
-      const withoutThinking = prev.filter((message) => !message.pending);
       const status = result?.success
         ? (/VERIFICATION_RESULT:\s*PASSED/i.test(result.agentResult?.message || "") ? "passed" : /VERIFICATION_RESULT:\s*FAILED/i.test(result.agentResult?.message || "") ? "failed" : "inconclusive")
         : "failed";
-      return withoutThinking.map((message) => message.verification?.id === verification.id
-        ? { ...message, verification: { ...message.verification, status } }
-        : message).concat({ role: "ai", content: result?.success ? formatVerificationMessage(result.agentResult?.message || "测试已完成。") : result?.error === "Agent 服务连接已中断，本次测试未能完成，可重新测试。" ? result.error : `浏览器测试启动失败：${result?.error || "未知错误"}`, timestamp: Date.now() });
+      const content = result?.success
+        ? formatVerificationMessage(result.agentResult?.message || "测试已完成。")
+        : result?.error === "Agent 服务连接已中断，本次测试未能完成，可重新测试。"
+          ? result.error
+          : `浏览器测试启动失败：${result?.error || "未知错误"}`;
+      return prev.map((message) => message.verification?.id === verification.id
+        ? { ...message, content, pending: false, timestamp: Date.now(), verification: { ...message.verification, status } }
+        : message);
     });
   }, []);
 
@@ -205,5 +216,5 @@ export function useChat() {
     setMessages((prev) => [...prev, { role: "ai", content, timestamp: Date.now() }]);
   }, []);
 
-  return { messages, sending, testRun, sendMessage, startVerification, cancelCurrent, clearHistory, addSystemMessage };
+  return { messages, sending, sendMessage, startVerification, cancelCurrent, clearHistory, addSystemMessage };
 }

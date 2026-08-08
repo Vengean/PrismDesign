@@ -48,7 +48,9 @@ async function attach(tabId: number) {
     await chrome.debugger.attach({ tabId }, "1.3");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (!/already attached/i.test(message)) throw error;
+    if (!/already attached/i.test(message)) {
+      throw new Error(message);
+    }
     await command(tabId, "Runtime.enable");
   }
   sessions.add(tabId);
@@ -148,6 +150,27 @@ async function focusElement(tabId: number, target: NonNullable<CurrentTabCommand
   await evaluate(tabId, `(() => { const el=${expression}; if(!el) throw new Error('Element not found'); if(!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el.isContentEditable)) throw new Error('Element is not fillable'); el.scrollIntoView({block:'center'}); el.focus(); return true; })()`);
 }
 
+async function fillElement(tabId: number, target: NonNullable<CurrentTabCommand["target"]>, value: string) {
+  const expression = targetExpression(tabId, target);
+  return evaluate<{ contentEditable: boolean; length: number }>(tabId, `(() => {
+    const el=${expression};
+    if(!el) throw new Error('Element not found');
+    if(el.disabled || el.readOnly) throw new Error('Element is disabled or read-only');
+    el.scrollIntoView({block:'center'});
+    if(el.isContentEditable) return {contentEditable:true,length:0};
+    if(!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) throw new Error('Element is not fillable');
+    const prototype=el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const setter=Object.getOwnPropertyDescriptor(prototype,'value')?.set;
+    if(!setter) throw new Error('Native value setter not found');
+    const nextValue=${JSON.stringify(value)};
+    setter.call(el,nextValue);
+    el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:nextValue}));
+    el.dispatchEvent(new Event('change',{bubbles:true}));
+    if(el.value!==nextValue) throw new Error('The page rejected the filled value');
+    return {contentEditable:false,length:el.value.length};
+  })()`);
+}
+
 async function pressKey(tabId: number, key: string, modifiers = 0) {
   await command(tabId, "Input.dispatchKeyEvent", { type: "keyDown", key, modifiers });
   await command(tabId, "Input.dispatchKeyEvent", { type: "keyUp", key, modifiers });
@@ -202,11 +225,15 @@ export async function executeCurrentTabCommand(tabId: number, input: CurrentTabC
       await command(tabId, "Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", clickCount: 1 });
       await command(tabId, "Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", clickCount: 1 });
     } else if (input.action === "fill") {
-      await focusElement(tabId, input.target);
-      const modifier = /Mac/i.test(navigator.userAgent) ? 4 : 2;
-      await pressKey(tabId, "a", modifier);
-      await pressKey(tabId, "Backspace");
-      await command(tabId, "Input.insertText", { text: input.value || "" });
+      const value = input.value || "";
+      const result = await fillElement(tabId, input.target, value);
+      if (result.contentEditable) {
+        await focusElement(tabId, input.target);
+        await command(tabId, "Input.dispatchKeyEvent", { type: "keyDown", key: "a", modifiers: /Mac/i.test(navigator.userAgent) ? 4 : 2, commands: ["selectAll"] });
+        await command(tabId, "Input.dispatchKeyEvent", { type: "keyUp", key: "a", modifiers: /Mac/i.test(navigator.userAgent) ? 4 : 2 });
+        await pressKey(tabId, "Backspace");
+        await command(tabId, "Input.insertText", { text: value });
+      }
     } else if (input.action === "press") {
       await focusElement(tabId, input.target);
       await pressKey(tabId, input.key || "Enter");

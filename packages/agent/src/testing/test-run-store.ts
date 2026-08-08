@@ -31,7 +31,7 @@ export interface TestRun {
 interface InternalRun extends TestRun {
   cleanupStack: CleanupStack;
   abort?: () => void;
-  timeout: ReturnType<typeof setTimeout>;
+  timeout?: ReturnType<typeof setTimeout>;
 }
 
 export class TestRunStore {
@@ -56,10 +56,9 @@ export class TestRunStore {
       steps: [],
       cleanup: [],
       cleanupStack: new CleanupStack(),
-      timeout: setTimeout(() => void this.finish(id, "timed_out", "Test run timed out"), this.options.timeoutMs),
     };
-    run.timeout.unref?.();
     this.runs.set(id, run);
+    this.refreshTimeout(run);
     this.emit(run);
     return this.public(run);
   }
@@ -77,6 +76,7 @@ export class TestRunStore {
     const existing = run.steps.find((step) => step.id === input.id);
     if (existing) Object.assign(existing, { ...input, status: "running" as const, startedAt: now });
     else run.steps.push({ ...input, status: "running", startedAt: now });
+    this.refreshTimeout(run);
     this.patch(run, { steps: run.steps });
     return this.public(run);
   }
@@ -93,6 +93,7 @@ export class TestRunStore {
       durationMs: Math.max(0, Date.parse(finishedAt) - Date.parse(step.startedAt)),
       error: input.error,
     });
+    this.refreshTimeout(run);
     this.patch(run, { steps: run.steps });
     return this.public(run);
   }
@@ -139,6 +140,15 @@ export class TestRunStore {
   private patch(run: InternalRun, patch: Partial<TestRun>): void {
     Object.assign(run, patch, { updatedAt: new Date().toISOString() });
     this.emit(run);
+  }
+
+  private refreshTimeout(run: InternalRun): void {
+    clearTimeout(run.timeout);
+    run.timeout = setTimeout(
+      () => void this.finish(run.id, "timed_out", `Test run timed out after ${this.options.timeoutMs}ms without tool activity`),
+      this.options.timeoutMs,
+    );
+    run.timeout.unref?.();
   }
 
   private emit(run: InternalRun): void {

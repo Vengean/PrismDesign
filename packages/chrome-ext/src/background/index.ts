@@ -35,20 +35,27 @@ chrome.runtime.onInstalled.addListener(async () => {
 // Clean up tab state when tab is closed
 chrome.tabs.onRemoved.addListener((tabId) => {
   removeTab(tabId);
+  if (boundAgentTabId === tabId) void clearBoundAgentTab();
 });
 
 // Ensure content script when active tab changes
 chrome.tabs.onActivated.addListener(async (info) => {
-  await ensureContentScript(info.tabId);
-  // If side panel is open, show toolbar on the new tab
-  if (sidePanelOpen) {
+  const boundTabId = await getBoundAgentTabId();
+  if (sidePanelOpen && boundTabId === info.tabId) {
+    await ensureContentScript(info.tabId);
     chrome.tabs.sendMessage(info.tabId, { type: "SHOW_TOOLBAR" }).catch(() => {});
   }
 });
 
 // When a page finishes loading, re-show toolbar if side panel is open
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
-  if (changeInfo.url) updateBrowserRegistration(getTabState(tabId), changeInfo.url);
+  const boundTabId = await getBoundAgentTabId();
+  if (boundTabId !== tabId) return;
+  if (changeInfo.url) {
+    updateBrowserRegistration(getTabState(tabId), changeInfo.url);
+    const changedTab = await chrome.tabs.get(tabId).catch(() => undefined);
+    if (changedTab) await persistBoundAgentTab(changedTab);
+  }
   if (changeInfo.status === "complete" && sidePanelOpen) {
     const tab = await chrome.tabs.get(tabId);
     if (tab.url) updateBrowserRegistration(getTabState(tabId), tab.url);
@@ -67,28 +74,61 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
 
 let sidePanelOpen = false;
 let boundAgentTabId: number | undefined;
+const BOUND_AGENT_TAB_KEY = "boundAgentTab";
+
+interface PersistedBoundTab {
+  tabId: number;
+}
 
 function isBindablePage(url?: string): boolean {
   return !!url && /^(https?|file):/i.test(url);
 }
 
 async function getBoundAgentTabId(): Promise<number | undefined> {
-  if (!boundAgentTabId) return undefined;
+  if (boundAgentTabId === undefined) {
+    const stored = await chrome.storage.session.get(BOUND_AGENT_TAB_KEY);
+    const persisted = stored[BOUND_AGENT_TAB_KEY] as PersistedBoundTab | undefined;
+    if (persisted?.tabId !== undefined) boundAgentTabId = persisted.tabId;
+  }
+  if (boundAgentTabId === undefined) return undefined;
   const tab = await chrome.tabs.get(boundAgentTabId).catch(() => undefined);
   if (!tab?.id || !isBindablePage(tab.url)) {
-    boundAgentTabId = undefined;
+    await clearBoundAgentTab();
     return undefined;
   }
   return tab.id;
+}
+
+async function persistBoundAgentTab(tab: chrome.tabs.Tab): Promise<void> {
+  if (tab.id === undefined || !isBindablePage(tab.url)) throw new Error("Only a Web application tab can be bound");
+  boundAgentTabId = tab.id;
+  const value: PersistedBoundTab = { tabId: tab.id };
+  await chrome.storage.session.set({ [BOUND_AGENT_TAB_KEY]: value });
+}
+
+async function clearBoundAgentTab(): Promise<void> {
+  boundAgentTabId = undefined;
+  await chrome.storage.session.remove(BOUND_AGENT_TAB_KEY);
 }
 
 // Handle the toolbar click ourselves so Chrome gives us the exact originating
 // tab. The automatic side-panel behavior loses this association and forces an
 // unreliable active-tab query after the panel has already started opening.
 chrome.action.onClicked.addListener(async (tab) => {
-  if (!tab.id) return;
-  boundAgentTabId = tab.id;
+  if (!tab.id || !isBindablePage(tab.url)) return;
+  const panelWasOpen = sidePanelOpen;
+  const previousTabId = await getBoundAgentTabId();
+  if (previousTabId !== undefined && previousTabId !== tab.id) disconnectAgent(getTabState(previousTabId));
+  await persistBoundAgentTab(tab);
   await chrome.sidePanel.open({ tabId: tab.id });
+  if (panelWasOpen) {
+    const state = getTabState(tab.id);
+    if (state.connected || state.ws) disconnectAgent(state);
+    const saved = await chrome.storage.local.get("agentUrl");
+    const agentUrl = saved.agentUrl || `http://${new URL(tab.url).hostname}:9527`;
+    const result = await handleAgentConnect(agentUrl, tab.id);
+    if (!result.success) broadcastToSidePanel({ type: "AGENT_STATUS", payload: { connected: false, error: result.error } });
+  }
 });
 
 chrome.runtime.onConnect.addListener((port) => {
@@ -104,14 +144,22 @@ chrome.runtime.onConnect.addListener((port) => {
 });
 
 async function handleSidePanelOpen() {
-  const tabId = await getBoundAgentTabId() || await getActiveTabId();
-  if (!tabId) return;
+  let tabId = await getBoundAgentTabId();
+  if (!tabId) {
+    tabId = await getActiveTabId();
+    const activeTab = tabId ? await chrome.tabs.get(tabId).catch(() => undefined) : undefined;
+    if (activeTab && isBindablePage(activeTab.url)) await persistBoundAgentTab(activeTab);
+  }
+  if (!tabId) {
+    broadcastToSidePanel({ type: "AGENT_STATUS", payload: { connected: false, error: "尚未绑定页面，请切换到目标应用页面并点击 Prism 插件图标" } });
+    return;
+  }
   const openingTab = await chrome.tabs.get(tabId).catch(() => undefined);
-  if (isBindablePage(openingTab?.url)) boundAgentTabId = tabId;
+  if (!openingTab || !isBindablePage(openingTab.url)) return;
   await ensureContentScript(tabId);
 
   // Show toolbar
-  sendToActiveTab({ type: "SHOW_TOOLBAR" } as PrismMessage);
+  sendToBoundTab({ type: "SHOW_TOOLBAR" } as PrismMessage);
 
   // Auto-connect agent
   const state = getTabState(tabId);
@@ -121,8 +169,7 @@ async function handleSidePanelOpen() {
     if (!url) {
       // Derive default from active tab's hostname so LAN access works
       try {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        const host = tab?.url ? new URL(tab.url).hostname : "";
+        const host = openingTab.url ? new URL(openingTab.url).hostname : "";
         url = `http://${host || "localhost"}:9527`;
       } catch {
         url = "http://localhost:9527";
@@ -145,14 +192,14 @@ async function handleSidePanelOpen() {
     // Already connected — notify side panel of current status
     broadcastToSidePanel({
       type: "AGENT_STATUS",
-      payload: { connected: true, project: state.project ?? undefined, boundTab: openingTab?.url ? { id: tabId, url: openingTab.url, title: openingTab.title } : undefined },
+      payload: { connected: true, project: state.project ?? undefined },
     });
   }
 }
 
 async function handleSidePanelClose() {
   // Hide toolbar + exit design mode
-  sendToActiveTab({ type: "HIDE_TOOLBAR" } as PrismMessage);
+  sendToBoundTab({ type: "HIDE_TOOLBAR" } as PrismMessage);
 
   // Disconnect agent
   const tabId = await getBoundAgentTabId();
@@ -177,16 +224,18 @@ function broadcastToSidePanel(message: PrismMessage) {
  * Get active tab ID.
  */
 async function getActiveTabId(): Promise<number | undefined> {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  return tab?.id;
+  const focusedWindow = await chrome.windows.getLastFocused({ windowTypes: ["normal"] }).catch(() => undefined);
+  if (focusedWindow?.id === undefined) return undefined;
+  const [tab] = await chrome.tabs.query({ active: true, windowId: focusedWindow.id });
+  return isBindablePage(tab?.url) ? tab?.id : undefined;
 }
 
 /**
  * Forward a message to the active tab's content script.
  */
-async function sendToActiveTab(message: PrismMessage): Promise<unknown> {
-  const tabId = await getActiveTabId();
-  if (!tabId) return { success: false, error: "no active tab" };
+async function sendToBoundTab(message: PrismMessage): Promise<unknown> {
+  const tabId = await getBoundAgentTabId();
+  if (!tabId) return { success: false, error: "no bound tab" };
   try {
     return await chrome.tabs.sendMessage(tabId, message);
   } catch {
@@ -210,8 +259,12 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, sender, sendRespons
   if (message.type === "OPEN_SIDE_PANEL") {
     (async () => {
       const tabId = sender.tab?.id || (await getActiveTabId());
-      if (tabId) chrome.sidePanel.open({ tabId });
-      sendResponse({ success: true });
+      const tab = tabId ? await chrome.tabs.get(tabId).catch(() => undefined) : undefined;
+      if (tab && isBindablePage(tab.url)) {
+        await persistBoundAgentTab(tab);
+        await chrome.sidePanel.open({ tabId: tab.id! });
+        sendResponse({ success: true });
+      } else sendResponse({ success: false, error: "当前页面不可绑定" });
     })();
     return true;
   }
@@ -240,9 +293,6 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, sender, sendRespons
       handleAgentConnect(message.payload.url).then(sendResponse);
       return true;
 
-    case "AGENT_BIND_CURRENT_TAB":
-      handleBindCurrentTab().then(sendResponse);
-      return true;
 
     case "AGENT_DISCONNECT":
       handleAgentDisconnect().then(sendResponse);
@@ -268,8 +318,7 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, sender, sendRespons
       (async () => {
         const tabId = await getBoundAgentTabId();
         const state = tabId ? getTabState(tabId) : undefined;
-        const tab = tabId ? await chrome.tabs.get(tabId).catch(() => undefined) : undefined;
-        sendResponse({ connected: state?.connected || false, testRun: state?.currentTestRun || null, agentWorking: state?.agentWorking || false, agentProgress: state?.agentProgress || "", boundTab: tab?.id && tab.url ? { id: tab.id, url: tab.url, title: tab.title } : null });
+        sendResponse({ connected: state?.connected || false, testRun: state?.currentTestRun || null, agentWorking: state?.agentWorking || false, agentProgress: state?.agentProgress || "" });
       })();
       return true;
 
@@ -293,7 +342,7 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, sender, sendRespons
     case "TOOLBAR_DISABLE":
     case "UPDATE_PENDING_COUNT":
     case "PING":
-      sendToActiveTab(message).then(sendResponse);
+      sendToBoundTab(message).then(sendResponse);
       return true;
 
     default:
@@ -306,11 +355,11 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, sender, sendRespons
 // ============================================================
 
 async function handleAgentConnect(url: string, requestedTabId?: number) {
-  const tabId = requestedTabId || await getBoundAgentTabId() || await getActiveTabId();
-  if (!tabId) return { success: false, error: "no active tab" };
+  const tabId = requestedTabId || await getBoundAgentTabId();
+  if (!tabId) return { success: false, error: "尚未绑定页面，请在目标应用页面点击 Prism 插件图标" };
   const tab = await chrome.tabs.get(tabId);
   if (!isBindablePage(tab.url)) return { success: false, error: "当前页面不是可操作的 Web 页面" };
-  boundAgentTabId = tabId;
+  await persistBoundAgentTab(tab);
 
   const state = getTabState(tabId);
 
@@ -333,7 +382,7 @@ async function handleAgentConnect(url: string, requestedTabId?: number) {
         state.agentProgress = "";
         broadcastToSidePanel({ type: "AGENT_WORKING", payload: { working: false } });
         // Reload static pages (file://) since they have no HMR/dev server
-        sendToActiveTab({ type: "RELOAD_IF_STATIC" } as PrismMessage);
+        sendToBoundTab({ type: "RELOAD_IF_STATIC" } as PrismMessage);
       } else if (eventType === "agent:error") {
         state.agentWorking = false;
         state.agentProgress = "";
@@ -368,7 +417,7 @@ async function handleAgentConnect(url: string, requestedTabId?: number) {
 
     broadcastToSidePanel({
       type: "AGENT_STATUS",
-      payload: { connected: true, project, boundTab: { id: tabId, url: tab.url!, title: tab.title } },
+      payload: { connected: true, project },
     });
     if (state.currentTestRun) broadcastToSidePanel({ type: "TEST_RUN_UPDATE", payload: state.currentTestRun });
     if (state.agentWorking) {
@@ -381,31 +430,6 @@ async function handleAgentConnect(url: string, requestedTabId?: number) {
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
-}
-
-async function handleBindCurrentTab() {
-  const tabId = await getActiveTabId();
-  if (!tabId) return { success: false, error: "找不到当前标签页" };
-  const tab = await chrome.tabs.get(tabId);
-  if (!isBindablePage(tab.url)) return { success: false, error: `无法绑定 ${tab.url || "当前页面"}，请切换到 HTTP(S) 应用页面` };
-
-  const previousTabId = await getBoundAgentTabId();
-  const previousState = previousTabId ? getTabState(previousTabId) : undefined;
-  const saved = await chrome.storage.local.get("agentUrl");
-  const agentUrl = previousState?.agentUrl || saved.agentUrl || `http://${new URL(tab.url!).hostname}:9527`;
-  if (previousState?.connected && previousTabId !== tabId) disconnectAgent(previousState);
-  boundAgentTabId = tabId;
-
-  const state = getTabState(tabId);
-  // Explicit binding is also a connection repair action. Never trust a stale
-  // `connected` flag from an earlier Agent process or side-panel lifecycle.
-  if (state.connected || state.ws) disconnectAgent(state);
-  const connected = await handleAgentConnect(agentUrl, tabId);
-  if (!connected.success) return connected;
-  const project = connected.project || null;
-  const boundTab = { id: tabId, url: tab.url!, title: tab.title };
-  broadcastToSidePanel({ type: "AGENT_STATUS", payload: { connected: true, project: project || undefined, boundTab } });
-  return { success: true, boundTab };
 }
 
 async function handleAgentDisconnect() {

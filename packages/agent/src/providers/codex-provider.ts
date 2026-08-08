@@ -50,8 +50,16 @@ export class CodexProvider implements AgentProvider {
     const useWebSocket = process.env.CODEX_TRANSPORT === "websocket";
     const mcpServerPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "testing", "mcp-browser-server.js");
     const commonConfig = {
+      // Prism verification must use its own Chrome-extension MCP. The desktop
+      // Codex installation may globally enable the bundled Browser plugin and
+      // node_repl browser backends; disable them only for this SDK child so the
+      // model cannot select an unrelated runtime with no browser instances.
+      plugins: {
+        "browser@openai-bundled": { enabled: false },
+      },
       mcp_servers: {
         ...loadProjectMcpServers(),
+        node_repl: { enabled: false },
         prism_browser: {
           command: process.execPath,
           args: [mcpServerPath],
@@ -60,9 +68,6 @@ export class CodexProvider implements AgentProvider {
           // Codex to report every MCP call as "user cancelled".
           default_tools_approval_mode: "approve",
           env: {
-            PRISM_BROWSER_ALLOWED_ORIGINS: process.env.PRISM_BROWSER_ALLOWED_ORIGINS || "",
-            PRISM_BROWSER_HEADLESS: process.env.PRISM_BROWSER_HEADLESS || "false",
-            PRISM_BROWSER_MODE: process.env.PRISM_BROWSER_MODE || "current-tab",
             PRISM_AGENT_URL: process.env.PRISM_AGENT_URL || "http://127.0.0.1:9527",
           },
         },
