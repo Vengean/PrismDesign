@@ -77,6 +77,8 @@ Agent 可调用：
 verification_get_pending
 verification_propose
 verification_start
+verification_define_cases
+verification_update_case
 verification_complete
 ```
 
@@ -106,6 +108,7 @@ browser_observe      browser_click
 browser_fill         browser_press
 browser_wait         browser_screenshot
 browser_evidence     browser_stop
+browser_response_body（仅异常诊断时按需调用）
 ```
 
 `browser_observe` 返回压缩语义模型：
@@ -221,7 +224,7 @@ GET /api/browser/diagnostics
 
 敏感信息要求：密码、token、cookie、authorization 不能进入最终报告或长期日志；密码输入值在 DOM 观察中必须脱敏。
 
-## 9. 当前进度（2026-08-07）
+## 9. 当前进度（2026-08-09）
 
 ### 已完成：第一阶段——可靠运行
 
@@ -240,6 +243,25 @@ GET /api/browser/diagnostics
 - [x] SQLite 文件不计入源码修改。
 - [x] Demo Node API、SQLite 业务库、Fixture MCP 和 Fixture Skill 示例。
 
+### 已完成：第二阶段——结构化结果与运行期证据
+
+- [x] 业务测试用例与底层工具执行步骤分层展示。
+- [x] 用例逐项状态：通过、失败、未执行和证据不足。
+- [x] 整体通过必须建立在全部业务用例通过之上。
+- [x] Network、Console Warning/Error 和 Page Error 结构化证据。
+- [x] Evidence ID 与业务测试用例关联。
+- [x] Chrome 发送前与 Agent 归档前双重脱敏。
+- [x] 异常时按需读取指定 JSON Response Body 的脱敏受限预览。
+- [x] 旧聊天记录缺少新增字段时的兼容恢复。
+
+### 已完成：第三阶段——用户授权式修复闭环（基础链路）
+
+- [x] 失败分类和具体修复建议。
+- [x] 测试过程中禁止直接修改代码。
+- [x] 失败结果卡提供“修复问题”入口。
+- [x] 用户点击后携带原目标、失败用例和建议进入开发修复。
+- [x] 修复完成后生成新的待确认复测项，不自动操作浏览器。
+
 ### 已验证场景
 
 - 开发完成后 Agent 自主启动真实浏览器测试。
@@ -251,6 +273,10 @@ GET /api/browser/diagnostics
 - 侧边栏短暂断线后继续执行并恢复状态。
 - Agent 停服/重启后清理陈旧 running 状态。
 - 测试结果正文与状态卡片去重。
+- 业务测试用例逐项结论与工具步骤分层展示。
+- Network/Console/Page Error 分类展示并关联业务用例。
+- JSON Response Body 只在异常诊断时按需读取、脱敏和裁剪。
+- 测试失败后由用户点击授权修复，修复完成后生成复测项。
 
 ## 10. 接下来待办
 
@@ -258,23 +284,41 @@ GET /api/browser/diagnostics
 
 1. **结构化步骤事件**（已完成基础链路）：记录并展示 Agent 实际选择和执行的工具动作，不预设固定步骤或强制使用 Fixture。
 2. **测试结果详情**（已完成）：处理状态和最终结果归并在同一条对话消息中；测试完成后可按需展开实际步骤、耗时和错误。
-3. **业务测试用例结构化**（下一项）：将 Agent 拟定的用例与最终状态（通过、失败、未执行、证据不足）持久化；与底层工具执行步骤分开呈现。
-4. **Screenshot 证据**（下一项）：展示关键截图、关联测试用例或步骤并允许放大。
-5. **Network/Console 证据**：按请求、状态码、Console/Page Error 分类展示并脱敏。
+3. **业务测试用例结构化**（已完成内存链路）：Agent 在执行前定义业务断言，逐项提交通过、失败、未执行或证据不足；与底层工具执行步骤分开呈现。整体通过要求所有业务用例均通过。
+4. **Screenshot 证据**（暂缓）：当前不实现截图保存及历史展示；后续需先确定用户浏览器本地存储与临时模型传输边界。
+5. **Network/Console 证据**（已完成运行期链路）：按 Network、Console、Page Error 分类展示，证据使用 ID 关联业务用例，并在 Chrome 发送前及 Agent 归档前双重脱敏。
 6. **测试历史持久化**：Agent 重启后仍可查看用例、结果、步骤和证据。
 7. **浏览器环境预检**：测试前检查目标 Tab、站点权限、Agent/WebSocket、页面地址和可能干扰密码输入的自动填充环境。
 8. **清理结果展示**（已完成基础链路）：展示浏览器资源和项目 Fixture 的清理结果。
 9. **浏览器诊断 UI**：把 `/api/browser/diagnostics` 转换为用户可理解的连接检查。
 
-> 明日优先实现：业务测试用例结构化，然后接入 Screenshot 证据展示。
+> 下一项优先实现：浏览器环境预检。Screenshot 保存及历史展示暂缓。
 
-#### Screenshot 存储约定
+#### 业务测试用例约定
 
-- 截图由 Agent 保存，不写入用户 Git 工作区，也不存为 SQLite BLOB。
-- 本地开发默认目录：`.prism/test-runs/<testRunId>/screenshots/`。
-- 平台部署目录：`/data/prism/test-runs/<workspaceId>/<testRunId>/`，由 Workspace 持久化数据卷承载。
-- SQLite 仅保存 `testRunId`、关联用例/步骤、相对路径、MIME、尺寸和创建时间等元数据。
-- 默认按保留天数和 Workspace 容量上限清理；删除测试记录时同步删除截图，Fixture Cleanup 不删除测试证据。
+- `TestCase` 表达用户关心的业务断言，`ExecutionStep` 表达 Agent 实际执行的工具动作，两者不混用。
+- 用例状态为 `pending`、`passed`、`failed`、`not_run`、`insufficient_evidence`。
+- `passed` 必须包含证据摘要，`failed` 必须包含失败原因。
+- Verification 只有在全部用例通过时才能标记为 `passed`；取消、超时或异常结束时尚未执行的用例转为 `not_run`。
+- 当前仅保存在 Agent 内存中，不提供跨服务重启的测试历史。
+
+#### Network/Console 证据约定
+
+- `browser_evidence` 返回结构化证据 ID，类型为 `network`、`console` 或 `page_error`。
+- Network 记录 method、脱敏 URL、status、resourceType、MIME 和失败原因；Console 仅保留 warning/error。
+- `TestCase.evidenceIds` 与 `TestEvidence.caseIds` 建立双向关联，底层证据仍与业务断言分开保存。
+- Chrome 插件发送前清洗一次，Agent 写入 Test Run 前再次清洗；URL 查询参数中的 token、password、authorization、cookie、session、secret 等值以及 Bearer/JWT 不进入运行结果。
+- 当前证据仅存在于 Test Run 内存，不做历史持久化。
+- 默认只采集 Network 元数据，不读取响应 Body。遇到 4xx/5xx、UI 与结果不一致、业务返回异常或证据不足时，Agent 可使用 `browser_response_body` 读取指定 Network evidenceId 的 JSON 脱敏预览。
+- Agent 不能传入任意 URL 或 CDP requestId；服务端只解析当前 Test Run 内部的临时映射。原始 Body 仅在 Chrome 命令处理期间短暂存在，不进入 Test Run、文件、数据库或日志。
+- 仅支持 JSON MIME，原始 Body 上限 1 MB；预览限制为最多 8 层、数组前 20 项、单字符串 2 KB，并设置全局节点和字符预算。
+- Chrome 先递归脱敏并裁剪，Agent Server 对预览再次脱敏；结果记录读取原因、原始大小、裁剪状态和已脱敏字段路径。
+
+#### Screenshot 约定（暂缓，不实施）
+
+- 当前只允许测试运行中的临时截图观察，不保存截图、不展示历史截图、不写入用户 Git 工作区。
+- 后续设计必须先明确由执行测试的用户浏览器本地保存，还是允许临时传输给模型；服务端持久化截图不作为当前默认方案。
+- 在存储、设备归属、容量、清理和隐私边界确定前，不实现 Screenshot Evidence 历史功能。
 
 步骤由两个来源产生：
 
@@ -283,14 +327,32 @@ GET /api/browser/diagnostics
 
 ### 第三阶段：智能闭环
 
-1. 失败分类：代码缺陷、环境问题、数据问题、权限问题、证据不足。
-2. 基于证据生成修复建议。
-3. 用户授权或策略允许时自动修改代码。
+1. 失败分类（已完成基础链路）：代码缺陷、环境问题、数据问题、权限问题、证据不足和未知问题。
+2. 基于证据生成修复建议（已完成基础链路）：失败 Verification 必须提交分类和具体修复建议。
+3. 用户授权后修改代码（已完成手动授权链路）：测试过程不修改代码；失败卡片提示用户并提供“修复问题”，点击后才把目标、失败用例和建议交给 Agent 开发修复。
 4. 等待 HMR/页面重新注册。
-5. 自动复测一次，并限制最大修复次数和运行时间。
+5. 修复完成后生成待确认复测项（已完成）；自动复测、最大修复次数和总运行时间限制尚未实现。
+
+当前闭环：
+
+```text
+开发完成
+→ 用户授权真实浏览器测试
+→ Agent 提交逐项用例和证据
+→ 测试失败：分类 + 修复建议
+→ 用户点击“修复问题”
+→ Agent 修改代码并做代码级检查
+→ 生成新的待确认 Verification
+→ 用户点击“开始测试”进行复测
+```
+
+测试失败本身不构成修改代码的授权；不得在 Verification 运行期间直接修复。环境、数据或权限问题同样展示处理建议，但 Agent 应根据分类避免把非代码问题伪装成代码缺陷。
 
 ### 尚未完成的基础能力
 
+- 局域网多用户认证与浏览器隔离：当前 `clientId`、WebSocket 注册和 Browser REST 命令不足以证明调用者与插件所有者一致；共享 Agent 部署前必须加入插件配对 Token、随机 browser instance ID、Verification 级短期能力令牌和严格路由。
+- `/api/browser/current/command` 目前不应视为可安全暴露的公开局域网接口；所有浏览器命令必须绑定已认证的插件连接、用户、Tab、Verification 和页面 Origin。
+- `/api/test/fetch` 必须删除“找不到指定 client 时退回任意已连接浏览器”的行为，并在复用 Cookie/CSRF 前完成用户和浏览器实例授权。
 - 项目 Fixture MCP 向 Prism Cleanup Stack 注册通用清理句柄的协议。
 - Agent 正常结束但项目 Fixture 清理失败时的统一告警。
 - `api.request` 与复用浏览器 cookie/CSRF 的 `browser.request`。
@@ -298,6 +360,19 @@ GET /api/browser/diagnostics
 - 浏览器命令的单步骤超时和最大操作数限制。
 - OpenAI/Claude/GLM 与 Codex 的 Verification 工具行为完全对齐。
 - 自动化集成测试覆盖 Agent 重启、Chrome 重连、取消和超时。
+
+### 2026-08-09 Code Review 待修复
+
+按优先级记录：
+
+1. **P0——局域网多用户隔离**：Agent 监听 `0.0.0.0`，当前 Browser REST/WebSocket 缺少可靠认证与所有权绑定；正常路径操作用户自己的浏览器，但恶意局域网调用者可能伪造 client 或请求服务端向其他已连接插件转发命令。
+2. **P1——Provider 能力对齐**：OpenAI Provider 尚未注册结构化 Verification、Evidence 关联和按需 Response Body 工具，按钮测试会因无法提交完整结果而降级为 `inconclusive`。
+3. **P1——临时 response handle 生命周期**：Test Run 完成时应立即清空内部 CDP requestId 映射，不能随终态 Run 留在内存。
+4. **P1——按失败分类分流动作**：只有 `code_defect` 可以显示明确的代码修改授权；environment、data、permission、insufficient_evidence 和 unknown 应提供各自的处理或继续诊断入口。
+5. **P2——Response Body 读取前限流**：应记录 `Network.loadingFinished.encodedDataLength`，在 `Network.getResponseBody` 前拒绝已知超限响应；读取后的 1 MB 检查保留为第二层保护。
+6. **P2——Network Evidence 实例身份**：同 method/URL/status 的多次请求不能合并为一个证据并覆盖 response handle；每次响应应有独立请求序号和 Evidence ID。
+
+下一次开发建议从第 1 项开始。在局域网认证与隔离完成前，Agent 应仅用于可信网络，或仅监听 `127.0.0.1` 供单机使用。
 
 ## 11. 平台化边界（暂不开发）
 
@@ -321,17 +396,15 @@ prism.config.*
 
 ## 12. 下一验收目标
 
-第二阶段优先以“当前已登录用户测试新建/编辑笔记”为验收场景：
+下一阶段以“测试前发现并解释浏览器环境问题”为验收目标：
 
 ```text
-观察并复用当前登录态
-→ 打开编辑器
-→ 修改可恢复数据
-→ 保存并检查 Network
-→ 刷新确认持久化
-→ 检查 Console/Page Error
-→ 恢复原数据
-→ 展示结构化步骤、截图、证据和清理结果
+用户点击开始测试
+→ 检查 Agent/WebSocket 和目标 Tab 绑定
+→ 检查页面地址、加载状态和 Chrome debugger 可用性
+→ 检查多个同源 Tab、站点权限和输入环境风险
+→ 全部通过后启动 Test Run
+→ 失败时展示用户可理解的原因和处理操作
 ```
 
-该场景不得主动 logout 或创建 Fixture，除非当前状态无法满足前置条件或用户明确要求隔离账号。
+预检不得修改页面或业务数据；预检失败不创建正在运行的 Test Run，也不进入 Chrome 调试操作阶段。

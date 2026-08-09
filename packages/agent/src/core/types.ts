@@ -18,6 +18,8 @@ export interface AgentResult {
     goal: string;
     proposedChecks: string[];
     summary?: string;
+    failureCategory?: "code_defect" | "environment" | "data" | "permission" | "insufficient_evidence" | "unknown";
+    fixSuggestion?: string;
   };
 }
 

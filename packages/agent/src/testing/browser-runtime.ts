@@ -1,9 +1,11 @@
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
+import { redactText, redactUrl } from "./evidence.js";
 
 export interface BrowserRuntimeOptions {
   allowedOrigins?: string[];
   /** Defaults to headed mode so local users can watch the agent operate. */
   headless?: boolean;
+  onEvidence?: (identity: BrowserSessionIdentity, evidence: RuntimeEvidence) => void;
 }
 
 export interface BrowserSessionIdentity {
@@ -19,7 +21,7 @@ interface NetworkEvidence {
   resourceType: string;
 }
 
-interface RuntimeEvidence {
+export interface RuntimeEvidence {
   console: Array<{ type: string; text: string }>;
   pageErrors: string[];
   network: NetworkEvidence[];
@@ -55,10 +57,12 @@ export class BrowserRuntime {
   private readonly sessions = new Map<string, RuntimeSession>();
   private readonly allowedOrigins: Set<string>;
   private readonly headless: boolean;
+  private readonly onEvidence?: BrowserRuntimeOptions["onEvidence"];
 
   constructor(options: BrowserRuntimeOptions = {}) {
     this.allowedOrigins = new Set(options.allowedOrigins || []);
     this.headless = options.headless ?? false;
+    this.onEvidence = options.onEvidence;
   }
 
   async start(identity: BrowserSessionIdentity, baseUrl: string): Promise<{ sessionId: string }> {
@@ -148,12 +152,15 @@ export class BrowserRuntime {
   }
 
   evidence(sessionId: string, clientId: string): RuntimeEvidence {
-    const evidence = this.getOwnedSession(sessionId, clientId).evidence;
-    return {
+    const session = this.getOwnedSession(sessionId, clientId);
+    const evidence = session.evidence;
+    const snapshot = {
       console: evidence.console.slice(-100),
       pageErrors: evidence.pageErrors.slice(-100),
-      network: evidence.network.slice(-200),
+      network: evidence.network.slice(-200).map((item) => ({ ...item, url: redactUrl(item.url) })),
     };
+    this.onEvidence?.(session.identity, snapshot);
+    return snapshot;
   }
 
   async stop(sessionId: string, clientId: string): Promise<void> {
@@ -194,6 +201,6 @@ export class BrowserRuntime {
   }
 
   private redact(value: string): string {
-    return value.replace(/(authorization|token|password|cookie)(["'=:\s]+)[^\s,&}]+/gi, "$1$2[REDACTED]");
+    return redactText(value);
   }
 }

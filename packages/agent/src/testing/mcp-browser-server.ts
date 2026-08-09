@@ -72,11 +72,42 @@ server.registerTool("verification_start", {
   annotations: localAction,
 }, async ({ capabilityToken: token, verificationId, instruction }) => result(await agentCall(`/api/agent/verifications/${encodeURIComponent(verificationId)}/start`, token, { instruction })));
 
+server.registerTool("verification_define_cases", {
+  description: "Define the business-level assertions that this verification will prove. Keep these separate from low-level browser actions.",
+  inputSchema: {
+    capabilityToken,
+    verificationId: z.string(),
+    cases: z.array(z.object({ title: z.string().min(1).max(200), assertion: z.string().min(1).max(1000) })).min(1).max(20),
+  },
+  annotations: localAction,
+}, async ({ capabilityToken: token, verificationId, cases }) => result(await agentCall(`/api/agent/verifications/${encodeURIComponent(verificationId)}/cases/define`, token, { cases })));
+
+server.registerTool("verification_update_case", {
+  description: "Record the terminal result of one business test case based on observed evidence. Use not_run for an unexecuted case and insufficient_evidence when execution did not prove the assertion.",
+  inputSchema: {
+    capabilityToken,
+    verificationId: z.string(),
+    caseId: z.string(),
+    status: z.enum(["passed", "failed", "not_run", "insufficient_evidence"]),
+    evidenceSummary: z.string().max(2000).optional(),
+    failureReason: z.string().max(2000).optional(),
+    evidenceIds: z.array(z.string()).max(50).optional(),
+  },
+  annotations: localAction,
+}, async ({ capabilityToken: token, verificationId, caseId, status, evidenceSummary, failureReason, evidenceIds }) => result(await agentCall(`/api/agent/verifications/${encodeURIComponent(verificationId)}/cases/${encodeURIComponent(caseId)}`, token, { status, evidenceSummary, failureReason, evidenceIds })));
+
 server.registerTool("verification_complete", {
   description: "Submit the structured outcome after browser evidence has been collected and fixture cleanup attempted.",
-  inputSchema: { capabilityToken, verificationId: z.string(), status: z.enum(["passed", "failed", "inconclusive"]), summary: z.string().min(1).max(4000) },
+  inputSchema: {
+    capabilityToken,
+    verificationId: z.string(),
+    status: z.enum(["passed", "failed", "inconclusive"]),
+    summary: z.string().min(1).max(4000),
+    failureCategory: z.enum(["code_defect", "environment", "data", "permission", "insufficient_evidence", "unknown"]).optional(),
+    fixSuggestion: z.string().min(1).max(4000).optional(),
+  },
   annotations: localAction,
-}, async ({ capabilityToken: token, verificationId, status, summary }) => result(await agentCall(`/api/agent/verifications/${encodeURIComponent(verificationId)}/complete`, token, { status, summary })));
+}, async ({ capabilityToken: token, verificationId, status, summary, failureCategory, fixSuggestion }) => result(await agentCall(`/api/agent/verifications/${encodeURIComponent(verificationId)}/complete`, token, { status, summary, failureCategory, fixSuggestion })));
 
 server.registerTool("browser_start", { description: "Connect to the user's visible current Chrome tab.", inputSchema: { baseUrl: z.string().url() }, annotations: localRead }, async ({ baseUrl }) => {
   const sessionId = `current-tab-${Date.now()}`;
@@ -93,7 +124,12 @@ server.registerTool("browser_observe", { description: "Observe interactive eleme
 server.registerTool("browser_click", { description: "Perform a real click. Prefer an element ref returned by browser_observe.", inputSchema: { sessionId: z.string(), target }, annotations: localAction }, async ({ sessionId, target }) => result(await currentCall(currentUrl(sessionId), "click", { target })));
 server.registerTool("browser_fill", { description: "Fill a form control using a semantic target.", inputSchema: { sessionId: z.string(), target, value: z.string() }, annotations: localAction }, async ({ sessionId, target, value }) => result(await currentCall(currentUrl(sessionId), "fill", { target, value })));
 server.registerTool("browser_press", { description: "Press a keyboard key on a semantic target.", inputSchema: { sessionId: z.string(), target, key: z.string() }, annotations: localAction }, async ({ sessionId, target, key }) => result(await currentCall(currentUrl(sessionId), "press", { target, key })));
-server.registerTool("browser_evidence", { description: "Read recent network, console warning/error and page-error evidence.", inputSchema: { sessionId: z.string() }, annotations: localRead }, async ({ sessionId }) => result(await currentCall(currentUrl(sessionId), "evidence")));
+server.registerTool("browser_evidence", { description: "Read redacted, structured network, console warning/error and page-error evidence. Returned evidence IDs can be attached to business cases.", inputSchema: { sessionId: z.string() }, annotations: localRead }, async ({ sessionId }) => result(await currentCall(currentUrl(sessionId), "evidence")));
+server.registerTool("browser_response_body", {
+  description: "Inspect a bounded, redacted JSON response preview for one recorded network evidence item when an error, UI mismatch, or evidence gap requires deeper diagnosis. Do not call routinely.",
+  inputSchema: { sessionId: z.string(), evidenceId: z.string(), reason: z.string().min(1).max(500) },
+  annotations: localRead,
+}, async ({ sessionId, evidenceId, reason }) => result(await currentCall(currentUrl(sessionId), "responseBody", { evidenceId, reason })));
 server.registerTool("browser_wait", {
   description: "Wait until a URL pattern, visible text, or observed target is present.",
   inputSchema: {

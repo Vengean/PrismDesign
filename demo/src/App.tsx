@@ -8,6 +8,7 @@ import { api, type Note, type User } from './api'
 
 const SESSION_KEY = 'prism-demo-session'
 const formatDate = (value: string) => new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }).format(new Date(value))
+const getNameInitials = (name: string) => name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toLocaleUpperCase() || '?'
 const formatUpdatedAt = (value: string) => {
   const date = new Date(value)
   const elapsed = Date.now() - date.getTime()
@@ -96,7 +97,7 @@ function NotesPage({ user, token, onLogout }: { user: User; token: string; onLog
         </div>
         <div className="flex items-center gap-3">
           <div className="hidden text-right sm:block"><p className="text-xs font-medium">{user.name}</p><p className="text-[10px] text-[#99958c]">{user.email}</p></div>
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#daceb6] text-sm font-semibold text-[#5c4b2f]">林</div>
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#daceb6] text-sm font-semibold text-[#5c4b2f]" aria-label={`${user.name} 的头像`}>{getNameInitials(user.name)}</div>
           <button type="button" onClick={onLogout} className="rounded-lg p-2 text-[#77736b] transition hover:bg-black/5 hover:text-black" aria-label="退出登录"><LogOut className="h-4 w-4" /></button>
         </div>
       </header>

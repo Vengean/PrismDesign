@@ -1,4 +1,5 @@
 export type VerificationStatus = "awaiting_confirmation" | "preparing" | "running" | "fixing" | "rerunning" | "passed" | "failed" | "inconclusive" | "cancelled";
+export type VerificationFailureCategory = "code_defect" | "environment" | "data" | "permission" | "insufficient_evidence" | "unknown";
 
 export interface Verification {
   id: string;
@@ -14,6 +15,8 @@ export interface Verification {
   updatedAt: string;
   error?: string;
   summary?: string;
+  failureCategory?: VerificationFailureCategory;
+  fixSuggestion?: string;
 }
 
 export class VerificationStore {

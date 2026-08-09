@@ -1,24 +1,64 @@
 export interface CurrentTabCommand {
   requestId: string;
-  action: "attach" | "detach" | "navigate" | "observe" | "click" | "fill" | "press" | "wait" | "screenshot" | "evidence";
+  action: "attach" | "detach" | "navigate" | "observe" | "click" | "fill" | "press" | "wait" | "screenshot" | "evidence" | "responseBody";
   target?: { ref?: string; role?: string; name?: string; label?: string; selector?: string };
   value?: string;
   url?: string;
   key?: string;
   condition?: { kind: "url"; value: string; timeoutMs?: number } | { kind: "text"; value: string; timeoutMs?: number } | { kind: "target"; target: NonNullable<CurrentTabCommand["target"]>; timeoutMs?: number };
+  requestId?: string;
 }
 
 interface RefDescriptor { tag: string; id: string; role: string; name: string; occurrence: number }
 interface PageEvidence {
   console: Array<{ type: string; text: string; timestamp?: number }>;
   pageErrors: string[];
-  network: Array<{ method?: string; url?: string; status?: number; mimeType?: string; resourceType?: string }>;
+  network: Array<{ requestId?: string; method?: string; url?: string; status?: number; mimeType?: string; resourceType?: string; errorText?: string }>;
+  requests: Map<string, { method?: string; url?: string; resourceType?: string }>;
 }
 
 const sessions = new Set<number>();
 const refs = new Map<number, Map<string, RefDescriptor>>();
 const evidence = new Map<number, PageEvidence>();
 const delay = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+function sanitizeJsonForAgent(value: unknown) {
+  const sensitiveName = /^(?:access_?token|auth(?:orization)?|code|cookie|credential|key|password|refresh_?token|secret|session(?:id)?|token)$/i;
+  const redactedPaths: string[] = [];
+  let remainingNodes = 500;
+  let remainingChars = 20_000;
+  let truncated = false;
+  const redactText = (text: string) => text
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [REDACTED]")
+    .replace(/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, "[REDACTED_JWT]")
+    .replace(/(authorization|access_?token|refresh_?token|token|password|cookie|secret|session(?:id)?)(["'=:\s]+)[^\s,&}]+/gi, "$1$2[REDACTED]");
+  const visit = (input: unknown, path: string, depth: number): unknown => {
+    if (remainingNodes-- <= 0 || depth > 8) { truncated = true; return "[TRUNCATED]"; }
+    if (input === null || typeof input === "boolean" || typeof input === "number") return input;
+    if (typeof input === "string") {
+      const redacted = redactText(input);
+      const limit = Math.min(2_000, Math.max(0, remainingChars));
+      remainingChars -= Math.min(redacted.length, limit);
+      if (redacted.length > limit) { truncated = true; return `${redacted.slice(0, limit)}[TRUNCATED]`; }
+      return redacted;
+    }
+    if (Array.isArray(input)) {
+      if (input.length > 20) truncated = true;
+      return input.slice(0, 20).map((item, index) => visit(item, `${path}[${index}]`, depth + 1));
+    }
+    if (typeof input === "object") {
+      const entries = Object.entries(input as Record<string, unknown>);
+      if (entries.length > 100) truncated = true;
+      return Object.fromEntries(entries.slice(0, 100).map(([key, item]) => {
+        const itemPath = path ? `${path}.${key}` : key;
+        if (sensitiveName.test(key)) { redactedPaths.push(itemPath); return [key, "[REDACTED]"]; }
+        return [key, visit(item, itemPath, depth + 1)];
+      }));
+    }
+    return String(input);
+  };
+  return { preview: visit(value, "", 0), redactedPaths, truncated };
+}
 
 async function assertWebTab(tabId: number) {
   const tab = await chrome.tabs.get(tabId);
@@ -54,7 +94,7 @@ async function attach(tabId: number) {
     await command(tabId, "Runtime.enable");
   }
   sessions.add(tabId);
-  evidence.set(tabId, { console: [], pageErrors: [], network: [] });
+  evidence.set(tabId, { console: [], pageErrors: [], network: [], requests: new Map() });
   try {
     await Promise.all([
       command(tabId, "Runtime.enable"),
@@ -93,11 +133,17 @@ chrome.debugger.onEvent.addListener((source, method, raw) => {
     const entry = params.entry || {};
     if (entry.level === "error") log.pageErrors.push(entry.text || "Page error");
     else log.console.push({ type: entry.level || "log", text: entry.text || "", timestamp: entry.timestamp });
+  } else if (method === "Network.requestWillBeSent") {
+    log.requests.set(params.requestId, { method: params.request?.method, url: params.request?.url, resourceType: params.type });
   } else if (method === "Network.responseReceived") {
     const response = params.response || {};
-    log.network.push({ url: response.url, status: response.status, mimeType: response.mimeType, resourceType: params.type });
+    const request = log.requests.get(params.requestId) || {};
+    log.network.push({ requestId: params.requestId, method: request.method, url: response.url || request.url, status: response.status, mimeType: response.mimeType, resourceType: params.type || request.resourceType });
+    log.requests.delete(params.requestId);
   } else if (method === "Network.loadingFailed") {
-    log.network.push({ url: params.url, resourceType: params.type || "failed" });
+    const request = log.requests.get(params.requestId) || {};
+    log.network.push({ requestId: params.requestId, ...request, status: 0, resourceType: params.type || request.resourceType || "failed", errorText: params.errorText });
+    log.requests.delete(params.requestId);
   }
 });
 
@@ -204,8 +250,48 @@ export async function executeCurrentTabCommand(tabId: number, input: CurrentTabC
       return { success: true, url: input.url };
     }
     if (input.action === "observe") return observe(tabId);
-    if (input.action === "evidence") return evidence.get(tabId) || { console: [], pageErrors: [], network: [] };
+    if (input.action === "evidence") {
+      const snapshot = evidence.get(tabId);
+      if (!snapshot) return { console: [], pageErrors: [], network: [] };
+      const redactText = (value: string) => value
+        .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [REDACTED]")
+        .replace(/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, "[REDACTED_JWT]")
+        .replace(/(authorization|access_?token|refresh_?token|token|password|cookie|secret|session(?:id)?)(["'=:\s]+)[^\s,&}]+/gi, "$1$2[REDACTED]");
+      const redactUrl = (value = "") => {
+        try {
+          const url = new URL(value);
+          if (url.username) url.username = "[REDACTED]";
+          if (url.password) url.password = "[REDACTED]";
+          for (const key of [...url.searchParams.keys()]) {
+            if (/^(?:access_?token|auth(?:orization)?|code|cookie|credential|key|password|refresh_?token|secret|session(?:id)?|token)$/i.test(key)) url.searchParams.set(key, "[REDACTED]");
+          }
+          url.hash = "";
+          return url.toString();
+        } catch { return redactText(value); }
+      };
+      return {
+        console: snapshot.console.slice(-100).map((item) => ({ ...item, text: redactText(item.text) })),
+        pageErrors: snapshot.pageErrors.slice(-100).map(redactText),
+        network: snapshot.network.slice(-200).map(({ requestId, ...item }) => ({ ...item, requestHandle: requestId, url: redactUrl(item.url), errorText: item.errorText ? redactText(item.errorText) : undefined })),
+      };
+    }
     if (input.action === "screenshot") return command(tabId, "Page.captureScreenshot", { format: "png", fromSurface: true });
+    if (input.action === "responseBody") {
+      if (!input.requestId) throw new Error("requestId is required");
+      const item = evidence.get(tabId)?.network.find((entry) => entry.requestId === input.requestId);
+      if (!item) throw new Error("The selected network response is no longer available");
+      if (!/(?:^|[+/])json(?:$|;)/i.test(item.mimeType || "")) throw new Error(`Response body inspection only supports JSON, received ${item.mimeType || "unknown content type"}`);
+      const body = await command<{ body: string; base64Encoded?: boolean }>(tabId, "Network.getResponseBody", { requestId: input.requestId });
+      const text = body.base64Encoded
+        ? new TextDecoder().decode(Uint8Array.from(atob(body.body), (character) => character.charCodeAt(0)))
+        : body.body;
+      const originalSize = new TextEncoder().encode(text).byteLength;
+      if (originalSize > 1_000_000) throw new Error(`JSON response body exceeds the 1000000 byte inspection limit (${originalSize} bytes)`);
+      let parsed: unknown;
+      try { parsed = JSON.parse(text); }
+      catch { throw new Error("Response declared JSON but could not be parsed"); }
+      return { ...sanitizeJsonForAgent(parsed), originalSize, contentType: item.mimeType };
+    }
     if (input.action === "wait") {
       if (!input.condition) throw new Error("condition is required");
       const timeout = Math.min(input.condition.timeoutMs || 10_000, 60_000);

@@ -62,7 +62,15 @@ export interface ChatMessage {
   role: "user" | "ai";
   content: string;
   timestamp: number;
-  verification?: { id: string; goal: string; proposedChecks: string[]; status?: string; summary?: string };
+  verification?: {
+    id: string;
+    goal: string;
+    proposedChecks: string[];
+    status?: string;
+    summary?: string;
+    failureCategory?: "code_defect" | "environment" | "data" | "permission" | "insufficient_evidence" | "unknown";
+    fixSuggestion?: string;
+  };
   /** Test execution details rendered inside this assistant message. */
   testRun?: TestRunInfo;
   /** Transient target for streaming/progress events of the active request. */
@@ -92,6 +100,34 @@ export interface TestRunInfo {
   updatedAt: string;
   finishedAt?: string;
   error?: string;
+  cases: Array<{
+    id: string;
+    title: string;
+    assertion: string;
+    status: "pending" | "passed" | "failed" | "not_run" | "insufficient_evidence";
+    evidenceSummary?: string;
+    failureReason?: string;
+    evidenceIds: string[];
+    updatedAt: string;
+  }>;
+  evidence: Array<{
+    id: string;
+    type: "network" | "console" | "page_error";
+    severity: "info" | "warning" | "error";
+    method?: string;
+    url?: string;
+    status?: number;
+    resourceType?: string;
+    mimeType?: string;
+    message?: string;
+    observedAt?: string;
+    responsePreview?: unknown;
+    responseBodyReadReason?: string;
+    responseTruncated?: boolean;
+    responseRedactedPaths?: string[];
+    responseOriginalSize?: number;
+    caseIds: string[];
+  }>;
   steps: Array<{
     id: string;
     tool: string;

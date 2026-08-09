@@ -4,6 +4,15 @@ import { t } from "../../shared/i18n.js";
 
 const STORAGE_KEY = "pd-chat-history";
 
+function normalizeTestRun(run: TestRunInfo | undefined): TestRunInfo | undefined {
+  if (!run) return undefined;
+  return {
+    ...run,
+    cases: Array.isArray(run.cases) ? run.cases.map((item) => ({ ...item, evidenceIds: Array.isArray(item.evidenceIds) ? item.evidenceIds : [] })) : [],
+    evidence: Array.isArray(run.evidence) ? run.evidence : [],
+  };
+}
+
 function formatVerificationMessage(content: string): string {
   return content
     .replace(/^\s*VERIFICATION_RESULT:\s*PASSED\s*$/gim, "测试结论：通过")
@@ -17,6 +26,7 @@ export function useChat() {
 
   const applyTestRun = useCallback((run: TestRunInfo | null) => {
     if (!run) return;
+    run = normalizeTestRun(run)!;
     const active = ["preparing", "running", "cleaning"].includes(run.status);
     setSending(active);
     setMessages((prev) => {
@@ -61,6 +71,7 @@ export function useChat() {
             const interrupted = message.verification && ["preparing", "running"].includes(message.verification.status || "");
             return {
               ...message,
+              testRun: normalizeTestRun(message.testRun),
               content: /浏览器测试启动失败：Failed to fetch/i.test(message.content)
                 ? "Agent 服务连接已中断，本次测试未能完成，可重新测试。"
                 : formatVerificationMessage(message.content),
@@ -198,8 +209,11 @@ export function useChat() {
       : message));
     const result = await chrome.runtime.sendMessage({ type: "AGENT_START_VERIFICATION", payload: { verification } }) as any;
     setMessages((prev) => {
+      const resultMessage = result?.agentResult?.message || "";
       const status = result?.success
-        ? (/VERIFICATION_RESULT:\s*PASSED/i.test(result.agentResult?.message || "") ? "passed" : /VERIFICATION_RESULT:\s*FAILED/i.test(result.agentResult?.message || "") ? "failed" : "inconclusive")
+        ? (["passed", "failed", "inconclusive"].includes(result?.verification?.status)
+          ? result.verification.status
+          : (/VERIFICATION_RESULT:\s*PASSED|测试结论：通过/i.test(resultMessage) ? "passed" : /VERIFICATION_RESULT:\s*FAILED|测试结论：未通过/i.test(resultMessage) ? "failed" : "inconclusive"))
         : "failed";
       const content = result?.success
         ? formatVerificationMessage(result.agentResult?.message || "测试已完成。")
@@ -207,14 +221,31 @@ export function useChat() {
           ? result.error
           : `浏览器测试启动失败：${result?.error || "未知错误"}`;
       return prev.map((message) => message.verification?.id === verification.id
-        ? { ...message, content, pending: false, timestamp: Date.now(), verification: { ...message.verification, status } }
+        ? { ...message, content, pending: false, timestamp: Date.now(), verification: { ...message.verification, ...result?.verification, status } }
         : message);
     });
   }, []);
+
+  const fixVerification = useCallback((verification: NonNullable<ChatMessage["verification"]>, testRun?: TestRunInfo) => {
+    const failedCases = (testRun?.cases || [])
+      .filter((item) => item.status === "failed")
+      .map((item) => `- ${item.title}：${item.failureReason || item.evidenceSummary || "测试未通过"}`)
+      .join("\n");
+    const prompt = [
+      "请修复刚才真实浏览器测试发现的问题。用户已通过“修复问题”按钮授权本次代码修改。",
+      `原测试目标：${verification.goal}`,
+      `失败分类：${verification.failureCategory || "unknown"}`,
+      `测试结论：${verification.summary || "测试未通过"}`,
+      failedCases ? `失败用例：\n${failedCases}` : "",
+      `建议修复方向：${verification.fixSuggestion || verification.summary || "请根据测试证据定位并修复"}`,
+      "请先检查相关代码和测试证据，实施最小且完整的修复并进行代码级检查。不要在本轮自动启动真实浏览器测试；修改完成后为相同目标生成待用户确认的复测项。",
+    ].filter(Boolean).join("\n\n");
+    sendMessage(prompt);
+  }, [sendMessage]);
 
   const addSystemMessage = useCallback((content: string) => {
     setMessages((prev) => [...prev, { role: "ai", content, timestamp: Date.now() }]);
   }, []);
 
-  return { messages, sending, sendMessage, startVerification, cancelCurrent, clearHistory, addSystemMessage };
+  return { messages, sending, sendMessage, startVerification, fixVerification, cancelCurrent, clearHistory, addSystemMessage };
 }

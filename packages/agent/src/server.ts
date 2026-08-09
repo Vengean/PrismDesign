@@ -11,6 +11,7 @@ import { BrowserRuntime, type BrowserAction } from "./testing/browser-runtime.js
 import { VerificationStore } from "./testing/verification-store.js";
 import { createBrowserToolRegistry } from "./testing/browser-tools.js";
 import { TestRunStore } from "./testing/test-run-store.js";
+import { normalizeBrowserEvidence, sanitizeJsonPreview } from "./testing/evidence.js";
 
 function getClientId(req: express.Request): string {
   return (req.headers["x-client-id"] as string) || "default";
@@ -20,11 +21,15 @@ export async function startServer(
   projectRoot: string,
   port: number,
 ) {
+  let testRuns: TestRunStore;
   const allowedOrigins = (process.env.PRISM_BROWSER_ALLOWED_ORIGINS || "")
     .split(",").map((value) => value.trim()).filter(Boolean);
   const browserRuntime = new BrowserRuntime({
     allowedOrigins,
     headless: process.env.PRISM_BROWSER_HEADLESS === "true",
+    onEvidence: (identity, evidence) => {
+      if (identity.verificationId) testRuns?.recordEvidence(identity.verificationId, normalizeBrowserEvidence(evidence));
+    },
   });
   const toolRegistry = createBrowserToolRegistry(browserRuntime);
   const verifications = new VerificationStore();
@@ -73,7 +78,6 @@ export async function startServer(
   const browserRegistrations = new Map<WebSocket, { url: string; mode: string }>();
   const pendingBrowserCommands = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   const disconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  let testRuns: TestRunStore;
 
   wss.on("connection", (ws, request) => {
     wsClients.add(ws);
@@ -230,7 +234,7 @@ export async function startServer(
     if (!(["awaiting_confirmation", "failed", "passed", "inconclusive", "cancelled"] as const).includes(verification.status as "awaiting_confirmation" | "failed" | "passed" | "inconclusive" | "cancelled")) {
       throw new Error(`Verification cannot start from ${verification.status}`);
     }
-    verifications.update(id, clientId, { status: "preparing", error: undefined });
+    verifications.update(id, clientId, { status: "preparing", error: undefined, summary: undefined, failureCategory: undefined, fixSuggestion: undefined });
     broadcast("verification.updated", verifications.getOwned(id, clientId), clientId);
     try {
       if (provider.name === "codex") {
@@ -275,8 +279,8 @@ export async function startServer(
     catch (error) { console.warn(`[Verification] Browser detach skipped: ${error instanceof Error ? error.message : String(error)}`); }
   }
 
-  function createTestRun(verification: { id: string; clientId: string; baseUrl: string; browserSessionId?: string }, agentRunId: string, abort?: () => void) {
-    const run = testRuns.create({ verificationId: verification.id, clientId: verification.clientId, agentRunId, abort });
+  function createTestRun(verification: { id: string; clientId: string; baseUrl: string; browserSessionId?: string; proposedChecks?: string[] }, agentRunId: string, abort?: () => void) {
+    const run = testRuns.create({ verificationId: verification.id, clientId: verification.clientId, agentRunId, proposedChecks: verification.proposedChecks, abort });
     testRuns.registerCleanup(run.id, {
       id: `browser:${verification.id}`,
       label: "退出浏览器调试模式",
@@ -298,8 +302,10 @@ export async function startServer(
     const verification = verifications.getOwned(verificationId, clientId);
     const runId = `verify-run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const controller = new AbortController();
+    const capabilityToken = randomBytes(32).toString("hex");
     activeRuns.set(runId, controller);
     activeRunClients.set(runId, clientId);
+    activeAgentTurns.set(capabilityToken, { clientId, runId, pageUrl: verification.baseUrl });
     createTestRun(verification, runId, () => controller.abort());
     emitAgentEvent(clientId, { type: "run.started", runId });
     const prompt = [
@@ -311,18 +317,29 @@ export async function startServer(
         ? "Use prism_browser/browser_start and the other prism_browser MCP tools to operate the Chrome extension's bound current tab. Do not use a generic, in-app, isolated, or browser-list/availability tool."
         : "Use browser_observe, browser_action, and browser_evidence to operate and verify the real application now.",
       "Do not write a test script. Report what was actually observed. Stop the browser when finished.",
+      `Use verification_define_cases before browser actions to refine the business assertions, then call verification_update_case once for every case. The verificationId is ${verificationId}.`,
+      "Use passed only when the assertion is proven, failed when evidence disproves it, not_run when it was not executed, and insufficient_evidence when the performed actions did not prove it.",
+      "browser_evidence returns redacted evidence IDs. Include the relevant evidenceIds in verification_update_case instead of copying sensitive raw values into summaries.",
+      "Do not inspect response bodies routinely. Use browser_response_body only for a relevant JSON request when a 4xx/5xx response, UI mismatch, unexpected business result, or evidence gap requires deeper diagnosis.",
+      "Call verification_complete only after every business case has a terminal result.",
+      "When completion is failed, classify the cause and include a concrete fixSuggestion so Prism can ask the user whether to authorize a repair. Do not modify code during this verification run.",
+      `[Prism tool context] capabilityToken=${capabilityToken}`,
       "When test prerequisites are missing, use the available project fixture skill and fixture MCP tools to create isolated test data, then clean up that verification's data after testing.",
       "Capture at least one screenshot and inspect runtime/network evidence before concluding.",
       "End the final response with exactly VERIFICATION_RESULT: PASSED or VERIFICATION_RESULT: FAILED. Use FAILED when evidence is insufficient.",
     ].join("\n");
     try {
       const result = await provider.run(clientId, runId, prompt, (event) => emitAgentEvent(clientId, event), controller.signal);
-      const status = /VERIFICATION_RESULT:\s*PASSED/i.test(result.message)
-        ? "passed"
-        : /VERIFICATION_RESULT:\s*FAILED/i.test(result.message) ? "failed" : "inconclusive";
+      const submitted = verifications.getOwned(verificationId, clientId);
       const publicResult = { ...result, message: formatVerificationMessage(result.message) };
-      verifications.update(verificationId, clientId, { status });
-      await finishVerificationRun(verificationId, status);
+      if (submitted.status === "running") {
+        verifications.update(verificationId, clientId, {
+          status: "inconclusive",
+          summary: "Agent 未提交完整的业务测试用例结果。",
+          error: "Structured business test case completion was not submitted",
+        });
+        await finishVerificationRun(verificationId, "inconclusive", "Agent 未提交完整的业务测试用例结果。");
+      }
       broadcast("verification.updated", verifications.getOwned(verificationId, clientId), clientId);
       emitAgentEvent(clientId, { type: "run.completed", runId, result: publicResult });
       broadcast("verification.agent.completed", { verificationId, result: publicResult }, clientId);
@@ -338,6 +355,7 @@ export async function startServer(
     } finally {
       activeRuns.delete(runId);
       activeRunClients.delete(runId);
+      activeAgentTurns.delete(capabilityToken);
     }
   }
 
@@ -387,7 +405,9 @@ export async function startServer(
         "For development requests, finish implementation and code-level checks before considering real browser testing.",
         "Only start real browser testing when the current user message explicitly authorizes it now or explicitly asks for it after the requested development is complete.",
         "To test, first call verification_get_pending. Reuse a relevant pending verification, or call verification_propose only after implementation is ready. Then call verification_start before browser_start.",
-        "Use fixture tools when prerequisites are needed. Collect screenshot/runtime/network evidence, clean fixtures, then call verification_complete with a structured outcome.",
+        "After verification_start, use verification_define_cases to state business assertions separately from tool steps. Record every case with verification_update_case, attach relevant IDs returned by browser_evidence, then call verification_complete only when every case has a terminal result.",
+        "Use browser_response_body only for a relevant JSON request when an error, UI mismatch, unexpected business result, or evidence gap requires deeper diagnosis; do not inspect all response bodies.",
+        "Use fixture tools when prerequisites are needed. Collect screenshot/runtime/network evidence, clean fixtures, then submit the structured outcome.",
         "If the user did not authorize testing, do not call verification_start; after file changes Prism will offer a confirmation action.",
         `Current page: ${pageUrl || "unavailable"}`,
         `[Prism tool context] capabilityToken=${capabilityToken}`,
@@ -435,6 +455,8 @@ export async function startServer(
           goal: turnVerification.goal,
           proposedChecks: turnVerification.proposedChecks,
           summary: turnVerification.summary,
+          failureCategory: turnVerification.failureCategory,
+          fixSuggestion: turnVerification.fixSuggestion,
         };
       }
       emitAgentEvent(clientId, { type: "run.completed", runId, result });
@@ -502,7 +524,7 @@ export async function startServer(
       if (verification.status !== "awaiting_confirmation") throw new Error(`Verification cannot start from ${verification.status}`);
       const instruction = String(req.body?.instruction || "").trim();
       if (!instruction) throw new Error("The current user instruction is required");
-      const updated = verifications.update(verification.id, turn.clientId, { status: "running", developmentRunId: turn.runId, baseUrl: verificationPageUrl(turn.pageUrl), goal: `${verification.goal}\n用户本轮测试要求：${instruction}` });
+      const updated = verifications.update(verification.id, turn.clientId, { status: "running", developmentRunId: turn.runId, baseUrl: verificationPageUrl(turn.pageUrl), goal: `${verification.goal}\n用户本轮测试要求：${instruction}`, error: undefined, summary: undefined, failureCategory: undefined, fixSuggestion: undefined });
       const controller = activeRuns.get(turn.runId);
       createTestRun(updated, turn.runId, controller ? () => controller.abort() : undefined);
       broadcast("verification.updated", updated, turn.clientId);
@@ -519,10 +541,51 @@ export async function startServer(
       if (!["passed", "failed", "inconclusive"].includes(status)) throw new Error("Invalid verification status");
       const summary = String(req.body?.summary || "").trim();
       if (!summary) throw new Error("summary is required");
-      const updated = verifications.update(verification.id, turn.clientId, { status, summary, error: status === "passed" ? undefined : summary });
+      const failureCategory = req.body?.failureCategory as "code_defect" | "environment" | "data" | "permission" | "insufficient_evidence" | "unknown" | undefined;
+      const fixSuggestion = String(req.body?.fixSuggestion || "").trim() || undefined;
+      const validCategories = ["code_defect", "environment", "data", "permission", "insufficient_evidence", "unknown"];
+      if (failureCategory && !validCategories.includes(failureCategory)) throw new Error("Invalid failure category");
+      if (status === "failed" && (!failureCategory || !fixSuggestion)) throw new Error("A failed verification requires failureCategory and fixSuggestion");
+      testRuns.validateCompletion(verification.id, status);
+      const updated = verifications.update(verification.id, turn.clientId, {
+        status,
+        summary,
+        error: status === "passed" ? undefined : summary,
+        failureCategory: status === "passed" ? undefined : failureCategory,
+        fixSuggestion: status === "passed" ? undefined : fixSuggestion,
+      });
       broadcast("verification.updated", updated, turn.clientId);
       await finishVerificationRun(updated.id, status, status === "passed" ? undefined : summary);
       res.json({ verification: updated, summary });
+    } catch (error) { res.status(409).json({ error: error instanceof Error ? error.message : String(error) }); }
+  });
+
+  app.post("/api/agent/verifications/:id/cases/define", (req, res) => {
+    try {
+      const turn = getAgentTurn(req);
+      const verification = verifications.getOwned(req.params.id, turn.clientId);
+      if (verification.status !== "running") throw new Error(`Test cases cannot be defined from ${verification.status}`);
+      const cases = Array.isArray(req.body?.cases)
+        ? req.body.cases.map((item: any) => ({ title: String(item?.title || "").trim(), assertion: String(item?.assertion || "").trim() }))
+        : [];
+      if (!cases.length || cases.some((item) => !item.title || !item.assertion)) throw new Error("At least one test case with title and assertion is required");
+      res.json({ testRun: testRuns.defineCases(verification.id, cases) });
+    } catch (error) { res.status(409).json({ error: error instanceof Error ? error.message : String(error) }); }
+  });
+
+  app.post("/api/agent/verifications/:id/cases/:caseId", (req, res) => {
+    try {
+      const turn = getAgentTurn(req);
+      const verification = verifications.getOwned(req.params.id, turn.clientId);
+      if (verification.status !== "running") throw new Error(`Test case cannot be updated from ${verification.status}`);
+      const status = req.body?.status as "passed" | "failed" | "not_run" | "insufficient_evidence";
+      if (!["passed", "failed", "not_run", "insufficient_evidence"].includes(status)) throw new Error("Invalid test case status");
+      const evidenceSummary = String(req.body?.evidenceSummary || "").trim() || undefined;
+      const failureReason = String(req.body?.failureReason || "").trim() || undefined;
+      const evidenceIds = Array.isArray(req.body?.evidenceIds) ? req.body.evidenceIds.map(String) : undefined;
+      if (status === "passed" && !evidenceSummary) throw new Error("A passed test case requires an evidence summary");
+      if (status === "failed" && !failureReason) throw new Error("A failed test case requires a failure reason");
+      res.json({ testRun: testRuns.updateCase(verification.id, req.params.caseId, { status, evidenceSummary, failureReason, evidenceIds }) });
     } catch (error) { res.status(409).json({ error: error instanceof Error ? error.message : String(error) }); }
   });
 
@@ -634,7 +697,39 @@ export async function startServer(
       const running = verifications.runningForPage(pageUrl);
       const clientIds = [...new Set(running.map((verification) => verification.clientId))];
       if (clientIds.length > 1) throw new Error(`Multiple active verifications target ${pageUrl}; cancel the other runs first`);
-      res.json({ result: await executeCurrentTab(pageUrl, command, clientIds[0]) });
+      if (command.action === "responseBody") {
+        if (running.length !== 1) throw new Error("Exactly one active verification is required to inspect a response body");
+        const evidenceId = String(command.evidenceId || "");
+        const reason = String(command.reason || "").trim();
+        if (!evidenceId || !reason) throw new Error("evidenceId and reason are required");
+        if (reason.length > 500) throw new Error("Response inspection reason is too long");
+        const { responseHandle } = testRuns.resolveResponseHandle(running[0].id, evidenceId);
+        const raw = await executeCurrentTab(pageUrl, { action: "responseBody", requestId: responseHandle }, clientIds[0]) as any;
+        const sanitized = sanitizeJsonPreview(raw?.preview);
+        const evidence = testRuns.attachResponsePreview(running[0].id, evidenceId, {
+          preview: sanitized.preview,
+          reason,
+          truncated: Boolean(raw?.truncated || sanitized.truncated),
+          redactedPaths: [...new Set([...(Array.isArray(raw?.redactedPaths) ? raw.redactedPaths.map(String) : []), ...sanitized.redactedPaths])],
+          originalSize: Number(raw?.originalSize || 0),
+        });
+        res.json({ result: {
+          evidenceId,
+          contentType: raw?.contentType,
+          preview: evidence.responsePreview,
+          truncated: evidence.responseTruncated,
+          redactedPaths: evidence.responseRedactedPaths,
+          originalSize: evidence.responseOriginalSize,
+        } });
+        return;
+      }
+      const rawResult = await executeCurrentTab(pageUrl, command, clientIds[0]);
+      if (command.action === "evidence" && running.length === 1) {
+        const evidence = testRuns.recordEvidence(running[0].id, normalizeBrowserEvidence(rawResult));
+        res.json({ result: { evidence } });
+        return;
+      }
+      res.json({ result: rawResult });
     } catch (error) { res.status(503).json({ error: error instanceof Error ? error.message : String(error) }); }
   });
 

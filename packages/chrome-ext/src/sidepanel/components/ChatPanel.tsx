@@ -21,6 +21,7 @@ interface ChatState {
   sending: boolean;
   sendMessage: (text: string) => void;
   startVerification: (verification: NonNullable<ChatMessage["verification"]>) => void;
+  fixVerification: (verification: NonNullable<ChatMessage["verification"]>, testRun?: TestRunInfo) => void;
   cancelCurrent: () => void;
   clearHistory: () => void;
 }
@@ -157,14 +158,18 @@ function ChatView({ agent, chat, selection }: { agent: AgentState; chat: ChatSta
                 {msg.verification && (
                   <div className="border border-primary/20 bg-background/70 rounded-lg p-2.5 space-y-2">
                     <div className="font-medium">{{ passed: "测试通过", failed: "测试未通过", inconclusive: "测试结果不确定" }[msg.verification.status || ""] || "是否开始当前页面真实浏览器测试？"}</div>
-                    {!['passed', 'failed', 'inconclusive'].includes(msg.verification.status || "") && <>
+                    {msg.verification.status === "failed" && msg.verification.fixSuggestion && <div className="rounded-md border border-destructive/20 bg-destructive/5 p-2 text-muted-foreground">
+                      <div className="font-medium text-foreground">建议修复</div>
+                      <div className="mt-0.5">{msg.verification.fixSuggestion}</div>
+                    </div>}
+                    {!msg.testRun && !['passed', 'failed', 'inconclusive'].includes(msg.verification.status || "") && <>
                       {msg.verification.summary && <div className="text-muted-foreground">{msg.verification.summary}</div>}
                       <ul className="list-disc pl-4 text-muted-foreground space-y-0.5">
                         {msg.verification.proposedChecks.map((check) => <li key={check}>{check}</li>)}
                       </ul>
                     </>}
-                    {msg.testRun && terminalRunStatuses.includes(msg.testRun.status) ? (
-                      <TestRunDetails run={msg.testRun} onRetest={() => startVerification(msg.verification!)} />
+                    {msg.testRun ? (
+                      <TestRunDetails run={msg.testRun} onRetest={() => startVerification(msg.verification!)} onFix={() => chat.fixVerification(msg.verification!, msg.testRun)} />
                     ) : (
                       <Button
                         size="sm"
@@ -219,12 +224,72 @@ function durationLabel(startedAt: string, finishedAt?: string) {
   return milliseconds < 1000 ? `${milliseconds} ms` : `${(milliseconds / 1000).toFixed(milliseconds < 10_000 ? 1 : 0)} s`;
 }
 
-function TestRunDetails({ run, onRetest }: { run: TestRunInfo; onRetest: () => void }) {
+function TestRunDetails({ run, onRetest, onFix }: { run: TestRunInfo; onRetest: () => void; onFix: () => void }) {
   const [expanded, setExpanded] = useState(false);
-  if (!terminalRunStatuses.includes(run.status)) return null;
+  const [evidenceExpanded, setEvidenceExpanded] = useState(false);
+  const terminal = terminalRunStatuses.includes(run.status);
+  const cases = run.cases || [];
+  const evidence = run.evidence || [];
 
   return (
     <div className="space-y-2">
+      {cases.length > 0 && <div className="space-y-1.5">
+        <div className="font-medium">业务测试用例</div>
+        {cases.map((testCase) => {
+          const CaseIcon = testCase.status === "passed" ? CheckCircle2 : testCase.status === "failed" ? XCircle : testCase.status === "pending" ? Loader2 : AlertCircle;
+          const statusLabel = {
+            pending: "执行中",
+            passed: "通过",
+            failed: "失败",
+            not_run: "未执行",
+            insufficient_evidence: "证据不足",
+          }[testCase.status];
+          return <div key={testCase.id} className="flex items-start gap-2 rounded-md border bg-background/70 px-2 py-1.5">
+            <CaseIcon className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${testCase.status === "pending" ? "animate-spin text-primary" : testCase.status === "passed" ? "text-emerald-600" : testCase.status === "failed" ? "text-destructive" : "text-amber-600"}`} />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between gap-2">
+                <span className="break-words font-medium">{testCase.title}</span>
+                <span className="shrink-0 text-[10px] text-muted-foreground">{statusLabel}</span>
+              </div>
+              {testCase.assertion !== testCase.title && <div className="mt-0.5 text-muted-foreground">{testCase.assertion}</div>}
+              {testCase.evidenceSummary && <div className="mt-0.5 text-muted-foreground">证据：{testCase.evidenceSummary}</div>}
+              {testCase.failureReason && <div className="mt-0.5 text-destructive">原因：{testCase.failureReason}</div>}
+            </div>
+          </div>;
+        })}
+      </div>}
+      {evidence.length > 0 && <div className="space-y-1.5">
+        <button type="button" className="inline-flex items-center text-xs text-primary hover:underline" onClick={() => setEvidenceExpanded((value) => !value)}>
+          <ChevronDown className={`mr-1 h-3.5 w-3.5 transition-transform ${evidenceExpanded ? "rotate-180" : ""}`} />
+          {evidenceExpanded ? "收起运行证据" : `查看运行证据（${evidence.length}）`}
+        </button>
+        {evidenceExpanded && <div className="space-y-1.5 border-t pt-2">
+          {evidence.map((item) => <div key={item.id} className="flex items-start gap-2 rounded-md bg-muted/60 px-2 py-1.5">
+            {item.severity === "error"
+              ? <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
+              : item.severity === "warning"
+                ? <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                : <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />}
+            <div className="min-w-0 flex-1">
+              <div className="text-[10px] uppercase text-muted-foreground">{{ network: "Network", console: "Console", page_error: "Page Error" }[item.type]}</div>
+              {item.type === "network"
+                ? <div className="break-all"><span className="mr-1 font-medium">{item.method || "REQUEST"}</span><span className={item.status === undefined || item.status === 0 || item.status >= 400 ? "text-destructive" : "text-emerald-600"}>{item.status || "FAILED"}</span> {item.url}</div>
+                : <div className="break-words">{item.message}</div>}
+              {item.message && item.type === "network" && <div className="mt-0.5 text-destructive">{item.message}</div>}
+              {item.responsePreview !== undefined && <div className="mt-1.5 rounded border bg-background/80 p-1.5">
+                <div className="text-[10px] text-muted-foreground">响应摘要 · 原因：{item.responseBodyReadReason}</div>
+                <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all text-[10px]">{JSON.stringify(item.responsePreview, null, 2)}</pre>
+                <div className="mt-1 text-[10px] text-muted-foreground">
+                  {item.responseOriginalSize !== undefined && `${item.responseOriginalSize} bytes`}
+                  {item.responseTruncated && " · 已裁剪"}
+                  {!!item.responseRedactedPaths?.length && ` · 已脱敏 ${item.responseRedactedPaths.length} 个字段`}
+                </div>
+              </div>}
+              {item.caseIds.length > 0 && <div className="mt-0.5 text-[10px] text-muted-foreground">关联用例：{item.caseIds.join(", ")}</div>}
+            </div>
+          </div>)}
+        </div>}
+      </div>}
       {run.steps.length > 0 && <button type="button" className="inline-flex items-center text-xs text-primary hover:underline" onClick={() => setExpanded((value) => !value)}>
         <ChevronDown className={`mr-1 h-3.5 w-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} />
         {expanded ? "收起执行步骤" : `查看执行步骤（${run.steps.length}）`}
@@ -243,7 +308,9 @@ function TestRunDetails({ run, onRetest }: { run: TestRunInfo; onRetest: () => v
         })}
       </div>}
       <div className="flex flex-wrap gap-1.5">
-        <Button size="sm" className="h-7 text-xs" onClick={onRetest}>重新测试</Button>
+        {terminal
+          ? <>{run.status === "failed" && <Button size="sm" className="h-7 text-xs" onClick={onFix}>修复问题</Button>}<Button size="sm" variant="outline" className="h-7 text-xs" onClick={onRetest}>重新测试</Button></>
+          : <div className="inline-flex items-center text-xs text-muted-foreground"><Loader2 className="mr-1 h-3 w-3 animate-spin" />测试运行中…</div>}
       </div>
     </div>
   );
