@@ -121,6 +121,11 @@ server.registerTool("browser_navigate", { description: "Navigate an existing bro
   return result(value);
 });
 server.registerTool("browser_observe", { description: "Observe interactive elements as a semantic page model. Re-observe after page changes.", inputSchema: { sessionId: z.string() }, annotations: localRead }, async ({ sessionId }) => result(await currentCall(currentUrl(sessionId), "observe")));
+server.registerTool("browser_scroll", {
+  description: "Scroll the visible current page with a real mouse-wheel event. Positive deltaY scrolls down and negative deltaY scrolls up.",
+  inputSchema: { sessionId: z.string(), deltaY: z.number().min(-10000).max(10000), deltaX: z.number().min(-10000).max(10000).optional() },
+  annotations: localAction,
+}, async ({ sessionId, deltaY, deltaX }) => result(await currentCall(currentUrl(sessionId), "scroll", { deltaX: deltaX || 0, deltaY })));
 server.registerTool("browser_click", { description: "Perform a real click. Prefer an element ref returned by browser_observe.", inputSchema: { sessionId: z.string(), target }, annotations: localAction }, async ({ sessionId, target }) => result(await currentCall(currentUrl(sessionId), "click", { target })));
 server.registerTool("browser_fill", { description: "Fill a form control using a semantic target.", inputSchema: { sessionId: z.string(), target, value: z.string() }, annotations: localAction }, async ({ sessionId, target, value }) => result(await currentCall(currentUrl(sessionId), "fill", { target, value })));
 server.registerTool("browser_press", { description: "Press a keyboard key on a semantic target.", inputSchema: { sessionId: z.string(), target, key: z.string() }, annotations: localAction }, async ({ sessionId, target, key }) => result(await currentCall(currentUrl(sessionId), "press", { target, key })));

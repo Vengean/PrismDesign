@@ -64,9 +64,9 @@ export function createToolbar(toolbarActions: ToolbarActions) {
     #prism-design-toolbar button:hover { background: #f3f4f6; color: #374151; }
     #prism-design-toolbar button.pd-active { background: #ede9fe; color: #6366f1; }
     #prism-design-toolbar button svg { width: 18px; height: 18px; flex-shrink: 0; }
-    #prism-design-toolbar.pd-disabled button {
+    #prism-design-toolbar.pd-disabled {
       pointer-events: none;
-      opacity: 0.35;
+      opacity: 0;
     }
     /* Tooltip */
     #prism-design-toolbar button .pd-tooltip {

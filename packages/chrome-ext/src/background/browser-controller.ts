@@ -1,10 +1,12 @@
 export interface CurrentTabCommand {
   requestId: string;
-  action: "attach" | "detach" | "navigate" | "observe" | "click" | "fill" | "press" | "wait" | "screenshot" | "evidence" | "responseBody";
+  action: "attach" | "detach" | "navigate" | "observe" | "scroll" | "click" | "fill" | "press" | "wait" | "screenshot" | "evidence" | "responseBody";
   target?: { ref?: string; role?: string; name?: string; label?: string; selector?: string };
   value?: string;
   url?: string;
   key?: string;
+  deltaX?: number;
+  deltaY?: number;
   condition?: { kind: "url"; value: string; timeoutMs?: number } | { kind: "text"; value: string; timeoutMs?: number } | { kind: "target"; target: NonNullable<CurrentTabCommand["target"]>; timeoutMs?: number };
   requestId?: string;
 }
@@ -188,7 +190,21 @@ function targetExpression(tabId: number, target: NonNullable<CurrentTabCommand["
 
 async function elementPoint(tabId: number, target: NonNullable<CurrentTabCommand["target"]>) {
   const expression = targetExpression(tabId, target);
-  return evaluate<{ x: number; y: number }>(tabId, `(() => { const el=${expression}; if(!el) throw new Error('Element not found'); el.scrollIntoView({block:'center'}); const r=el.getBoundingClientRect(); if(!r.width&&!r.height) throw new Error('Element is not visible'); return {x:r.left+r.width/2,y:r.top+r.height/2}; })()`);
+  return evaluate<{ x: number; y: number }>(tabId, `(async () => {
+    const el=${expression};
+    if(!el) throw new Error('Element not found');
+    el.scrollIntoView({block:'center'});
+    await new Promise(resolve => requestAnimationFrame(() => resolve()));
+    const r=el.getBoundingClientRect();
+    if(!r.width&&!r.height) throw new Error('Element is not visible');
+    const x=r.left+r.width/2, y=r.top+r.height/2;
+    const top=document.elementFromPoint(x,y);
+    if(top && top!==el && !el.contains(top)) {
+      const description=top.id ? '#' + top.id : top.tagName.toLowerCase() + (top.classList.length ? '.' + Array.from(top.classList).slice(0,3).join('.') : '');
+      throw new Error('Element is covered at its click point by ' + description);
+    }
+    return {x,y};
+  })()`);
 }
 
 async function focusElement(tabId: number, target: NonNullable<CurrentTabCommand["target"]>) {
@@ -250,6 +266,14 @@ export async function executeCurrentTabCommand(tabId: number, input: CurrentTabC
       return { success: true, url: input.url };
     }
     if (input.action === "observe") return observe(tabId);
+    if (input.action === "scroll") {
+      const viewport = await evaluate<{ x: number; y: number }>(tabId, `({x:window.innerWidth/2,y:window.innerHeight/2})`);
+      const deltaX = Number.isFinite(input.deltaX) ? input.deltaX! : 0;
+      const deltaY = Number.isFinite(input.deltaY) ? input.deltaY! : 0;
+      await command(tabId, "Input.dispatchMouseEvent", { type: "mouseWheel", ...viewport, deltaX, deltaY });
+      await delay(50);
+      return evaluate(tabId, `({url:location.href,scrollX:window.scrollX,scrollY:window.scrollY})`);
+    }
     if (input.action === "evidence") {
       const snapshot = evidence.get(tabId);
       if (!snapshot) return { console: [], pageErrors: [], network: [] };
