@@ -199,6 +199,10 @@ export function useChat() {
     chrome.storage.local.remove(STORAGE_KEY);
   }, []);
 
+  const deleteMessage = useCallback((index: number) => {
+    setMessages((prev) => prev.filter((_, messageIndex) => messageIndex !== index));
+  }, []);
+
   const cancelCurrent = useCallback(async () => {
     await chrome.runtime.sendMessage({ type: "AGENT_CANCEL_CURRENT" });
   }, []);
@@ -247,5 +251,5 @@ export function useChat() {
     setMessages((prev) => [...prev, { role: "ai", content, timestamp: Date.now() }]);
   }, []);
 
-  return { messages, sending, sendMessage, startVerification, fixVerification, cancelCurrent, clearHistory, addSystemMessage };
+  return { messages, sending, sendMessage, startVerification, fixVerification, cancelCurrent, clearHistory, deleteMessage, addSystemMessage };
 }

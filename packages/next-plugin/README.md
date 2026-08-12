@@ -93,6 +93,17 @@ withPrismDesign({
   agentType: 'codex',
   // 'claude' | 'claude-sub' | 'openai' | 'codex' | 'glm'
 
+  // Agent 子进程的网络代理配置（可选）
+  httpProxy: 'http://127.0.0.1:7893',
+  httpsProxy: 'http://127.0.0.1:7893',
+  noProxy: '127.0.0.1,localhost',
+
+  // Codex 传输方式（可选）
+  codexTransport: 'websocket', // 'websocket' | 'sse'
+
+  // 输出完整的 Agent prompt 调试信息（默认沿用环境变量）
+  agentDebug: true,
+
   // Agent 服务端口（默认 9527，被占用时自动递增）
   agentPort: 9527,
 
@@ -103,6 +114,10 @@ withPrismDesign({
   agentUrl: 'http://localhost:9527',
 
   // ── Widget 配置 ──
+
+  // 是否注入 Widget（默认 true）
+  // 使用 Chrome 扩展作为唯一交互入口时设为 false；Agent 仍会自动启动
+  widget: false,
 
   // 悬浮按钮位置（默认 "bottom-right"）
   position: 'bottom-right',  // 'bottom-right' | 'bottom-left'
@@ -136,10 +151,28 @@ codex login
 ```
 
 ```ts
-withPrismDesign({ agentType: 'codex' })({ reactStrictMode: true })
+withPrismDesign({
+  agentType: 'codex',
+  httpProxy: 'http://127.0.0.1:7893',
+  httpsProxy: 'http://127.0.0.1:7893',
+  noProxy: '127.0.0.1,localhost',
+  codexTransport: 'websocket',
+  agentDebug: true,
+})({ reactStrictMode: true })
 ```
 
-如使用 Codex WebSocket 和本地代理，在启动 `next dev` 的同一终端设置 `HTTP_PROXY`、`HTTPS_PROXY`、`NO_PROXY` 和 `CODEX_TRANSPORT=websocket`。
+以上参数由插件注入 Agent 子进程，配置完成后只需运行 `pnpm dev`。
+
+### 仅使用 Chrome 扩展
+
+```ts
+withPrismDesign({
+  agentType: 'codex',
+  widget: false,
+})({ reactStrictMode: true })
+```
+
+该模式不会复制或注入 Widget，但仍会自动启动 Agent。
 
 ### 使用 OpenAI Agents SDK
 

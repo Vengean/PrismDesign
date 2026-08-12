@@ -27,15 +27,14 @@ export class AgentClient {
     return res.json();
   }
 
-  async chat(message: string): Promise<{ success: boolean; message: string; filesModified?: string[]; runId?: string; verification?: { id: string; goal: string; proposedChecks: string[] } }> {
-    const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  async chat(message: string, runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`): Promise<{ success: boolean; message: string; filesModified?: string[]; runId?: string; verification?: { id: string; goal: string; proposedChecks: string[] } }> {
     const res = await fetch(`${this.baseUrl}/api/chat`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-client-id": this.clientId,
       },
-      body: JSON.stringify({ message, runId, pageUrl: location.href }),
+      body: JSON.stringify({ message, runId, pageUrl: location.href, capabilities: { automatedTesting: false } }),
     });
     return res.json();
   }

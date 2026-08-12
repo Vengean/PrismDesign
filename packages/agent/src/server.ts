@@ -69,7 +69,7 @@ export async function startServer(
   const activeRuns = new Map<string, AbortController>();
   const activeRunClients = new Map<string, string>();
   const activeRunStates = new Map<string, { runId: string; clientId: string; status: "running" | "using_tool" | "responding"; progress: string; updatedAt: string }>();
-  const activeAgentTurns = new Map<string, { clientId: string; runId: string; pageUrl?: string }>();
+  const activeAgentTurns = new Map<string, { clientId: string; runId: string; pageUrl?: string; automatedTesting: boolean }>();
   const pendingFetchRequests = new Map<string, {
     resolve: (result: any) => void;
     reject: (error: Error) => void;
@@ -229,6 +229,12 @@ export async function startServer(
     return turn;
   }
 
+  function getTestingAgentTurn(req: express.Request) {
+    const turn = getAgentTurn(req);
+    if (!turn.automatedTesting) throw new Error("Automated testing is not supported by this client");
+    return turn;
+  }
+
   async function startVerification(id: string, clientId: string) {
     const verification = verifications.getOwned(id, clientId);
     if (!(["awaiting_confirmation", "failed", "passed", "inconclusive", "cancelled"] as const).includes(verification.status as "awaiting_confirmation" | "failed" | "passed" | "inconclusive" | "cancelled")) {
@@ -305,7 +311,7 @@ export async function startServer(
     const capabilityToken = randomBytes(32).toString("hex");
     activeRuns.set(runId, controller);
     activeRunClients.set(runId, clientId);
-    activeAgentTurns.set(capabilityToken, { clientId, runId, pageUrl: verification.baseUrl });
+    activeAgentTurns.set(capabilityToken, { clientId, runId, pageUrl: verification.baseUrl, automatedTesting: true });
     createTestRun(verification, runId, () => controller.abort());
     emitAgentEvent(clientId, { type: "run.started", runId });
     const prompt = [
@@ -373,7 +379,13 @@ export async function startServer(
 
   app.post("/api/chat", async (req, res) => {
     const clientId = getClientId(req);
-    const { message, runId: requestedRunId, pageUrl } = req.body as { message: string; runId?: string; pageUrl?: string };
+    const { message, runId: requestedRunId, pageUrl, capabilities } = req.body as {
+      message: string;
+      runId?: string;
+      pageUrl?: string;
+      capabilities?: { automatedTesting?: boolean };
+    };
+    const automatedTesting = capabilities?.automatedTesting === true;
     const runId = requestedRunId || `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     console.log(`[Server] POST /api/chat clientId=${clientId} message=${message ? `${message.length} chars` : "EMPTY"}`);
@@ -395,12 +407,12 @@ export async function startServer(
     const capabilityToken = randomBytes(32).toString("hex");
     activeRuns.set(runId, controller);
     activeRunClients.set(runId, clientId);
-    activeAgentTurns.set(capabilityToken, { clientId, runId, pageUrl });
+    activeAgentTurns.set(capabilityToken, { clientId, runId, pageUrl, automatedTesting });
     emitAgentEvent(clientId, { type: "run.started", runId });
 
     try {
-      const pending = verifications.latestPending(clientId);
-      const workflowContext = [
+      const pending = automatedTesting ? verifications.latestPending(clientId) : undefined;
+      const workflowContext = automatedTesting ? [
         "[Prism workflow] Interpret the user's intent and sequence yourself; Prism does not classify development versus testing with keyword rules.",
         "For development requests, finish implementation and code-level checks before considering real browser testing.",
         "Only start real browser testing when the current user message explicitly authorizes it now or explicitly asks for it after the requested development is complete.",
@@ -411,13 +423,18 @@ export async function startServer(
         "If the user did not authorize testing, do not call verification_start; after file changes Prism will offer a confirmation action.",
         `Current page: ${pageUrl || "unavailable"}`,
         `[Prism tool context] capabilityToken=${capabilityToken}`,
+      ].join("\n") : [
+        "[Prism workflow] This client does not support automated testing.",
+        "Complete development requests using code-level checks only.",
+        "Do not call verification or prism_browser MCP tools, do not propose browser testing, and do not claim that browser verification was performed.",
+        "Do not mention the lack of browser testing unless the user explicitly asks about testing or verification.",
       ].join("\n");
       const pendingContext = pending
         ? `\n[Pending verification]\n${JSON.stringify({ id: pending.id, status: pending.status, goal: pending.goal, baseUrl: pending.baseUrl, proposedChecks: pending.proposedChecks })}`
         : "\n[Pending verification]\nnone";
       const contextualMessage = `${message}\n\n${workflowContext}${pendingContext}`;
       const result = await provider.run(clientId, runId, contextualMessage, (event) => emitAgentEvent(clientId, event), controller.signal);
-      let turnVerification = verifications.latestForRun(clientId, runId);
+      let turnVerification = automatedTesting ? verifications.latestForRun(clientId, runId) : undefined;
       if (turnVerification && turnVerification.status !== "awaiting_confirmation") {
         if (turnVerification.status === "running") {
           turnVerification = verifications.update(turnVerification.id, clientId, {
@@ -430,7 +447,7 @@ export async function startServer(
         }
       }
       let confirmationVerification = turnVerification?.status === "awaiting_confirmation" ? turnVerification : undefined;
-      if (result.filesModified.length > 0 && pageUrl && !turnVerification) {
+      if (automatedTesting && result.filesModified.length > 0 && pageUrl && !turnVerification) {
         confirmationVerification = verifications.create({
           clientId,
           developmentRunId: runId,
@@ -499,14 +516,14 @@ export async function startServer(
 
   app.post("/api/agent/verifications/pending", (req, res) => {
     try {
-      const turn = getAgentTurn(req);
+      const turn = getTestingAgentTurn(req);
       res.json({ verification: verifications.latestPending(turn.clientId) || null });
     } catch (error) { res.status(403).json({ error: error instanceof Error ? error.message : String(error) }); }
   });
 
   app.post("/api/agent/verifications/propose", (req, res) => {
     try {
-      const turn = getAgentTurn(req);
+      const turn = getTestingAgentTurn(req);
       const pageUrl = verificationPageUrl(turn.pageUrl);
       const goal = String(req.body?.goal || "").trim();
       const proposedChecks = Array.isArray(req.body?.proposedChecks) ? req.body.proposedChecks.map(String).filter(Boolean) : [];
@@ -519,7 +536,7 @@ export async function startServer(
 
   app.post("/api/agent/verifications/:id/start", (req, res) => {
     try {
-      const turn = getAgentTurn(req);
+      const turn = getTestingAgentTurn(req);
       const verification = verifications.getOwned(req.params.id, turn.clientId);
       if (verification.status !== "awaiting_confirmation") throw new Error(`Verification cannot start from ${verification.status}`);
       const instruction = String(req.body?.instruction || "").trim();
@@ -534,7 +551,7 @@ export async function startServer(
 
   app.post("/api/agent/verifications/:id/complete", async (req, res) => {
     try {
-      const turn = getAgentTurn(req);
+      const turn = getTestingAgentTurn(req);
       const verification = verifications.getOwned(req.params.id, turn.clientId);
       if (verification.status !== "running") throw new Error(`Verification cannot complete from ${verification.status}`);
       const status = req.body?.status as "passed" | "failed" | "inconclusive";
@@ -562,7 +579,7 @@ export async function startServer(
 
   app.post("/api/agent/verifications/:id/cases/define", (req, res) => {
     try {
-      const turn = getAgentTurn(req);
+      const turn = getTestingAgentTurn(req);
       const verification = verifications.getOwned(req.params.id, turn.clientId);
       if (verification.status !== "running") throw new Error(`Test cases cannot be defined from ${verification.status}`);
       const cases = Array.isArray(req.body?.cases)
@@ -575,7 +592,7 @@ export async function startServer(
 
   app.post("/api/agent/verifications/:id/cases/:caseId", (req, res) => {
     try {
-      const turn = getAgentTurn(req);
+      const turn = getTestingAgentTurn(req);
       const verification = verifications.getOwned(req.params.id, turn.clientId);
       if (verification.status !== "running") throw new Error(`Test case cannot be updated from ${verification.status}`);
       const status = req.body?.status as "passed" | "failed" | "not_run" | "insufficient_evidence";
@@ -651,6 +668,10 @@ export async function startServer(
   app.post("/api/verifications/:id/start", async (req, res) => {
     const clientId = getClientId(req);
     try {
+      const hasBrowserClient = [...browserRegistrations.keys()].some(
+        (ws) => ws.readyState === WebSocket.OPEN && wsClientIds.get(ws) === clientId,
+      );
+      if (!hasBrowserClient) throw new Error("Automated testing requires the Prism Chrome extension");
       let verificationId = req.params.id;
       const currentPageUrl = verificationPageUrl(req.body?.pageUrl);
       try {
@@ -695,6 +716,7 @@ export async function startServer(
       const { pageUrl, ...command } = req.body as { pageUrl: string; [key: string]: unknown };
       if (!pageUrl) { res.status(400).json({ error: "pageUrl is required" }); return; }
       const running = verifications.runningForPage(pageUrl);
+      if (running.length !== 1) throw new Error("Exactly one authorized running verification is required for browser commands");
       const clientIds = [...new Set(running.map((verification) => verification.clientId))];
       if (clientIds.length > 1) throw new Error(`Multiple active verifications target ${pageUrl}; cancel the other runs first`);
       if (command.action === "responseBody") {

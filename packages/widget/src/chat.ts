@@ -219,7 +219,7 @@ export function createChat(
       return;
     }
 
-    for (const msg of messages) {
+    messages.forEach((msg, messageIndex) => {
       const row = document.createElement("div");
       row.className = `chat-msg-row ${msg.role}`;
 
@@ -232,6 +232,20 @@ export function createChat(
 
       const content = document.createElement("div");
       content.className = "chat-msg-content";
+
+      if (!msg.content.startsWith("⏳")) {
+        const deleteBtn = document.createElement("button");
+        deleteBtn.className = "chat-msg-delete";
+        deleteBtn.innerHTML = ICON_TRASH;
+        deleteBtn.title = "删除此消息";
+        deleteBtn.setAttribute("aria-label", "删除此消息");
+        deleteBtn.onclick = () => {
+          messages.splice(messageIndex, 1);
+          saveHistory();
+          render();
+        };
+        content.appendChild(deleteBtn);
+      }
 
       const bubble = document.createElement("div");
       bubble.className = `chat-msg ${msg.role}${msg.content.startsWith("\u23F3") ? " thinking" : ""}`;
@@ -321,7 +335,7 @@ export function createChat(
       }
       row.appendChild(content);
       messagesEl.appendChild(row);
-    }
+    });
 
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
@@ -401,9 +415,13 @@ export function createChat(
     autoResize();
 
     const thinkingIdx = messages.length - 1;
+    const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     let lastProgressText = "";
     let streamedText = "";
+    let settleWebSocket: ((result: any) => void) | undefined;
+    const webSocketResult = new Promise<any>((resolve) => { settleWebSocket = resolve; });
     const ws = agentClient.connectWebSocket((type, data: any) => {
+      if (data?.runId && data.runId !== runId) return;
       if (type === "agent:progress") {
         const progressText = data.text || t("chat.thinking");
         lastProgressText = progressText;
@@ -416,12 +434,28 @@ export function createChat(
         streamedText += data.delta || "";
         messages[thinkingIdx] = { ...messages[thinkingIdx], content: streamedText };
         render();
+      } else if (type === "run.completed") {
+        settleWebSocket?.(data.result);
+      } else if (type === "run.failed") {
+        settleWebSocket?.({ success: false, message: data.error?.message || t("chat.requestFailed") });
+      } else if (type === "run.cancelled") {
+        settleWebSocket?.({ success: false, message: "请求已取消" });
       }
     });
 
     let hasFileChanges = false;
     try {
-      const result = await agentClient.chat(agentMessage);
+      let result;
+      try {
+        result = await agentClient.chat(agentMessage, runId);
+      } catch {
+        // The long-lived HTTP request can be interrupted by HMR or a proxy while
+        // the Agent continues running. Wait for the authoritative WS terminal event.
+        result = await Promise.race([
+          webSocketResult,
+          new Promise((resolve) => setTimeout(() => resolve({ success: false, message: t("chat.requestFailed") }), 15 * 60_000)),
+        ]);
+      }
 
       hasFileChanges = (result.filesModified?.length ?? 0) > 0;
 

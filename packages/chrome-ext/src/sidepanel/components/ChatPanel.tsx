@@ -24,6 +24,7 @@ interface ChatState {
   fixVerification: (verification: NonNullable<ChatMessage["verification"]>, testRun?: TestRunInfo) => void;
   cancelCurrent: () => void;
   clearHistory: () => void;
+  deleteMessage: (index: number) => void;
 }
 
 export function ChatPanel({ agent, chat, selection }: { agent: AgentState; chat: ChatState; selection: ElementSelection | null }) {
@@ -105,7 +106,7 @@ function formatSelectionContext(sel: ElementSelection): string {
 }
 
 function ChatView({ agent, chat, selection }: { agent: AgentState; chat: ChatState; selection: ElementSelection | null }) {
-  const { messages, sending, sendMessage, startVerification, cancelCurrent, clearHistory } = chat;
+  const { messages, sending, sendMessage, startVerification, cancelCurrent, clearHistory, deleteMessage } = chat;
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -138,11 +139,20 @@ function ChatView({ agent, chat, selection }: { agent: AgentState; chat: ChatSta
         ) : (
           <>
           {messages.map((msg, i) => (
-            <div key={i} className={`flex gap-2 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+            <div key={i} className={`group flex gap-2 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
               {msg.role === "ai" && (
                 <div className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[9px] font-bold shrink-0 mt-0.5">AI</div>
               )}
-              <div className={`max-w-[85%] space-y-2 px-3 py-2 rounded-xl text-xs leading-relaxed ${msg.role === "user" ? "bg-blue-100 text-gray-900 rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}>
+              <div className={`relative max-w-[85%] space-y-2 px-3 py-2 rounded-xl text-xs leading-relaxed ${msg.role === "user" ? "bg-blue-100 text-gray-900 rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}>
+                {!msg.pending && <button
+                  type="button"
+                  title="删除此消息"
+                  aria-label="删除此消息"
+                  className="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full border bg-background text-muted-foreground opacity-0 shadow-sm transition-opacity group-hover:opacity-100 focus:opacity-100 [@media(hover:none)]:opacity-100 hover:text-destructive"
+                  onClick={() => deleteMessage(i)}
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>}
                 {msg.content.startsWith("⏳") ? (
                   <div className="flex items-center gap-1.5">
                     <Loader2 className="h-3 w-3 animate-spin text-primary shrink-0" />

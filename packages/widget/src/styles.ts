@@ -212,6 +212,48 @@ export const WIDGET_CSS = `
 .chat-msg-row.ai {
   justify-content: flex-start;
 }
+.chat-msg-content {
+  position: relative;
+  max-width: 85%;
+  min-width: 0;
+}
+.chat-msg-content .chat-msg {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.chat-msg-delete {
+  position: absolute;
+  z-index: 1;
+  top: -8px;
+  right: -8px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e5e7eb;
+  border-radius: 50%;
+  background: #fff;
+  color: #9ca3af;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+.chat-msg-content:hover .chat-msg-delete {
+  display: flex;
+}
+@media (hover: none) {
+  .chat-msg-delete {
+    display: flex;
+  }
+}
+.chat-msg-delete:hover {
+  color: #ef4444;
+}
+.chat-msg-delete svg {
+  width: 12px;
+  height: 12px;
+}
 .ai-avatar {
   width: 20px;
   height: 20px;

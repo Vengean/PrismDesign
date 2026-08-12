@@ -142,7 +142,12 @@ export async function chatWithAgent(
   const res = await fetch(`${state.agentUrl}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-client-id": state.clientId },
-    body: JSON.stringify({ message, runId, pageUrl: (await chrome.tabs.get(Number(state.clientId.replace("chrome-tab-", "")))).url }),
+    body: JSON.stringify({
+      message,
+      runId,
+      pageUrl: (await chrome.tabs.get(Number(state.clientId.replace("chrome-tab-", "")))).url,
+      capabilities: { automatedTesting: true },
+    }),
   });
   return res.json();
 }

@@ -21,10 +21,22 @@ export interface PrismDesignOptions {
   baseUrl?: string;
   /** Provider model override. */
   model?: string;
+  /** HTTP proxy inherited by the Agent process (HTTP_PROXY). */
+  httpProxy?: string;
+  /** HTTPS proxy inherited by the Agent process (HTTPS_PROXY). */
+  httpsProxy?: string;
+  /** Hosts that bypass the proxy (NO_PROXY). */
+  noProxy?: string;
+  /** Codex transport override (CODEX_TRANSPORT). */
+  codexTransport?: "websocket" | "sse";
+  /** Log full Agent prompt bodies (PRISM_AGENT_DEBUG). */
+  agentDebug?: boolean;
   /** Widget position (default: "bottom-right") */
   position?: "bottom-right" | "bottom-left";
   /** Widget locale override */
   locale?: "zh" | "en";
+  /** Inject the in-page Widget. Set false when using the Chrome extension UI. Default: true. */
+  widget?: boolean;
 }
 
 // Require from project root (fallback when plugin's own require can't resolve hoisted deps)

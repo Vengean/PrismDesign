@@ -111,6 +111,11 @@ function startAgent(
     apiKey,
     baseUrl,
     model,
+    httpProxy,
+    httpsProxy,
+    noProxy,
+    codexTransport,
+    agentDebug,
   } = options;
 
   // If running inside a workspace container, reuse its agent
@@ -135,7 +140,13 @@ function startAgent(
     return;
   }
 
-  const agentEnv = { ...process.env };
+  const agentEnv: NodeJS.ProcessEnv = { ...process.env };
+  if (httpProxy !== undefined) agentEnv.HTTP_PROXY = httpProxy;
+  if (httpsProxy !== undefined) agentEnv.HTTPS_PROXY = httpsProxy;
+  if (noProxy !== undefined) agentEnv.NO_PROXY = noProxy;
+  if (codexTransport !== undefined) agentEnv.CODEX_TRANSPORT = codexTransport;
+  if (agentDebug !== undefined) agentEnv.PRISM_AGENT_DEBUG = agentDebug ? "1" : "0";
+  if (agentEnv.PRISM_AGENT_DEBUG_EVENTS === undefined) agentEnv.PRISM_AGENT_DEBUG_EVENTS = "1";
   if (agentType === "openai") {
     if (apiKey) agentEnv.OPENAI_API_KEY = apiKey;
     if (baseUrl) agentEnv.OPENAI_BASE_URL = baseUrl;
@@ -219,10 +230,14 @@ function setupPrismDesign(projectRoot: string, options: PrismDesignOptions, base
   if (setupDone) return;
   setupDone = true;
 
-  if (!copyWidget(projectRoot)) return;
-  log("Widget files copied to public/__prism-design__/");
-
-  writeInitScript(projectRoot, options, basePath);
+  if (options.widget !== false) {
+    if (!copyWidget(projectRoot)) return;
+    log("Widget files copied to public/__prism-design__/");
+    writeInitScript(projectRoot, options, basePath);
+  } else {
+    ensurePublicDir(projectRoot);
+    log("Widget injection disabled; use the Chrome extension to connect to the Agent.");
+  }
 
   // 用 lockfile 防止跨模块加载上下文重复启动 Agent
   const lockFile = path.join(projectRoot, "public", PRISM_PUBLIC_DIR, ".agent.lock");
@@ -276,7 +291,7 @@ export function withPrismDesign(options: PrismDesignOptions = {}) {
 
         // Webpack-only: inject init.js into client-side entry for auto-loading
         // (Turbopack 用户需配合 <PrismDesign /> 组件实现浏览器端加载)
-        if (!context.isServer && context.dev) {
+        if (options.widget !== false && !context.isServer && context.dev) {
           const initScriptPath = path.join(projectRoot, "public", PRISM_PUBLIC_DIR, "init.js");
           if (fs.existsSync(initScriptPath)) {
             const originalEntry = config.entry;
