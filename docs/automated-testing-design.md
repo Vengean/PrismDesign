@@ -19,7 +19,7 @@ Agent 自行理解动作顺序：先完成开发和代码检查，等待页面�
 Prism Agent + Verification Orchestrator
           │
           ├── verification_*：提议、启动、完成验证
-          ├── prism_browser：观察、点击、填写、截图、证据
+          ├── prism_browser：观察、滚动、点击、填写、截图、证据
           └── 项目 MCP（可选）：业务 Fixture/API/DB 能力
           │
           ▼
@@ -40,6 +40,43 @@ Chrome Extension + chrome.debugger/CDP
 7. **项目能力可选**：Fixture Skill/MCP 属于具体项目，Prism 只提供发现、调用和生命周期编排机制。
 8. **本地运行不持久化**：Test Run 和 Verification 保存在 Agent 内存，不在开发者源码目录生成数据库。
 
+### 2.1 与 Playwright 的定位关系
+
+Prism Agent 测试不是另一个 Playwright，也不以替代 Playwright 为目标。两者解决的问题不同：
+
+> Playwright 擅长每次严格执行已知步骤；Prism Agent 擅长理解本次开发目标，并像真实用户一样动态完成验证。
+
+| 维度 | Prism Agent 测试 | Playwright |
+|---|---|---|
+| 核心输入 | 用户目标、业务断言和当前页面 | 预先编写的测试脚本和断言 |
+| 测试步骤 | Agent 根据页面状态动态规划 | 开发者提前确定 |
+| 浏览器环境 | 默认复用用户当前可见 Chrome Tab | 通常创建隔离 Browser Context |
+| 登录状态 | 可直接复用当前登录会话 | 通常通过登录脚本或 storage state 准备 |
+| 页面变化适应性 | 可重新观察页面并调整路径 | selector 或固定流程变化后需要维护脚本 |
+| 结果判断 | 综合业务语义、UI、Network、Runtime 和 Data 证据 | 以确定性断言为主 |
+| 可重复性 | 受模型规划和运行环境影响，相对较弱 | 高，适合作为稳定回归门禁 |
+| 执行成本 | 需要多轮观察和推理，相对较高 | 固定脚本执行更快、更易并行 |
+| CI 与跨浏览器 | 当前不是主要场景 | 生态成熟，支持 CI、并行和多浏览器 |
+| 典型用途 | 开发后即时验收、探索性测试、失败诊断与修复闭环 | 核心流程回归、发布门禁和长期质量保障 |
+
+Prism Agent 测试的主要优势：
+
+- 用户无需编写测试脚本，可以直接描述“验证新增笔记并确认刷新后仍存在”。
+- 能复用用户眼前的真实页面、登录态和本地开发环境，并让用户观看操作过程。
+- 页面结构改变后可以重新观察和规划，适合功能快速迭代期的一次性验证。
+- 可以串联开发、等待 HMR、业务数据准备、页面操作、证据分析、修复建议和授权复测。
+- 项目 Skill/MCP 可以补充 Agent 不具备的业务知识和受控 Fixture 能力。
+
+相对 Playwright 的限制：
+
+- Agent 的路径选择不是完全确定的，可能误解目标、遗漏边界条件或产生不同操作序列。
+- 执行速度和成本高于固定脚本，覆盖率也更难量化。
+- 用户页面中的动画、遮罩、浮层和浏览器环境会造成真实的环境性失败。
+- 当前缺少 Playwright 成熟的跨浏览器、并行、Trace、录像、重试和 CI 报告能力。
+- 在证据和断言不足时，Agent 的“通过”不能代替确定性的发布门禁。
+
+推荐采用分层组合：Agent 负责开发阶段的动态验收、探索和自动修复闭环；稳定且重要的业务路径沉淀为 Playwright 用例，由 CI 执行确定性回归。未来可由 Agent 根据已经验证的业务目标建议或生成 Playwright 用例，但不把脚本生成作为当前产品的核心交互。
+
 ## 3. 组件职责与边界
 
 | 组件 | 职责 | 是否了解项目业务 |
@@ -48,7 +85,7 @@ Chrome Extension + chrome.debugger/CDP
 | Widget | 对话、确认和结果展示（可选） | 否 |
 | Prism Agent | 理解用户意图、规划开发和测试、选择并调用工具 | 只通过 Skill 获得 |
 | Verification Orchestrator | 权限和状态转换、Test Run、超时、取消、清理 | 否 |
-| Browser MCP/Runtime | observe/click/fill/wait/screenshot/evidence/stop | 否 |
+| Browser MCP/Runtime | observe/scroll/click/fill/wait/screenshot/evidence/stop | 否 |
 | 项目 Skill | 描述业务前置条件、工具使用方法和验收知识 | 是 |
 | 项目 MCP | 受控创建、查询和清理业务数据 | 是 |
 
@@ -104,10 +141,11 @@ Browser MCP 提供：
 
 ```text
 browser_start        browser_navigate
-browser_observe      browser_click
-browser_fill         browser_press
-browser_wait         browser_screenshot
-browser_evidence     browser_stop
+browser_observe      browser_scroll
+browser_click        browser_fill
+browser_press        browser_wait
+browser_screenshot   browser_evidence
+browser_stop
 browser_response_body（仅异常诊断时按需调用）
 ```
 
@@ -139,6 +177,9 @@ Chrome 连接规则：
 - Codex SDK 子进程局部禁用继承自桌面 Codex 的 bundled Browser 插件和 node_repl 浏览器后端，避免模型绕过 `prism_browser` 选择无实例的通用运行时；不修改用户全局 Codex 配置。
 - 页面跳转后保持同一个 `tabId`，不重新查询 active Tab；Runtime/Input/Page/Network 由 CDP 提供。
 - `browser_fill` 对 input/textarea 使用 CDP Runtime 原生 value setter 与 input/change 事件，避免账号密码 Autofill UI 抢焦点；contenteditable 使用 CDP Input。
+- `browser_click` 将语义目标滚动到视口中央后，通过 CDP 向元素中心坐标派发真实鼠标事件；点击前检查中心点遮挡并返回明确诊断。
+- `browser_scroll` 通过 CDP 派发真实鼠标滚轮事件，支持 Agent 根据页面状态主动上下或横向滚动。
+- Agent 执行期间 Prism Toolbar 整体不参与指针命中并暂时隐藏，避免平台自身浮层遮挡被测应用。
 - 测试完成、失败、取消或超时时由服务端兜底 detach。
 
 ## 6. Fixture 与当前登录态
@@ -224,7 +265,7 @@ GET /api/browser/diagnostics
 
 敏感信息要求：密码、token、cookie、authorization 不能进入最终报告或长期日志；密码输入值在 DOM 观察中必须脱敏。
 
-## 9. 当前进度（2026-08-09）
+## 9. 当前进度（2026-08-10）
 
 ### 已完成：第一阶段——可靠运行
 
@@ -242,6 +283,7 @@ GET /api/browser/diagnostics
 - [x] 浏览器连接诊断接口。
 - [x] SQLite 文件不计入源码修改。
 - [x] Demo Node API、SQLite 业务库、Fixture MCP 和 Fixture Skill 示例。
+- [x] CDP 主动滚动、点击中心点遮挡诊断和 Prism Toolbar 测试期避让。
 
 ### 已完成：第二阶段——结构化结果与运行期证据
 
@@ -292,7 +334,7 @@ GET /api/browser/diagnostics
 8. **清理结果展示**（已完成基础链路）：展示浏览器资源和项目 Fixture 的清理结果。
 9. **浏览器诊断 UI**：把 `/api/browser/diagnostics` 转换为用户可理解的连接检查。
 
-> 下一项优先实现：浏览器环境预检。Screenshot 保存及历史展示暂缓。
+> 浏览器环境预检是下一项用户可见能力；但在开发它之前，必须先完成下文 P0 局域网多用户认证与浏览器所有权隔离。Screenshot 保存及历史展示继续暂缓。
 
 #### 业务测试用例约定
 
@@ -372,7 +414,7 @@ GET /api/browser/diagnostics
 5. **P2——Response Body 读取前限流**：应记录 `Network.loadingFinished.encodedDataLength`，在 `Network.getResponseBody` 前拒绝已知超限响应；读取后的 1 MB 检查保留为第二层保护。
 6. **P2——Network Evidence 实例身份**：同 method/URL/status 的多次请求不能合并为一个证据并覆盖 response handle；每次响应应有独立请求序号和 Evidence ID。
 
-下一次开发建议从第 1 项开始。在局域网认证与隔离完成前，Agent 应仅用于可信网络，或仅监听 `127.0.0.1` 供单机使用。
+下一次开发从第 1 项开始。在局域网认证与隔离完成前，Agent 应仅用于可信网络，或仅监听 `127.0.0.1` 供单机使用。完成 P0 后再实现浏览器环境预检与诊断 UI，然后处理 Provider 能力对齐等 P1 项。
 
 ## 11. 平台化边界（暂不开发）
 
@@ -396,7 +438,24 @@ prism.config.*
 
 ## 12. 下一验收目标
 
-下一阶段以“测试前发现并解释浏览器环境问题”为验收目标：
+### 12.1 P0：连接认证与浏览器所有权隔离
+
+第一项验收目标是保证每条浏览器命令只能到达发起该 Verification 的用户、插件实例和 Tab：
+
+```text
+Chrome 插件首次连接 Agent
+→ 通过一次性配对流程获得本机保存的插件 Token
+→ 注册随机 browserInstanceId、用户/工作区和明确绑定的 tabId
+→ Verification 启动时签发短期 browser capability
+→ 每条 Browser REST/WebSocket 命令校验 user + client + instance + tab + verification + origin
+→ 任一身份或生命周期不匹配时拒绝转发
+```
+
+同时删除 `/api/test/fetch` 找不到 client 时选择任意浏览器的退路。该阶段不改变 Agent 如何理解测试语义，只收紧现有命令的授权和路由边界。
+
+### 12.2 P1：浏览器环境预检
+
+完成连接隔离后，以“测试前发现并解释浏览器环境问题”为下一项用户可见验收目标：
 
 ```text
 用户点击开始测试
