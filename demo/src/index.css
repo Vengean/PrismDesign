@@ -87,6 +87,69 @@
     #f7f7f5;
 }
 
+.markdown-content {
+  overflow-wrap: anywhere;
+  line-height: 1.75;
+}
+
+.markdown-content > :first-child { margin-top: 0; }
+.markdown-content > :last-child { margin-bottom: 0; }
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3 {
+  margin: 1.75em 0 0.65em;
+  color: #24231f;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+}
+.markdown-content h1 { font-size: 1.75em; }
+.markdown-content h2 { font-size: 1.4em; }
+.markdown-content h3 { font-size: 1.15em; }
+.markdown-content p,
+.markdown-content ul,
+.markdown-content ol,
+.markdown-content blockquote,
+.markdown-content pre,
+.markdown-content table { margin: 0 0 1.15em; }
+.markdown-content ul,
+.markdown-content ol { padding-left: 1.5em; }
+.markdown-content ul { list-style: disc; }
+.markdown-content ol { list-style: decimal; }
+.markdown-content li + li { margin-top: 0.25em; }
+.markdown-content a {
+  color: #80683e;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.markdown-content blockquote {
+  border-left: 3px solid #c6b58f;
+  color: #77736b;
+  padding-left: 1em;
+}
+.markdown-content code {
+  border-radius: 0.35rem;
+  background: #f0ede6;
+  padding: 0.12em 0.35em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.88em;
+}
+.markdown-content pre {
+  overflow-x: auto;
+  border: 1px solid #e5e2da;
+  border-radius: 0.75rem;
+  background: #f4f2ec;
+  padding: 1em;
+}
+.markdown-content pre code { background: transparent; padding: 0; }
+.markdown-content hr { margin: 1.75em 0; border-color: #e5e2da; }
+.markdown-content table { display: block; width: 100%; overflow-x: auto; border-collapse: collapse; }
+.markdown-content th,
+.markdown-content td { border: 1px solid #dedbd2; padding: 0.55em 0.75em; text-align: left; }
+.markdown-content th { background: #f4f2ec; font-weight: 600; }
+.markdown-content img { max-width: 100%; border-radius: 0.75rem; }
+.markdown-content input[type='checkbox'] { margin-right: 0.45em; accent-color: #80683e; }
+
 @media (prefers-reduced-motion: reduce) {
   .animate-login-in { animation: none; }
 }

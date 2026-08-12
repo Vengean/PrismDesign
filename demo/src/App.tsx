@@ -1,9 +1,12 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { ArrowRight, CalendarDays, Check, ChevronRight, Clock3, Eye, EyeOff, LoaderCircle, LockKeyhole, LogOut, Mail, Menu, NotebookPen, Pencil, Plus, Search, ShieldCheck, Sparkles, X } from 'lucide-react'
+import Markdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { Button } from './components/ui/button'
 import { Checkbox } from './components/ui/checkbox'
 import { Input } from './components/ui/input'
 import { Label } from './components/ui/label'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
 import { api, type Note, type User } from './api'
 
 const SESSION_KEY = 'prism-demo-session'
@@ -19,6 +22,10 @@ const formatUpdatedAt = (value: string) => {
 
 type FieldErrors = { name?: string; email?: string; password?: string; confirmPassword?: string; form?: string }
 
+function MarkdownContent({ children, className = '' }: { children: string; className?: string }) {
+  return <div className={`markdown-content ${className}`}><Markdown remarkPlugins={[remarkGfm]}>{children}</Markdown></div>
+}
+
 function NotesPage({ user, token, onLogout }: { user: User; token: string; onLogout: () => void }) {
   const [notes, setNotes] = useState<Note[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
@@ -28,6 +35,7 @@ function NotesPage({ user, token, onLogout }: { user: User; token: string; onLog
   const [mobileListOpen, setMobileListOpen] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
   const [draftContent, setDraftContent] = useState('')
+  const [editorMode, setEditorMode] = useState<'edit' | 'preview'>('edit')
   const [isLoadingNotes, setIsLoadingNotes] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [noteError, setNoteError] = useState('')
@@ -46,6 +54,7 @@ function NotesPage({ user, token, onLogout }: { user: User; token: string; onLog
     setEditingId(null)
     setDraftTitle('')
     setDraftContent('')
+    setEditorMode('edit')
     setIsCreating(true)
   }
 
@@ -53,6 +62,7 @@ function NotesPage({ user, token, onLogout }: { user: User; token: string; onLog
     setEditingId(note.id)
     setDraftTitle(note.title)
     setDraftContent(note.content)
+    setEditorMode('edit')
     setIsCreating(true)
   }
 
@@ -111,7 +121,7 @@ function NotesPage({ user, token, onLogout }: { user: User; token: string; onLog
           </div>
           <div className="flex-1 overflow-y-auto p-3">
             {filteredNotes.map((note) => (
-              <button key={note.id} type="button" onClick={() => { setSelectedId(note.id); setMobileListOpen(false) }} className={`group mb-1 w-full rounded-xl px-4 py-3.5 text-left transition ${selectedId === note.id ? 'bg-white shadow-[0_3px_14px_rgba(42,40,34,0.07)] ring-1 ring-black/5' : 'hover:bg-black/[0.035]'}`}>
+              <button key={note.id} type="button" onClick={() => { setSelectedId(note.id); setMobileListOpen(false) }} className={`group mb-1 w-full rounded-xl px-4 py-3.5 text-left transition-[background-color,box-shadow,transform] duration-150 ease-out active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9a7b43]/45 focus-visible:ring-offset-2 focus-visible:ring-offset-[#f8f7f3] motion-reduce:transform-none ${selectedId === note.id ? 'bg-white shadow-[0_3px_14px_rgba(42,40,34,0.07)] ring-1 ring-black/5 hover:bg-black/[0.018] active:bg-black/[0.045]' : 'hover:bg-black/[0.035] active:bg-black/[0.065]'}`}>
                 <div className="mb-1.5 flex items-center justify-between gap-2"><span className="truncate text-sm font-semibold">{note.title}</span><ChevronRight className={`h-4 w-4 shrink-0 ${selectedId === note.id ? 'text-[#9a7b43]' : 'text-transparent group-hover:text-[#aaa69d]'}`} /></div>
                 <p className="line-clamp-2 text-xs leading-5 text-[#858178]">{note.content.replaceAll('\n', ' ')}</p>
                 <div className="mt-2.5 flex items-center gap-2 text-[10px] text-[#aaa69d]"><span className="rounded-md bg-[#eeeae1] px-1.5 py-0.5 text-[#817255]">{note.category}</span><span>{formatUpdatedAt(note.updatedAt)}</span></div>
@@ -127,18 +137,35 @@ function NotesPage({ user, token, onLogout }: { user: User; token: string; onLog
             <div className="mb-9 flex items-center justify-between border-b border-[#ece8de] pb-6"><span className="rounded-full bg-[#f0ebdf] px-3 py-1 text-xs font-medium text-[#80683e]">{selectedNote.category}</span><div className="flex items-center gap-3"><div className="flex items-center gap-1.5 text-xs text-[#a09b91]"><Clock3 className="h-3.5 w-3.5" />更新于 {formatUpdatedAt(selectedNote.updatedAt)}</div><button type="button" onClick={() => openEditNote(selectedNote)} className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#80683e] transition hover:bg-[#f0ebdf]" aria-label={`编辑笔记：${selectedNote.title}`}><Pencil className="h-3.5 w-3.5" />编辑</button></div></div>
             <h2 className="text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">{selectedNote.title}</h2>
             <div className="mt-4 flex items-center gap-2 text-xs text-[#a09b91]"><CalendarDays className="h-3.5 w-3.5" />{formatDate(selectedNote.createdAt)}</div>
-            <div className="mt-9 whitespace-pre-wrap text-[15px] leading-8 text-[#4e4b44] sm:text-base">{selectedNote.content}</div>
+            <MarkdownContent className="mt-9 text-[15px] text-[#4e4b44] sm:text-base">{selectedNote.content}</MarkdownContent>
           </article>}
         </section>
       </div>
 
       {isCreating && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/35 p-0 backdrop-blur-[2px] sm:items-center sm:p-6" onMouseDown={(e) => { if (e.target === e.currentTarget) closeNoteEditor() }}>
-        <form onSubmit={saveNote} className="animate-login-in w-full max-w-2xl rounded-t-3xl bg-[#fffefa] p-6 shadow-2xl sm:rounded-3xl sm:p-8">
-          <div className="mb-7 flex items-center justify-between"><div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#eee8db] text-[#80683e]"><NotebookPen className="h-5 w-5" /></span><div><h2 className="text-xl font-semibold">{editingId !== null ? '编辑笔记' : '新建笔记'}</h2><p className="text-xs text-[#99958c]">{editingId !== null ? '修改标题和内容' : '记录此刻的想法'}</p></div></div><button type="button" onClick={closeNoteEditor} className="rounded-lg p-2 text-[#99958c] hover:bg-black/5" aria-label="关闭"><X className="h-5 w-5" /></button></div>
+        <form onSubmit={saveNote} className="animate-login-in flex h-[calc(100dvh-16px)] w-full max-w-3xl flex-col overflow-hidden rounded-t-3xl bg-[#fffefa] p-6 shadow-2xl sm:h-[min(760px,calc(100dvh-48px))] sm:rounded-3xl sm:p-8">
+          <div className="mb-6 flex shrink-0 items-center justify-between"><div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#eee8db] text-[#80683e]"><NotebookPen className="h-5 w-5" /></span><div><h2 className="text-xl font-semibold">{editingId !== null ? '编辑笔记' : '新建笔记'}</h2><p className="text-xs text-[#99958c]">{editingId !== null ? '修改标题和内容' : '记录此刻的想法'}</p></div></div><button type="button" onClick={closeNoteEditor} className="rounded-lg p-2 text-[#99958c] hover:bg-black/5" aria-label="关闭"><X className="h-5 w-5" /></button></div>
           <Label htmlFor="note-title">标题</Label><Input id="note-title" autoFocus value={draftTitle} onChange={(e) => setDraftTitle(e.target.value)} placeholder="给这条笔记起个标题" className="mt-2 h-12 rounded-xl bg-white shadow-none" />
-          <Label htmlFor="note-content" className="mt-5 block">内容</Label><textarea id="note-content" value={draftContent} onChange={(e) => setDraftContent(e.target.value)} placeholder="开始写下你的想法..." className="mt-2 min-h-52 w-full resize-none rounded-xl border border-input bg-white px-4 py-3 text-sm leading-6 outline-none transition focus:border-[#aaa18e] focus:ring-2 focus:ring-[#d8d0c0]/50" />
+          <Tabs value={editorMode} onValueChange={(value) => setEditorMode(value as 'edit' | 'preview')} className="mt-5 flex min-h-0 flex-1 flex-col">
+            <div className="flex shrink-0 items-center justify-between gap-3">
+              <Label htmlFor="note-content">内容</Label>
+              <TabsList className="h-10 rounded-xl bg-[#f0ede6] p-1" aria-label="正文显示模式">
+                <TabsTrigger value="edit" className="h-8 rounded-lg px-4 text-xs text-[#77736b] data-[state=active]:bg-[#fffefa] data-[state=active]:text-[#24231f] data-[state=active]:shadow-sm">编辑</TabsTrigger>
+                <TabsTrigger value="preview" className="h-8 rounded-lg px-4 text-xs text-[#77736b] data-[state=active]:bg-[#fffefa] data-[state=active]:text-[#24231f] data-[state=active]:shadow-sm">预览</TabsTrigger>
+              </TabsList>
+            </div>
+            <TabsContent value="edit" className="mt-2 min-h-0 flex-1 flex-col data-[state=active]:flex">
+              <textarea id="note-content" value={draftContent} onChange={(e) => setDraftContent(e.target.value)} placeholder="使用 Markdown 开始写下你的想法..." className="min-h-0 w-full flex-1 resize-none rounded-xl border border-input bg-white px-4 py-3 font-mono text-sm leading-6 outline-none transition focus:border-[#aaa18e] focus:ring-2 focus:ring-[#d8d0c0]/50" />
+              <p className="mt-2 text-xs text-[#99958c]">支持标题、列表、链接、引用、代码块和表格等 Markdown 语法。</p>
+            </TabsContent>
+            <TabsContent value="preview" className="mt-2 min-h-0 flex-1 flex-col data-[state=active]:flex">
+              <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-[#e5e2da] bg-white px-5 py-4">
+                {draftContent.trim() ? <MarkdownContent className="text-sm text-[#4e4b44]">{draftContent}</MarkdownContent> : <p className="py-20 text-center text-sm text-[#99958c]">输入内容后，可在这里查看 Markdown 效果。</p>}
+              </div>
+            </TabsContent>
+          </Tabs>
           {noteError && <p role="alert" className="mt-4 text-sm text-red-600">{noteError}</p>}
-          <div className="mt-6 flex justify-end gap-3"><Button type="button" variant="outline" onClick={closeNoteEditor} className="rounded-xl">取消</Button><Button type="submit" disabled={isSaving || !draftTitle.trim() || !draftContent.trim()} className="rounded-xl px-5">{isSaving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}{isSaving ? '正在保存...' : editingId !== null ? '保存修改' : '保存笔记'}</Button></div>
+          <div className="mt-5 flex shrink-0 justify-end gap-3"><Button type="button" variant="outline" onClick={closeNoteEditor} className="rounded-xl">取消</Button><Button type="submit" disabled={isSaving || !draftTitle.trim() || !draftContent.trim()} className="rounded-xl px-5">{isSaving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}{isSaving ? '正在保存...' : editingId !== null ? '保存修改' : '保存笔记'}</Button></div>
         </form>
       </div>}
     </main>
@@ -218,7 +245,7 @@ export default function App() {
   if (user && token) return <NotesPage user={user} token={token} onLogout={handleLogout} />
 
   return (
-    <main className="min-h-screen bg-[#f7f7f5] text-[#191919] lg:grid lg:grid-cols-[minmax(420px,0.92fr)_minmax(560px,1.08fr)]">
+    <main className="min-h-screen bg-[#f7f7f5] text-[#191919] lg:grid lg:grid-cols-[minmax(380px,0.8fr)_minmax(560px,1.2fr)]">
       <section className="relative hidden min-h-screen overflow-hidden bg-[#171717] p-12 text-white lg:flex lg:flex-col lg:justify-between xl:p-16">
         <div className="absolute inset-0 opacity-70 [background-image:radial-gradient(circle_at_80%_20%,rgba(244,210,132,0.18),transparent_30%),radial-gradient(circle_at_10%_90%,rgba(255,255,255,0.10),transparent_27%)]" /><div className="absolute inset-0 opacity-[0.055] [background-image:linear-gradient(rgba(255,255,255,0.9)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.9)_1px,transparent_1px)] [background-size:48px_48px]" />
         <div className="relative z-10 flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/15 bg-white/10 backdrop-blur"><Sparkles className="h-5 w-5 text-[#efd49c]" /></div><span className="text-lg font-semibold tracking-wide">PRISM · 棱镜</span></div>

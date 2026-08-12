@@ -15,7 +15,7 @@ export default defineConfig({
       noProxy: '127.0.0.1,localhost',
       codexTransport: 'websocket',
       agentDebug: true,
-      widget: false,
+      // widget: false,
     }),
   ],
   server: {
