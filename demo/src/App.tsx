@@ -1,6 +1,6 @@
-import { type FormEvent, useEffect, useMemo, useState } from 'react'
+import { memo, type FormEvent, useEffect, useMemo, useState } from 'react'
 import { ArrowRight, CalendarDays, Check, ChevronRight, Clock3, Eye, EyeOff, LoaderCircle, LockKeyhole, LogOut, Mail, Menu, NotebookPen, Pencil, Plus, Search, ShieldCheck, Sparkles, X } from 'lucide-react'
-import Markdown from 'react-markdown'
+import Markdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Button } from './components/ui/button'
 import { Checkbox } from './components/ui/checkbox'
@@ -10,6 +10,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
 import { api, type Note, type User } from './api'
 
 const SESSION_KEY = 'prism-demo-session'
+const markdownPlugins = [remarkGfm]
+const previewComponents: Components = {
+  a: ({ children }) => <span className="text-[#80683e] underline decoration-[#b9aa8d] underline-offset-2">{children}</span>,
+  img: ({ alt }) => <span>{alt || '图片'}</span>,
+}
 const formatDate = (value: string) => new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }).format(new Date(value))
 const getNameInitials = (name: string) => name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toLocaleUpperCase() || '?'
 const formatUpdatedAt = (value: string) => {
@@ -23,8 +28,12 @@ const formatUpdatedAt = (value: string) => {
 type FieldErrors = { name?: string; email?: string; password?: string; confirmPassword?: string; form?: string }
 
 function MarkdownContent({ children, className = '' }: { children: string; className?: string }) {
-  return <div className={`markdown-content ${className}`}><Markdown remarkPlugins={[remarkGfm]}>{children}</Markdown></div>
+  return <div className={`markdown-content ${className}`}><Markdown remarkPlugins={markdownPlugins}>{children}</Markdown></div>
 }
+
+const MarkdownPreview = memo(function MarkdownPreview({ children }: { children: string }) {
+  return <div className="markdown-preview line-clamp-2 text-xs leading-5 text-[#858178]"><Markdown remarkPlugins={markdownPlugins} components={previewComponents}>{children}</Markdown></div>
+})
 
 function NotesPage({ user, token, onLogout }: { user: User; token: string; onLogout: () => void }) {
   const [notes, setNotes] = useState<Note[]>([])
@@ -123,7 +132,7 @@ function NotesPage({ user, token, onLogout }: { user: User; token: string; onLog
             {filteredNotes.map((note) => (
               <button key={note.id} type="button" onClick={() => { setSelectedId(note.id); setMobileListOpen(false) }} className={`group mb-1 w-full rounded-xl px-4 py-3.5 text-left transition-[background-color,box-shadow,transform] duration-150 ease-out active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9a7b43]/45 focus-visible:ring-offset-2 focus-visible:ring-offset-[#f8f7f3] motion-reduce:transform-none ${selectedId === note.id ? 'bg-white shadow-[0_3px_14px_rgba(42,40,34,0.07)] ring-1 ring-black/5 hover:bg-black/[0.018] active:bg-black/[0.045]' : 'hover:bg-black/[0.035] active:bg-black/[0.065]'}`}>
                 <div className="mb-1.5 flex items-center justify-between gap-2"><span className="truncate text-sm font-semibold">{note.title}</span><ChevronRight className={`h-4 w-4 shrink-0 ${selectedId === note.id ? 'text-[#9a7b43]' : 'text-transparent group-hover:text-[#aaa69d]'}`} /></div>
-                <p className="line-clamp-2 text-xs leading-5 text-[#858178]">{note.content.replaceAll('\n', ' ')}</p>
+                <MarkdownPreview>{note.content}</MarkdownPreview>
                 <div className="mt-2.5 flex items-center gap-2 text-[10px] text-[#aaa69d]"><span className="rounded-md bg-[#eeeae1] px-1.5 py-0.5 text-[#817255]">{note.category}</span><span>{formatUpdatedAt(note.updatedAt)}</span></div>
               </button>
             ))}
