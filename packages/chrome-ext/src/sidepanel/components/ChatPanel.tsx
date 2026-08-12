@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Send, Trash2, MessageSquare, Plug, Loader2, AlertCircle, CheckCircle2, Circle, XCircle, ChevronDown, Paperclip, X } from "lucide-react";
 import { t } from "../../shared/i18n.js";
-import type { ChatMessage, ElementSelection, TestRunInfo } from "../../shared/types.js";
+import type { AgentPermissions, ChatMessage, ElementSelection, TestRunInfo } from "../../shared/types.js";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -14,6 +14,8 @@ interface AgentState {
   agentUrl: string;
   setAgentUrl: (url: string) => void;
   connect: (url: string) => Promise<void>;
+  permissions: AgentPermissions;
+  updatePermission: (key: keyof AgentPermissions, enabled: boolean) => Promise<void>;
 }
 
 interface ChatState {
@@ -196,16 +198,35 @@ function ChatView({ agent, chat, selection }: { agent: AgentState; chat: ChatSta
                       </ul>
                     </>}
                     {msg.testRun ? (
-                      <TestRunDetails run={msg.testRun} onRetest={() => startVerification(msg.verification!)} onFix={() => chat.fixVerification(msg.verification!, msg.testRun)} />
+                      <TestRunDetails
+                        run={msg.testRun}
+                        onRetest={() => startVerification(msg.verification!)}
+                        onFix={() => chat.fixVerification(msg.verification!, msg.testRun)}
+                        onAlwaysAllowFix={!agent.permissions.alwaysAllowEdits ? async () => {
+                          await agent.updatePermission("alwaysAllowEdits", true);
+                          chat.fixVerification(msg.verification!, msg.testRun);
+                        } : undefined}
+                      />
                     ) : (
-                      <Button
-                        size="sm"
-                        className="h-7 text-xs"
-                        disabled={["preparing", "running"].includes(msg.verification.status || "")}
-                        onClick={() => startVerification(msg.verification!)}
-                      >
-                        {["preparing", "running"].includes(msg.verification.status || "") ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" />测试运行中…</> : ["passed", "failed", "inconclusive"].includes(msg.verification.status || "") ? "重新测试" : "开始测试"}
-                      </Button>
+                      <div className="flex flex-wrap gap-1.5">
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs"
+                          disabled={["preparing", "running"].includes(msg.verification.status || "")}
+                          onClick={() => startVerification(msg.verification!)}
+                        >
+                          {["preparing", "running"].includes(msg.verification.status || "") ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" />测试运行中…</> : ["passed", "failed", "inconclusive"].includes(msg.verification.status || "") ? "重新测试" : "开始测试"}
+                        </Button>
+                        {!agent.permissions.alwaysAllowAutomatedTesting && !["preparing", "running", "passed", "failed", "inconclusive"].includes(msg.verification.status || "") && <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          onClick={async () => {
+                            await agent.updatePermission("alwaysAllowAutomatedTesting", true);
+                            startVerification(msg.verification!);
+                          }}
+                        >始终允许并开始测试</Button>}
+                      </div>
                     )}
                   </div>
                 )}
@@ -259,7 +280,7 @@ function durationLabel(startedAt: string, finishedAt?: string) {
   return milliseconds < 1000 ? `${milliseconds} ms` : `${(milliseconds / 1000).toFixed(milliseconds < 10_000 ? 1 : 0)} s`;
 }
 
-function TestRunDetails({ run, onRetest, onFix }: { run: TestRunInfo; onRetest: () => void; onFix: () => void }) {
+function TestRunDetails({ run, onRetest, onFix, onAlwaysAllowFix }: { run: TestRunInfo; onRetest: () => void; onFix: () => void; onAlwaysAllowFix?: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const [evidenceExpanded, setEvidenceExpanded] = useState(false);
   const terminal = terminalRunStatuses.includes(run.status);
@@ -344,7 +365,7 @@ function TestRunDetails({ run, onRetest, onFix }: { run: TestRunInfo; onRetest: 
       </div>}
       <div className="flex flex-wrap gap-1.5">
         {terminal
-          ? <>{run.status === "failed" && <Button size="sm" className="h-7 text-xs" onClick={onFix}>修复问题</Button>}<Button size="sm" variant="outline" className="h-7 text-xs" onClick={onRetest}>重新测试</Button></>
+          ? <>{run.status === "failed" && <Button size="sm" className="h-7 text-xs" onClick={onFix}>修复问题</Button>}{run.status === "failed" && onAlwaysAllowFix && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={onAlwaysAllowFix}>始终允许并修复</Button>}<Button size="sm" variant="outline" className="h-7 text-xs" onClick={onRetest}>重新测试</Button></>
           : <div className="inline-flex items-center text-xs text-muted-foreground"><Loader2 className="mr-1 h-3 w-3 animate-spin" />测试运行中…</div>}
       </div>
     </div>

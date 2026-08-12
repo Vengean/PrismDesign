@@ -318,6 +318,12 @@ export function App() {
                 : <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30" title={t("agent.disconnected")} />}
             {agent.connected && connectionMenuOpen && <div className="absolute right-0 top-7 z-50 w-56 rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
               <div className="truncate px-2 py-1.5 text-[10px] text-muted-foreground" title={agent.agentUrl}>{agent.agentUrl}</div>
+              <div className="px-2 pb-1 pt-1.5 text-[10px] font-medium text-muted-foreground">{t("agent.permissions")}</div>
+              {([['alwaysAllowEdits', 'agent.alwaysAllowEdits'], ['alwaysAllowAutomatedTesting', 'agent.alwaysAllowAutomatedTesting']] as const).map(([key, label]) => <label key={key} className="flex cursor-pointer items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-xs hover:bg-muted">
+                <span>{t(label)}</span>
+                <input type="checkbox" className="h-3.5 w-3.5 accent-primary" checked={agent.permissions[key]} onChange={(event) => agent.updatePermission(key, event.target.checked)} />
+              </label>)}
+              <div className="my-1 border-t" />
               <button type="button" className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs text-destructive hover:bg-muted" onClick={async () => { setConnectionMenuOpen(false); await agent.disconnect(); }}>
                 <LogOut className="h-3.5 w-3.5" />{t("agent.disconnect")}
               </button>

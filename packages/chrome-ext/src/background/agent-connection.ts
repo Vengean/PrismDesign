@@ -148,7 +148,12 @@ export async function chatWithAgent(
       runId,
       pageUrl: (await chrome.tabs.get(Number(state.clientId.replace("chrome-tab-", "")))).url,
       attachmentIds,
-      capabilities: { browserInteraction: true, automatedTesting: true },
+      capabilities: {
+        browserInteraction: true,
+        automatedTesting: true,
+        alwaysAllowEdits: state.permissions.alwaysAllowEdits,
+        alwaysAllowAutomatedTesting: state.permissions.alwaysAllowAutomatedTesting,
+      },
     }),
   });
   return res.json();

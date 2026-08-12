@@ -1,4 +1,4 @@
-import type { ProjectInfo, TestRunInfo } from "../shared/types.js";
+import type { AgentPermissions, ProjectInfo, TestRunInfo } from "../shared/types.js";
 
 export interface TabState {
   clientId: string;
@@ -10,6 +10,7 @@ export interface TabState {
   currentTestRun: TestRunInfo | null;
   agentWorking: boolean;
   agentProgress: string;
+  permissions: AgentPermissions;
 }
 
 const tabs = new Map<number, TabState>();
@@ -26,6 +27,7 @@ export function getTabState(tabId: number): TabState {
       currentTestRun: null,
       agentWorking: false,
       agentProgress: "",
+      permissions: { alwaysAllowEdits: false, alwaysAllowAutomatedTesting: false },
     });
   }
   return tabs.get(tabId)!;

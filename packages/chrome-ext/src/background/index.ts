@@ -300,6 +300,10 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, sender, sendRespons
       handleAgentDisconnect().then(sendResponse);
       return true;
 
+    case "AGENT_SET_PERMISSIONS":
+      (async () => { const tabId = await getBoundAgentTabId(); if (tabId) getTabState(tabId).permissions = message.payload; sendResponse({ success: true }); })();
+      return true;
+
     case "AGENT_CHAT":
       handleChat(message.payload).then(sendResponse);
       return true;
@@ -466,7 +470,30 @@ async function handleChat(payload: { message: string; attachmentIds?: string[] }
 
   try {
     broadcastToSidePanel({ type: "AGENT_WORKING", payload: { working: true } });
-    const result = await chatWithAgent(state, payload.message, payload.attachmentIds);
+    let result: any = await chatWithAgent(state, payload.message, payload.attachmentIds);
+    let iteration = 0;
+    while (state.permissions.alwaysAllowAutomatedTesting && result.verification && iteration < 3) {
+      const tested = await startAgentVerification(state, result.verification);
+      result = { ...result, ...tested.agentResult, verification: tested.verification };
+      if (tested.verification?.status === "passed") break;
+      const canFix = state.permissions.alwaysAllowEdits
+        && tested.verification?.status === "failed"
+        && ["code_defect", "unknown"].includes(tested.verification?.failureCategory || "unknown");
+      if (!canFix || iteration >= 2) break;
+      iteration += 1;
+      const failedCases = (tested.testRun?.cases || [])
+        .filter((item: any) => item.status === "failed")
+        .map((item: any) => `- ${item.title}：${item.failureReason || item.evidenceSummary || "测试未通过"}`)
+        .join("\n");
+      result = await chatWithAgent(state, [
+        `这是自动修复闭环的第 ${iteration} 次修复（最多 3 次测试）。用户已开启“始终允许修改”和“始终允许自动测试”。`,
+        `原测试目标：${tested.verification.goal}`,
+        `测试结论：${tested.verification.summary || "测试未通过"}`,
+        failedCases ? `失败用例：\n${failedCases}` : "",
+        `建议修复方向：${tested.verification.fixSuggestion || "根据测试证据定位并进行最小修复"}`,
+        "请修复代码并完成代码级检查。修改完成后生成相同目标的待测试项，由 Prism 自动继续真实浏览器测试。",
+      ].filter(Boolean).join("\n\n"));
+    }
     broadcastToSidePanel({ type: "AGENT_WORKING", payload: { working: false } });
     broadcastToSidePanel({
       type: "AGENT_RESULT",

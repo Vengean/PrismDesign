@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import type { ProjectInfo, PrismMessage } from "../../shared/types.js";
+import type { AgentPermissions, ProjectInfo, PrismMessage } from "../../shared/types.js";
 import { t } from "../../shared/i18n.js";
 
 export function useAgent() {
+  const [permissions, setPermissions] = useState<AgentPermissions>({ alwaysAllowEdits: false, alwaysAllowAutomatedTesting: false });
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,6 +25,29 @@ export function useAgent() {
       if (result.agentUrl) setAgentUrl(result.agentUrl);
     });
   }, []);
+
+  useEffect(() => {
+    if (!connected || !agentUrl) return;
+    const scope = `${agentUrl}|${project?.root || "default"}`;
+    chrome.storage.local.get("agentPermissions", (result) => {
+      const saved = result.agentPermissions?.[scope];
+      const next = {
+        alwaysAllowEdits: saved?.alwaysAllowEdits === true,
+        alwaysAllowAutomatedTesting: saved?.alwaysAllowAutomatedTesting === true,
+      };
+      setPermissions(next);
+      chrome.runtime.sendMessage({ type: "AGENT_SET_PERMISSIONS", payload: next }).catch(() => {});
+    });
+  }, [connected, agentUrl, project?.root]);
+
+  const updatePermission = useCallback(async (key: keyof AgentPermissions, enabled: boolean) => {
+    const next = { ...permissions, [key]: enabled };
+    setPermissions(next);
+    const scope = `${agentUrl}|${project?.root || "default"}`;
+    const result = await chrome.storage.local.get("agentPermissions");
+    await chrome.storage.local.set({ agentPermissions: { ...(result.agentPermissions || {}), [scope]: next } });
+    await chrome.runtime.sendMessage({ type: "AGENT_SET_PERMISSIONS", payload: next });
+  }, [permissions, agentUrl, project?.root]);
 
   // Listen for agent events from background
   const connectingRef = useRef(false);
@@ -91,6 +115,6 @@ export function useAgent() {
 
   return {
     connected, connecting, error, project, aiWorking, agentUrl, setAgentUrl,
-    connect, disconnect, rollback,
+    connect, disconnect, rollback, permissions, updatePermission,
   };
 }

@@ -396,11 +396,13 @@ export async function startServer(
       message: string;
       runId?: string;
       pageUrl?: string;
-      capabilities?: { browserInteraction?: boolean; automatedTesting?: boolean };
+      capabilities?: { browserInteraction?: boolean; automatedTesting?: boolean; alwaysAllowEdits?: boolean; alwaysAllowAutomatedTesting?: boolean };
       attachmentIds?: string[];
     };
     const automatedTesting = capabilities?.automatedTesting === true;
     const browserInteraction = capabilities?.browserInteraction === true;
+    const alwaysAllowEdits = browserInteraction && capabilities?.alwaysAllowEdits === true;
+    const alwaysAllowAutomatedTesting = automatedTesting && browserInteraction && capabilities?.alwaysAllowAutomatedTesting === true;
     const runId = requestedRunId || `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     console.log(`[Server] POST /api/chat clientId=${clientId} message=${message ? `${message.length} chars` : "EMPTY"}`);
@@ -437,6 +439,12 @@ export async function startServer(
         "Use fixture tools when prerequisites are needed. Collect screenshot/runtime/network evidence, clean fixtures, then submit the structured outcome.",
         "If the user did not authorize testing, do not call verification_start; after file changes Prism will offer a confirmation action.",
         "You may use prism_browser directly for a user-requested current-page interaction without starting a Verification. Do not call verification tools unless the user asks to test or verify behavior.",
+        alwaysAllowEdits
+          ? "The Chrome client has persistent permission to apply code fixes required by this request. This does not authorize publishing, deployment, Git push, or changes outside the project."
+          : "Only make changes explicitly requested in this chat turn; further repair work requires a separate user-authorized turn.",
+        alwaysAllowAutomatedTesting
+          ? "The Chrome client will automatically run the proposed browser verification after this development turn and may request a bounded repair turn when a code defect is proven."
+          : "Browser verification still requires the user to start the proposed test from the Chrome client.",
         `Current page: ${pageUrl || "unavailable"}`,
         `[Prism tool context] capabilityToken=${capabilityToken}`,
       ].join("\n") : [
@@ -721,7 +729,7 @@ export async function startServer(
       }
       const started = await startVerification(verificationId, clientId);
       const agentResult = await runVerificationAgent(clientId, verificationId, started.verification.browserSessionId || "", started.observation);
-      res.json({ ...started, agentResult });
+      res.json({ ...started, verification: verifications.getOwned(verificationId, clientId), testRun: testRuns.byVerification(verificationId), agentResult });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       res.status(500).json({ error: message });

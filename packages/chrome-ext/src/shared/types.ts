@@ -80,9 +80,15 @@ export interface ChatMessage {
 }
 
 export interface ProjectInfo {
+  root?: string;
   framework: string;
   styling?: string[];
   componentLib?: string[];
+}
+
+export interface AgentPermissions {
+  alwaysAllowEdits: boolean;
+  alwaysAllowAutomatedTesting: boolean;
 }
 
 export interface AgentCapabilities {
@@ -189,6 +195,7 @@ export type UpstreamMessage =
 export type AgentMessage =
   | { type: "AGENT_CONNECT"; payload: { url: string } }
   | { type: "AGENT_DISCONNECT" }
+  | { type: "AGENT_SET_PERMISSIONS"; payload: AgentPermissions }
   | { type: "AGENT_APPLY_CHANGES"; payload: { changes: StyleChange[]; pagePath?: string; supplement?: string } }
   | { type: "AGENT_CHAT"; payload: { message: string; attachmentIds?: string[]; context?: { pagePath: string; components: ComponentInfo[] } } }
   | { type: "AGENT_UPLOAD_ATTACHMENT"; payload: { name: string; mimeType: string; data: number[] } }
