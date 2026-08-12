@@ -23,6 +23,16 @@ export interface PrismDesignOptions {
   baseUrl?: string;
   /** Provider model override. */
   model?: string;
+  /** HTTP proxy inherited by the Agent process (HTTP_PROXY). */
+  httpProxy?: string;
+  /** HTTPS proxy inherited by the Agent process (HTTPS_PROXY). */
+  httpsProxy?: string;
+  /** Hosts that bypass the proxy (NO_PROXY). */
+  noProxy?: string;
+  /** Codex transport override (CODEX_TRANSPORT). */
+  codexTransport?: "websocket" | "sse";
+  /** Log full Agent prompt bodies (PRISM_AGENT_DEBUG). */
+  agentDebug?: boolean;
   /** Widget position (default: "bottom-right") */
   position?: "bottom-right" | "bottom-left";
   /** Widget locale override */
@@ -140,6 +150,11 @@ export default function prismDesign(options: PrismDesignOptions = {}): Plugin {
     apiKey,
     baseUrl,
     model,
+    httpProxy,
+    httpsProxy,
+    noProxy,
+    codexTransport,
+    agentDebug,
     position = "bottom-right",
     locale,
     widget = true,
@@ -200,6 +215,11 @@ export default function prismDesign(options: PrismDesignOptions = {}): Plugin {
           const projectRoot = config.root || process.cwd();
 
           const agentEnv: Record<string, string> = { ...process.env } as Record<string, string>;
+          if (httpProxy !== undefined) agentEnv.HTTP_PROXY = httpProxy;
+          if (httpsProxy !== undefined) agentEnv.HTTPS_PROXY = httpsProxy;
+          if (noProxy !== undefined) agentEnv.NO_PROXY = noProxy;
+          if (codexTransport !== undefined) agentEnv.CODEX_TRANSPORT = codexTransport;
+          if (agentDebug !== undefined) agentEnv.PRISM_AGENT_DEBUG = agentDebug ? "1" : "0";
           // Dev servers show structured Agent/tool diagnostics by default.
           // Full prompt bodies remain opt-in through PRISM_AGENT_DEBUG=1.
           if (agentEnv.PRISM_AGENT_DEBUG_EVENTS === undefined) agentEnv.PRISM_AGENT_DEBUG_EVENTS = "1";

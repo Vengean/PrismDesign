@@ -1,6 +1,6 @@
 {
   "name": "prism-design-agent",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "AI development agent for Prism — understands projects, modifies source code, and coordinates real browser verification",
   "type": "module",
   "license": "MIT",

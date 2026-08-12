@@ -53,6 +53,17 @@ prismDesign({
   agentType: 'codex',
   // 'claude' | 'claude-sub' | 'openai' | 'codex' | 'glm'
 
+  // Agent 子进程的网络代理配置（可选）
+  httpProxy: 'http://127.0.0.1:7893',
+  httpsProxy: 'http://127.0.0.1:7893',
+  noProxy: '127.0.0.1,localhost',
+
+  // Codex 传输方式（可选）
+  codexTransport: 'websocket', // 'websocket' | 'sse'
+
+  // 输出完整的 Agent prompt 调试信息（默认沿用环境变量）
+  agentDebug: true,
+
   // Agent 服务端口（默认 9527，被占用时自动递增）
   agentPort: 9527,
 
@@ -98,10 +109,17 @@ codex login
 ```
 
 ```ts
-prismDesign({ agentType: 'codex' })
+prismDesign({
+  agentType: 'codex',
+  httpProxy: 'http://127.0.0.1:7893',
+  httpsProxy: 'http://127.0.0.1:7893',
+  noProxy: '127.0.0.1,localhost',
+  codexTransport: 'websocket',
+  agentDebug: true,
+})
 ```
 
-Codex 会复用本机 ChatGPT 登录态。受限网络下默认使用 HTTPS/SSE；如需 WebSocket：
+Codex 会复用本机 ChatGPT 登录态。以上配置等价于：
 
 ```bash
 HTTP_PROXY=http://127.0.0.1:7893 \
@@ -110,6 +128,8 @@ NO_PROXY=127.0.0.1,localhost \
 CODEX_TRANSPORT=websocket \
 pnpm dev
 ```
+
+配置完成后，日常启动只需运行 `pnpm dev`。
 
 ### OpenAI Agents SDK
 
