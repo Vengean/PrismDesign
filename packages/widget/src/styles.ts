@@ -254,6 +254,14 @@ export const WIDGET_CSS = `
   width: 12px;
   height: 12px;
 }
+.attachment-tags-row { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 2px; }
+.attachment-tags-row:empty { display: none; }
+.attachment-tag, .message-attachments span { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; border: 1px solid #e5e7eb; border-radius: 6px; background: #f9fafb; padding: 3px 7px; color: #4b5563; font-size: 11px; }
+.attachment-tag.failed { border-color: #fecaca; color: #dc2626; }
+.attachment-tag.failed { flex-wrap: wrap; }
+.attachment-tag small { flex-basis: 100%; max-width: 260px; overflow-wrap: anywhere; font-size: 10px; }
+.attachment-tag button { border: 0; background: none; color: inherit; cursor: pointer; padding: 0 0 0 2px; font-size: 14px; }
+.message-attachments { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
 .ai-avatar {
   width: 20px;
   height: 20px;

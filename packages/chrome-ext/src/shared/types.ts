@@ -76,6 +76,7 @@ export interface ChatMessage {
   /** Transient target for streaming/progress events of the active request. */
   pending?: boolean;
   streamItemId?: string;
+  attachments?: Array<{ id: string; name: string; mimeType: string; size: number }>;
 }
 
 export interface ProjectInfo {
@@ -189,7 +190,9 @@ export type AgentMessage =
   | { type: "AGENT_CONNECT"; payload: { url: string } }
   | { type: "AGENT_DISCONNECT" }
   | { type: "AGENT_APPLY_CHANGES"; payload: { changes: StyleChange[]; pagePath?: string; supplement?: string } }
-  | { type: "AGENT_CHAT"; payload: { message: string; context: { pagePath: string; components: ComponentInfo[] } } }
+  | { type: "AGENT_CHAT"; payload: { message: string; attachmentIds?: string[]; context?: { pagePath: string; components: ComponentInfo[] } } }
+  | { type: "AGENT_UPLOAD_ATTACHMENT"; payload: { name: string; mimeType: string; data: number[] } }
+  | { type: "AGENT_DELETE_ATTACHMENT"; payload: { id: string } }
   | { type: "AGENT_START_VERIFICATION"; payload: { verification: NonNullable<ChatMessage["verification"]> } }
   | { type: "AGENT_CANCEL_CURRENT" }
   | { type: "AGENT_GET_RUNTIME_STATE" }

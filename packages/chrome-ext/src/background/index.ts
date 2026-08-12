@@ -8,6 +8,8 @@ import {
   updateBrowserRegistration,
   cancelCurrentAgentRun,
   getAgentRuntimeState,
+  uploadAgentAttachment,
+  deleteAgentAttachment,
 } from "./agent-connection.js";
 import type { PrismMessage } from "../shared/types.js";
 import { executeCurrentTabCommand } from "./browser-controller.js";
@@ -302,6 +304,14 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, sender, sendRespons
       handleChat(message.payload).then(sendResponse);
       return true;
 
+    case "AGENT_UPLOAD_ATTACHMENT":
+      (async () => { const tabId = await getBoundAgentTabId(); if (!tabId) throw new Error("no active tab"); return uploadAgentAttachment(getTabState(tabId), message.payload); })().then(sendResponse).catch((error) => sendResponse({ error: String(error) }));
+      return true;
+
+    case "AGENT_DELETE_ATTACHMENT":
+      (async () => { const tabId = await getBoundAgentTabId(); if (tabId) await deleteAgentAttachment(getTabState(tabId), message.payload.id); return { success: true }; })().then(sendResponse);
+      return true;
+
     case "AGENT_ROLLBACK":
       handleRollback().then(sendResponse);
       return true;
@@ -447,7 +457,7 @@ async function handleAgentDisconnect() {
   return { success: true };
 }
 
-async function handleChat(payload: { message: string }) {
+async function handleChat(payload: { message: string; attachmentIds?: string[] }) {
   const tabId = await getBoundAgentTabId();
   if (!tabId) return { success: false, error: "no active tab" };
 
@@ -456,7 +466,7 @@ async function handleChat(payload: { message: string }) {
 
   try {
     broadcastToSidePanel({ type: "AGENT_WORKING", payload: { working: true } });
-    const result = await chatWithAgent(state, payload.message);
+    const result = await chatWithAgent(state, payload.message, payload.attachmentIds);
     broadcastToSidePanel({ type: "AGENT_WORKING", payload: { working: false } });
     broadcastToSidePanel({
       type: "AGENT_RESULT",

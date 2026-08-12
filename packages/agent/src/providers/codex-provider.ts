@@ -40,11 +40,17 @@ export class CodexProvider implements AgentProvider {
   readonly name = "codex" as const;
   readonly model = process.env.CODEX_MODEL || "Codex CLI default";
   readonly capabilities = { streaming: true, sessions: true, cancel: true, rollback: false };
-  private readonly codex: Codex;
+  private codex: Codex | null = null;
   private readonly sessions = new Map<string, SessionEntry>();
   private readonly cleanupTimer: ReturnType<typeof setInterval>;
 
   constructor(private readonly projectRoot: string) {
+    this.cleanupTimer = setInterval(() => this.cleanupSessions(), 5 * 60 * 1000);
+  }
+
+  private getCodex(): Codex {
+    if (this.codex) return this.codex;
+
     // With no apiKey option the spawned official CLI reuses its own login state
     // (normally stored under CODEX_HOME). Never read or copy auth.json here.
     const useWebSocket = process.env.CODEX_TRANSPORT === "websocket";
@@ -91,7 +97,7 @@ export class CodexProvider implements AgentProvider {
         },
       },
     });
-    this.cleanupTimer = setInterval(() => this.cleanupSessions(), 5 * 60 * 1000);
+    return this.codex;
   }
 
   private getThread(clientId: string): Thread {
@@ -100,7 +106,7 @@ export class CodexProvider implements AgentProvider {
       existing.lastActive = Date.now();
       return existing.thread;
     }
-    const thread = this.codex.startThread({
+    const thread = this.getCodex().startThread({
       workingDirectory: this.projectRoot,
       sandboxMode: "workspace-write",
       approvalPolicy: "never",

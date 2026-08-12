@@ -135,6 +135,7 @@ export function disconnectAgent(state: TabState) {
 export async function chatWithAgent(
   state: TabState,
   message: string,
+  attachmentIds: string[] = [],
 ): Promise<{ success: boolean; message: string; filesModified?: string[]; runId?: string }> {
   if (!state.agentUrl) throw new Error("Agent not connected");
 
@@ -146,10 +147,32 @@ export async function chatWithAgent(
       message,
       runId,
       pageUrl: (await chrome.tabs.get(Number(state.clientId.replace("chrome-tab-", "")))).url,
-      capabilities: { automatedTesting: true },
+      attachmentIds,
+      capabilities: { browserInteraction: true, automatedTesting: true },
     }),
   });
   return res.json();
+}
+
+export async function uploadAgentAttachment(state: TabState, file: { name: string; mimeType: string; data: number[] }) {
+  if (!state.agentUrl) throw new Error("Agent not connected");
+  const res = await fetch(`${state.agentUrl}/api/attachments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream", "x-client-id": state.clientId, "x-attachment-name": encodeURIComponent(file.name), "x-attachment-type": file.mimeType || "text/plain" },
+    body: new Uint8Array(file.data),
+  });
+  const text = await res.text();
+  let result: any;
+  try { result = text ? JSON.parse(text) : {}; }
+  catch { result = { error: text }; }
+  if (!res.ok) throw new Error(result.error || `附件上传失败 (${res.status})`);
+  if (!result.attachment?.id) throw new Error("Agent 返回了无效的附件响应，请重启开发服务");
+  return result.attachment;
+}
+
+export async function deleteAgentAttachment(state: TabState, id: string) {
+  if (!state.agentUrl) return;
+  await fetch(`${state.agentUrl}/api/attachments/${encodeURIComponent(id)}`, { method: "DELETE", headers: { "x-client-id": state.clientId } });
 }
 
 export async function cancelCurrentAgentRun(state: TabState): Promise<{ success: boolean }> {

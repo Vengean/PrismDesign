@@ -1,4 +1,4 @@
-import { ICON_SEND, ICON_COMMENT, ICON_TRASH } from "./icons.js";
+import { ICON_SEND, ICON_COMMENT, ICON_TRASH, ICON_PAPERCLIP } from "./icons.js";
 import { t } from "./i18n.js";
 import { renderMarkdown } from "./markdown.js";
 import type { AgentClient } from "./agent-client.js";
@@ -12,6 +12,7 @@ interface ChatMessage {
   content: string;
   timestamp: number;
   comments?: CommentInfo[];
+  attachments?: Array<{ id: string; name: string; mimeType: string; size: number }>;
   verification?: { id: string; goal: string; proposedChecks: string[]; status?: string; summary?: string };
 }
 
@@ -35,6 +36,7 @@ export function createChat(
   let messages: ChatMessage[] = [];
   let sending = false;
   const commentTags: CommentInfo[] = [];
+  let pendingAttachments: Array<{ id: string; name: string; mimeType: string; size: number; status: "uploading" | "ready" | "failed"; error?: string }> = [];
   let tooltip: HTMLElement | null = null;
 
   // ── Load history ──
@@ -89,6 +91,10 @@ export function createChat(
   tagsRow.className = "comment-tags-row";
   inputArea.appendChild(tagsRow);
 
+  const attachmentsRow = document.createElement("div");
+  attachmentsRow.className = "attachment-tags-row";
+  inputArea.appendChild(attachmentsRow);
+
   const inputRow = document.createElement("div");
   inputRow.className = "chat-input-row";
 
@@ -98,6 +104,21 @@ export function createChat(
   commentBtn.title = t("comment.tooltip");
   commentBtn.onclick = () => startCommentMode();
   inputRow.appendChild(commentBtn);
+
+  const attachmentInput = document.createElement("input");
+  attachmentInput.type = "file";
+  attachmentInput.multiple = true;
+  attachmentInput.hidden = true;
+  attachmentInput.accept = ".txt,.md,.json,.csv,.html,.css,.js,.jsx,.ts,.tsx,.yaml,.yml,.xml,.sql,.log,.sh,.py,.java,.go,.rs";
+  attachmentInput.onchange = () => uploadFiles(Array.from(attachmentInput.files || []));
+  inputArea.appendChild(attachmentInput);
+
+  const attachBtn = document.createElement("button");
+  attachBtn.className = "comment-btn";
+  attachBtn.innerHTML = ICON_PAPERCLIP;
+  attachBtn.title = "添加文件";
+  attachBtn.onclick = () => attachmentInput.click();
+  inputRow.appendChild(attachBtn);
 
   const textarea = document.createElement("textarea");
   textarea.placeholder = t("chat.placeholder");
@@ -175,6 +196,43 @@ export function createChat(
 
       tagsRow.appendChild(el);
     });
+  }
+
+  async function uploadFiles(files: File[]) {
+    const slots = Math.max(0, 5 - pendingAttachments.length);
+    for (const file of files.slice(0, slots)) {
+      const pending = { id: `pending-${Date.now()}-${Math.random()}`, name: file.name, mimeType: file.type, size: file.size, status: "uploading" as const };
+      pendingAttachments.push(pending);
+      renderAttachments();
+      try {
+        const uploaded = await agentClient.uploadAttachment(file);
+        Object.assign(pending, uploaded, { status: "ready" as const });
+      } catch (error) {
+        Object.assign(pending, { status: "failed" as const, error: error instanceof Error ? error.message : String(error) });
+      }
+      renderAttachments();
+    }
+    attachmentInput.value = "";
+  }
+
+  function renderAttachments() {
+    attachmentsRow.innerHTML = "";
+    pendingAttachments.forEach((attachment, index) => {
+      const tag = document.createElement("span");
+      tag.className = `attachment-tag ${attachment.status}`;
+      tag.textContent = attachment.status === "uploading" ? `⏳ ${attachment.name}` : attachment.status === "failed" ? `⚠ ${attachment.name}` : `📄 ${attachment.name}`;
+      tag.title = attachment.error || attachment.name;
+      if (attachment.status === "failed" && attachment.error) {
+        const error = document.createElement("small");
+        error.textContent = attachment.error;
+        tag.appendChild(error);
+      }
+      const remove = document.createElement("button");
+      remove.type = "button"; remove.textContent = "×"; remove.title = "移除附件";
+      remove.onclick = () => { const [removed] = pendingAttachments.splice(index, 1); if (removed.status === "ready") void agentClient.deleteAttachment(removed.id); renderAttachments(); };
+      tag.appendChild(remove); attachmentsRow.appendChild(tag);
+    });
+    sendBtn.disabled = sending || pendingAttachments.some((attachment) => attachment.status !== "ready");
   }
 
   // ── Tooltip ──
@@ -277,6 +335,16 @@ export function createChat(
           bubble.textContent = msg.content;
         }
       }
+      if (msg.attachments?.length) {
+        const files = document.createElement("div");
+        files.className = "message-attachments";
+        for (const attachment of msg.attachments) {
+          const file = document.createElement("span");
+          file.textContent = `📄 ${attachment.name}`;
+          files.appendChild(file);
+        }
+        bubble.prepend(files);
+      }
       content.appendChild(bubble);
       if (msg.role === "ai" && msg.verification) {
         const card = document.createElement("div");
@@ -348,8 +416,11 @@ export function createChat(
   async function sendMessage() {
     const text = textarea.value.trim();
     const hasComments = commentTags.length > 0;
-    if (!text && !hasComments) return;
+    if (!text && !hasComments && pendingAttachments.length === 0) return;
     if (sending) return;
+    if (pendingAttachments.some((attachment) => attachment.status !== "ready")) return;
+    const readyAttachments = pendingAttachments.filter((attachment) => attachment.status === "ready");
+    if (!text && !hasComments && readyAttachments.length === 0) return;
 
     sending = true;
     sendBtn.disabled = true;
@@ -397,6 +468,7 @@ export function createChat(
       content: displayContent,
       timestamp: Date.now(),
       comments: hasComments ? savedComments : undefined,
+      attachments: readyAttachments.map(({ id, name, mimeType, size }) => ({ id, name, mimeType, size })),
     };
     messages.push(userMsg);
 
@@ -411,7 +483,9 @@ export function createChat(
 
     textarea.value = "";
     commentTags.length = 0;
+    pendingAttachments = [];
     renderTags();
+    renderAttachments();
     autoResize();
 
     const thinkingIdx = messages.length - 1;
@@ -447,7 +521,7 @@ export function createChat(
     try {
       let result;
       try {
-        result = await agentClient.chat(agentMessage, runId);
+        result = await agentClient.chat(agentMessage || "请阅读并分析附件内容。", runId, readyAttachments.map((attachment) => attachment.id));
       } catch {
         // The long-lived HTTP request can be interrupted by HMR or a proxy while
         // the Agent continues running. Wait for the authoritative WS terminal event.

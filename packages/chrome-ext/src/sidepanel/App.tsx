@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, LogOut } from "lucide-react";
 import { t } from "../shared/i18n.js";
 import type { PrismMessage } from "../shared/types.js";
 import { useAgent } from "./hooks/use-agent";
@@ -33,6 +33,8 @@ export function App() {
   const [pendingComments, setPendingComments] = useState<PendingComment[]>([]);
   const [pendingEdits, setPendingEdits] = useState<Map<string, PendingEdit>>(new Map());
   const [pendingDrags, setPendingDrags] = useState<PendingDrag[]>([]);
+  const [connectionMenuOpen, setConnectionMenuOpen] = useState(false);
+  const connectionMenuRef = useRef<HTMLDivElement>(null);
   const isDragModeRef = useRef(false);
   isDragModeRef.current = isDragMode;
 
@@ -76,6 +78,17 @@ export function App() {
       port?.disconnect();
     };
   }, []);
+
+  useEffect(() => {
+    if (!connectionMenuOpen) return;
+    const close = (event: MouseEvent) => {
+      if (!connectionMenuRef.current?.contains(event.target as Node)) setConnectionMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setConnectionMenuOpen(false); };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", closeOnEscape); };
+  }, [connectionMenuOpen]);
 
   const pendingTotal = pendingComments.length + pendingEdits.size + pendingDrags.length;
 
@@ -290,12 +303,25 @@ export function App() {
         )}
         <span className="font-semibold text-xs">{t(VIEW_TITLE_KEYS[view])}</span>
         {view === "chat" && (
-          <div className="ml-auto">
+          <div ref={connectionMenuRef} className="relative ml-auto">
             {agent.connected
-              ? <div className="w-1.5 h-1.5 rounded-full bg-green-500" title={t("agent.connected")} />
+              ? <button
+                  type="button"
+                  className="flex h-6 w-6 items-center justify-center rounded hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  title={t("agent.connected")}
+                  aria-label={t("agent.connected")}
+                  aria-expanded={connectionMenuOpen}
+                  onClick={() => setConnectionMenuOpen((open) => !open)}
+                ><span className="h-2 w-2 rounded-full bg-green-500" /></button>
               : agent.connecting
                 ? <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" title={t("agent.connecting_short")} />
                 : <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30" title={t("agent.disconnected")} />}
+            {agent.connected && connectionMenuOpen && <div className="absolute right-0 top-7 z-50 w-56 rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
+              <div className="truncate px-2 py-1.5 text-[10px] text-muted-foreground" title={agent.agentUrl}>{agent.agentUrl}</div>
+              <button type="button" className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs text-destructive hover:bg-muted" onClick={async () => { setConnectionMenuOpen(false); await agent.disconnect(); }}>
+                <LogOut className="h-3.5 w-3.5" />{t("agent.disconnect")}
+              </button>
+            </div>}
           </div>
         )}
         {view === "pending" && (

@@ -27,14 +27,33 @@ export class AgentClient {
     return res.json();
   }
 
-  async chat(message: string, runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`): Promise<{ success: boolean; message: string; filesModified?: string[]; runId?: string; verification?: { id: string; goal: string; proposedChecks: string[] } }> {
+  async uploadAttachment(file: File): Promise<{ id: string; name: string; mimeType: string; size: number }> {
+    const res = await fetch(`${this.baseUrl}/api/attachments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream", "x-client-id": this.clientId, "x-attachment-name": encodeURIComponent(file.name), "x-attachment-type": file.type || "text/plain" },
+      body: file,
+    });
+    const text = await res.text();
+    let result: any;
+    try { result = text ? JSON.parse(text) : {}; }
+    catch { result = { error: text }; }
+    if (!res.ok) throw new Error(result.error || `附件上传失败 (${res.status})`);
+    if (!result.attachment?.id) throw new Error("Agent 返回了无效的附件响应，请重启开发服务");
+    return result.attachment;
+  }
+
+  async deleteAttachment(id: string): Promise<void> {
+    await fetch(`${this.baseUrl}/api/attachments/${encodeURIComponent(id)}`, { method: "DELETE", headers: { "x-client-id": this.clientId } });
+  }
+
+  async chat(message: string, runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, attachmentIds: string[] = []): Promise<{ success: boolean; message: string; filesModified?: string[]; runId?: string; verification?: { id: string; goal: string; proposedChecks: string[] } }> {
     const res = await fetch(`${this.baseUrl}/api/chat`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-client-id": this.clientId,
       },
-      body: JSON.stringify({ message, runId, pageUrl: location.href, capabilities: { automatedTesting: false } }),
+      body: JSON.stringify({ message, runId, pageUrl: location.href, attachmentIds, capabilities: { browserInteraction: false, automatedTesting: false } }),
     });
     return res.json();
   }

@@ -1,3 +1,5 @@
+import type { VerificationFailureCategory, VerificationStatus } from "../testing/verification-store.js";
+
 export type AgentProviderName = "claude" | "claude-sub" | "openai" | "codex" | "glm";
 
 export interface AgentCapabilities {
@@ -14,11 +16,11 @@ export interface AgentResult {
   runId?: string;
   verification?: {
     id: string;
-    status: "awaiting_confirmation" | "preparing" | "running" | "passed" | "failed" | "inconclusive" | "cancelled";
+    status: VerificationStatus;
     goal: string;
     proposedChecks: string[];
     summary?: string;
-    failureCategory?: "code_defect" | "environment" | "data" | "permission" | "insufficient_evidence" | "unknown";
+    failureCategory?: VerificationFailureCategory;
     fixSuggestion?: string;
   };
 }

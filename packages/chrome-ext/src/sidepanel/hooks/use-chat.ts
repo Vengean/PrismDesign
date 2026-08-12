@@ -172,17 +172,17 @@ export function useChat() {
     return () => chrome.runtime.onMessage.removeListener(handler);
   }, [applyAgentWorking, applyTestRun]);
 
-  const sendMessage = useCallback(async (text: string) => {
-    if (!text.trim() || sending) return;
+  const sendMessage = useCallback(async (text: string, attachments: ChatMessage["attachments"] = []) => {
+    if ((!text.trim() && !attachments.length) || sending) return;
 
-    const userMsg: ChatMessage = { role: "user", content: text, timestamp: Date.now() };
+    const userMsg: ChatMessage = { role: "user", content: text, timestamp: Date.now(), attachments };
     const thinkingMsg: ChatMessage = { role: "ai", content: `⏳ ${t("chat.thinking")}`, timestamp: Date.now(), pending: true };
     setMessages((prev) => [...prev, userMsg, thinkingMsg]);
     setSending(true);
 
     chrome.runtime.sendMessage({
       type: "AGENT_CHAT",
-      payload: { message: text },
+      payload: { message: text || "请阅读并分析附件内容。", attachmentIds: attachments.map((attachment) => attachment.id) },
     }).catch(() => {
       setSending(false);
       setMessages((prev) => {

@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Send, Trash2, MessageSquare, Plug, Loader2, AlertCircle, CheckCircle2, Circle, XCircle, ChevronDown } from "lucide-react";
+import { Send, Trash2, MessageSquare, Plug, Loader2, AlertCircle, CheckCircle2, Circle, XCircle, ChevronDown, Paperclip, X } from "lucide-react";
 import { t } from "../../shared/i18n.js";
 import type { ChatMessage, ElementSelection, TestRunInfo } from "../../shared/types.js";
 import Markdown from "react-markdown";
@@ -19,7 +19,7 @@ interface AgentState {
 interface ChatState {
   messages: ChatMessage[];
   sending: boolean;
-  sendMessage: (text: string) => void;
+  sendMessage: (text: string, attachments?: ChatMessage["attachments"]) => void;
   startVerification: (verification: NonNullable<ChatMessage["verification"]>) => void;
   fixVerification: (verification: NonNullable<ChatMessage["verification"]>, testRun?: TestRunInfo) => void;
   cancelCurrent: () => void;
@@ -108,6 +108,8 @@ function formatSelectionContext(sel: ElementSelection): string {
 function ChatView({ agent, chat, selection }: { agent: AgentState; chat: ChatState; selection: ElementSelection | null }) {
   const { messages, sending, sendMessage, startVerification, cancelCurrent, clearHistory, deleteMessage } = chat;
   const [input, setInput] = useState("");
+  const [attachments, setAttachments] = useState<Array<{ id: string; name: string; mimeType: string; size: number; uploading?: boolean; error?: string }>>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -115,13 +117,27 @@ function ChatView({ agent, chat, selection }: { agent: AgentState; chat: ChatSta
   }, [messages]);
 
   const handleSend = () => {
-    if (!input.trim()) return;
+    if (!input.trim() && !attachments.some((item) => !item.uploading && !item.error)) return;
     let message = input;
     if (selection) {
       message += `\n\n--- Context ---\n${formatSelectionContext(selection)}`;
     }
-    sendMessage(message);
+    sendMessage(message, attachments.filter((item) => !item.uploading && !item.error).map(({ id, name, mimeType, size }) => ({ id, name, mimeType, size })));
     setInput("");
+    setAttachments([]);
+  };
+
+  const addFiles = async (files: FileList | null) => {
+    for (const file of Array.from(files || []).slice(0, Math.max(0, 5 - attachments.length))) {
+      const temporaryId = `pending-${Date.now()}-${Math.random()}`;
+      setAttachments((prev) => [...prev, { id: temporaryId, name: file.name, mimeType: file.type, size: file.size, uploading: true }]);
+      try {
+        const uploaded = await chrome.runtime.sendMessage({ type: "AGENT_UPLOAD_ATTACHMENT", payload: { name: file.name, mimeType: file.type, data: Array.from(new Uint8Array(await file.arrayBuffer())) } });
+        if (uploaded?.error) throw new Error(uploaded.error);
+        setAttachments((prev) => prev.map((item) => item.id === temporaryId ? uploaded : item));
+      } catch (error) { setAttachments((prev) => prev.map((item) => item.id === temporaryId ? { ...item, uploading: false, error: String(error) } : item)); }
+    }
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -153,6 +169,7 @@ function ChatView({ agent, chat, selection }: { agent: AgentState; chat: ChatSta
                 >
                   <Trash2 className="h-3 w-3" />
                 </button>}
+                {!!msg.attachments?.length && <div className="flex flex-wrap gap-1">{msg.attachments.map((file) => <span key={file.id} className="rounded border bg-background/70 px-1.5 py-0.5">📄 {file.name}</span>)}</div>}
                 {msg.content.startsWith("⏳") ? (
                   <div className="flex items-center gap-1.5">
                     <Loader2 className="h-3 w-3 animate-spin text-primary shrink-0" />
@@ -200,6 +217,13 @@ function ChatView({ agent, chat, selection }: { agent: AgentState; chat: ChatSta
       </div>
 
       <div className="border-t p-2 space-y-1.5">
+        {!!attachments.length && <div className="flex flex-col gap-1">{attachments.map((file) => <div key={file.id} title={file.error} className={`flex max-w-full flex-wrap items-center gap-1 rounded border px-1.5 py-1 text-[11px] ${file.error ? "border-destructive bg-destructive/5 text-destructive" : "bg-muted"}`}>
+          {file.uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : "📄"}
+          <span className="min-w-0 flex-1 truncate">{file.name}</span>
+          <button onClick={() => { setAttachments((prev) => prev.filter((item) => item.id !== file.id)); if (!file.uploading && !file.error) chrome.runtime.sendMessage({ type: "AGENT_DELETE_ATTACHMENT", payload: { id: file.id } }); }}><X className="h-3 w-3" /></button>
+          {file.error && <span className="w-full break-words text-[10px] leading-4">{file.error}</span>}
+        </div>)}</div>}
+        <input ref={fileInputRef} type="file" multiple hidden accept=".txt,.md,.json,.csv,.html,.css,.js,.jsx,.ts,.tsx,.yaml,.yml,.xml,.sql,.log,.sh,.py,.java,.go,.rs" onChange={(event) => addFiles(event.target.files)} />
         <textarea
           className="w-full min-h-[60px] max-h-[120px] px-2.5 py-2 text-xs border rounded-md resize-none bg-background focus:outline-none focus:ring-1 focus:ring-ring"
           placeholder={t("chat.placeholder")}
@@ -210,6 +234,7 @@ function ChatView({ agent, chat, selection }: { agent: AgentState; chat: ChatSta
           rows={3}
         />
         <div className="flex justify-end gap-1">
+          <Button size="sm" variant="outline" className="h-7 w-7 p-0" title="添加文件" onClick={() => fileInputRef.current?.click()} disabled={sending || attachments.length >= 5}><Paperclip className="h-3.5 w-3" /></Button>
           {sending && <Button size="sm" variant="destructive" className="h-7 text-xs px-2.5" onClick={cancelCurrent}>取消运行</Button>}
           {messages.length > 0 && (
             <Button size="sm" variant="outline" className="h-7 text-xs px-2.5 gap-1" onClick={clearHistory}>
@@ -217,7 +242,7 @@ function ChatView({ agent, chat, selection }: { agent: AgentState; chat: ChatSta
               {t("chat.clearHistory")}
             </Button>
           )}
-          <Button size="sm" className="h-7 text-xs px-3 gap-1" onClick={handleSend} disabled={sending || !input.trim()}>
+          <Button size="sm" className="h-7 text-xs px-3 gap-1" onClick={handleSend} disabled={sending || attachments.some((item) => item.uploading || item.error) || (!input.trim() && !attachments.some((item) => !item.error))}>
             <Send className="h-3 w-3" />
             {t("chat.send")}
           </Button>

@@ -53,7 +53,7 @@ class PrismAcpClient implements acp.Client {
       case "tool_call": {
         const title = update.title || "";
         console.log(`[GLM] 工具调用: ${title} (${update.status})`);
-        if (update.status === "running" || update.status === "in_progress") {
+        if (update.status === "in_progress") {
           this.onProgress?.(`${title}`);
         }
         // Track file modifications: "Write file: path/to/file" or "write_file path"
@@ -177,15 +177,22 @@ async function createSession(clientId: string): Promise<GlmSession> {
   const sessionId = sessionResult.sessionId;
   console.log(`[GLM] 会话创建: ${sessionId}`);
 
-  // Try to set bypass_permissions mode
-  try {
-    await connection.setSessionMode({
-      sessionId,
-      mode: "bypass_permissions",
-    });
-    console.log(`[GLM] 已设置 bypass_permissions 模式`);
-  } catch (err) {
-    console.warn(`[GLM] 设置 bypass_permissions 失败:`, err);
+  // Use bypass_permissions only when the Agent advertises that mode.
+  const bypassMode = sessionResult.modes?.availableModes.find(
+    (mode) => mode.id === "bypass_permissions",
+  );
+  if (bypassMode) {
+    try {
+      await connection.setSessionMode({
+        sessionId,
+        modeId: bypassMode.id,
+      });
+      console.log(`[GLM] 已设置 bypass_permissions 模式`);
+    } catch (err) {
+      console.warn(`[GLM] 设置 bypass_permissions 失败:`, err);
+    }
+  } else {
+    console.log(`[GLM] Agent 未提供 bypass_permissions 模式，保持默认模式`);
   }
 
   const session: GlmSession = {

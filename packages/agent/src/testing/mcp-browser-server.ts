@@ -3,7 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 const agentUrl = process.env.PRISM_AGENT_URL || "http://127.0.0.1:9527";
-const currentSessions = new Map<string, string>();
+const currentSessions = new Map<string, { url: string; capabilityToken: string }>();
 const server = new McpServer({ name: "prism-browser", version: "0.1.0" });
 const result = (value: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(value) }], structuredContent: value as Record<string, unknown> });
 const target = z.union([
@@ -12,10 +12,10 @@ const target = z.union([
   z.object({ label: z.string() }),
   z.object({ selector: z.string() }),
 ]);
-async function currentCall(pageUrl: string, action: string, input: Record<string, unknown> = {}) {
+async function currentCall(pageUrl: string, capabilityToken: string, action: string, input: Record<string, unknown> = {}) {
   let response: Response;
   try {
-    response = await fetch(`${agentUrl}/api/browser/current/command`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pageUrl, action, ...input }) });
+    response = await fetch(`${agentUrl}/api/browser/current/command`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${capabilityToken}` }, body: JSON.stringify({ pageUrl, action, ...input }) });
   } catch (error) {
     throw new Error(`Prism browser ${action} could not reach ${agentUrl}: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -45,9 +45,13 @@ async function agentCall(path: string, capabilityToken: string, body: Record<str
   return value;
 }
 function currentUrl(sessionId: string) {
-  const url = currentSessions.get(sessionId);
-  if (!url) throw new Error("Current-tab session not found");
-  return url;
+  const session = currentSessions.get(sessionId);
+  if (!session) throw new Error("Current-tab session not found");
+  return session;
+}
+async function sessionCall(sessionId: string, action: string, input: Record<string, unknown> = {}) {
+  const session = currentUrl(sessionId);
+  return currentCall(session.url, session.capabilityToken, action, input);
 }
 
 const localRead = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
@@ -109,32 +113,33 @@ server.registerTool("verification_complete", {
   annotations: localAction,
 }, async ({ capabilityToken: token, verificationId, status, summary, failureCategory, fixSuggestion }) => result(await agentCall(`/api/agent/verifications/${encodeURIComponent(verificationId)}/complete`, token, { status, summary, failureCategory, fixSuggestion })));
 
-server.registerTool("browser_start", { description: "Connect to the user's visible current Chrome tab.", inputSchema: { baseUrl: z.string().url() }, annotations: localRead }, async ({ baseUrl }) => {
+server.registerTool("browser_start", { description: "Connect to the user's visible current Chrome tab for an explicitly requested page interaction or authorized verification.", inputSchema: { capabilityToken, baseUrl: z.string().url() }, annotations: localRead }, async ({ capabilityToken: token, baseUrl }) => {
   const sessionId = `current-tab-${Date.now()}`;
-  const observation = await currentCall(baseUrl, "attach");
-  currentSessions.set(sessionId, baseUrl);
+  const observation = await currentCall(baseUrl, token, "attach");
+  currentSessions.set(sessionId, { url: baseUrl, capabilityToken: token });
   return result({ sessionId, observation, mode: "current-tab" });
 });
 server.registerTool("browser_navigate", { description: "Navigate an existing browser session.", inputSchema: { sessionId: z.string(), url: z.string() }, annotations: localRead }, async ({ sessionId, url }) => {
-  const value = await currentCall(currentUrl(sessionId), "navigate", { url });
-  currentSessions.set(sessionId, new URL(url, currentUrl(sessionId)).href);
+  const session = currentUrl(sessionId);
+  const value = await currentCall(session.url, session.capabilityToken, "navigate", { url });
+  currentSessions.set(sessionId, { ...session, url: new URL(url, session.url).href });
   return result(value);
 });
-server.registerTool("browser_observe", { description: "Observe interactive elements as a semantic page model. Re-observe after page changes.", inputSchema: { sessionId: z.string() }, annotations: localRead }, async ({ sessionId }) => result(await currentCall(currentUrl(sessionId), "observe")));
+server.registerTool("browser_observe", { description: "Observe interactive elements as a semantic page model. Re-observe after page changes.", inputSchema: { sessionId: z.string() }, annotations: localRead }, async ({ sessionId }) => result(await sessionCall(sessionId, "observe")));
 server.registerTool("browser_scroll", {
   description: "Scroll the visible current page with a real mouse-wheel event. Positive deltaY scrolls down and negative deltaY scrolls up.",
   inputSchema: { sessionId: z.string(), deltaY: z.number().min(-10000).max(10000), deltaX: z.number().min(-10000).max(10000).optional() },
   annotations: localAction,
-}, async ({ sessionId, deltaY, deltaX }) => result(await currentCall(currentUrl(sessionId), "scroll", { deltaX: deltaX || 0, deltaY })));
-server.registerTool("browser_click", { description: "Perform a real click. Prefer an element ref returned by browser_observe.", inputSchema: { sessionId: z.string(), target }, annotations: localAction }, async ({ sessionId, target }) => result(await currentCall(currentUrl(sessionId), "click", { target })));
-server.registerTool("browser_fill", { description: "Fill a form control using a semantic target.", inputSchema: { sessionId: z.string(), target, value: z.string() }, annotations: localAction }, async ({ sessionId, target, value }) => result(await currentCall(currentUrl(sessionId), "fill", { target, value })));
-server.registerTool("browser_press", { description: "Press a keyboard key on a semantic target.", inputSchema: { sessionId: z.string(), target, key: z.string() }, annotations: localAction }, async ({ sessionId, target, key }) => result(await currentCall(currentUrl(sessionId), "press", { target, key })));
-server.registerTool("browser_evidence", { description: "Read redacted, structured network, console warning/error and page-error evidence. Returned evidence IDs can be attached to business cases.", inputSchema: { sessionId: z.string() }, annotations: localRead }, async ({ sessionId }) => result(await currentCall(currentUrl(sessionId), "evidence")));
+}, async ({ sessionId, deltaY, deltaX }) => result(await sessionCall(sessionId, "scroll", { deltaX: deltaX || 0, deltaY })));
+server.registerTool("browser_click", { description: "Perform a real click. Prefer an element ref returned by browser_observe.", inputSchema: { sessionId: z.string(), target }, annotations: localAction }, async ({ sessionId, target }) => result(await sessionCall(sessionId, "click", { target })));
+server.registerTool("browser_fill", { description: "Fill a form control using a semantic target.", inputSchema: { sessionId: z.string(), target, value: z.string() }, annotations: localAction }, async ({ sessionId, target, value }) => result(await sessionCall(sessionId, "fill", { target, value })));
+server.registerTool("browser_press", { description: "Press a keyboard key on a semantic target.", inputSchema: { sessionId: z.string(), target, key: z.string() }, annotations: localAction }, async ({ sessionId, target, key }) => result(await sessionCall(sessionId, "press", { target, key })));
+server.registerTool("browser_evidence", { description: "Read redacted, structured network, console warning/error and page-error evidence. Returned evidence IDs can be attached to business cases.", inputSchema: { sessionId: z.string() }, annotations: localRead }, async ({ sessionId }) => result(await sessionCall(sessionId, "evidence")));
 server.registerTool("browser_response_body", {
   description: "Inspect a bounded, redacted JSON response preview for one recorded network evidence item when an error, UI mismatch, or evidence gap requires deeper diagnosis. Do not call routinely.",
   inputSchema: { sessionId: z.string(), evidenceId: z.string(), reason: z.string().min(1).max(500) },
   annotations: localRead,
-}, async ({ sessionId, evidenceId, reason }) => result(await currentCall(currentUrl(sessionId), "responseBody", { evidenceId, reason })));
+}, async ({ sessionId, evidenceId, reason }) => result(await sessionCall(sessionId, "responseBody", { evidenceId, reason })));
 server.registerTool("browser_wait", {
   description: "Wait until a URL pattern, visible text, or observed target is present.",
   inputSchema: {
@@ -146,13 +151,14 @@ server.registerTool("browser_wait", {
     ]),
   },
   annotations: localRead,
-}, async ({ sessionId, condition }) => result(await currentCall(currentUrl(sessionId), "wait", { condition })));
+}, async ({ sessionId, condition }) => result(await sessionCall(sessionId, "wait", { condition })));
 server.registerTool("browser_screenshot", { description: "Capture the current browser viewport as PNG evidence.", inputSchema: { sessionId: z.string() }, annotations: localRead }, async ({ sessionId }) => {
-  const shot = { base64: (await currentCall(currentUrl(sessionId), "screenshot") as any).data, mimeType: "image/png" as const, url: currentUrl(sessionId) };
+  const session = currentUrl(sessionId);
+  const shot = { base64: (await sessionCall(sessionId, "screenshot") as any).data, mimeType: "image/png" as const, url: session.url };
   return { content: [{ type: "image" as const, data: shot.base64, mimeType: shot.mimeType }, { type: "text" as const, text: JSON.stringify({ url: shot.url }) }] };
 });
 server.registerTool("browser_stop", { description: "Disconnect from the current Chrome tab.", inputSchema: { sessionId: z.string() }, annotations: localAction }, async ({ sessionId }) => {
-  try { await currentCall(currentUrl(sessionId), "detach"); }
+  try { await sessionCall(sessionId, "detach"); }
   finally { currentSessions.delete(sessionId); }
   return result({ success: true });
 });
