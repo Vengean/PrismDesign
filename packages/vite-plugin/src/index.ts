@@ -161,6 +161,7 @@ export default function prismDesign(options: PrismDesignOptions = {}): Plugin {
   } = options;
 
   let agentProcess: ChildProcess | null = null;
+  let agentToken = "";
   // If running inside a workspace container, reuse its agent
   let agentUrl = agentUrlOverride || process.env.PRISM_AGENT_URL || "";
   let widgetJs = "";
@@ -246,6 +247,8 @@ export default function prismDesign(options: PrismDesignOptions = {}): Plugin {
             agentProcess!.stdout?.on("data", (data: Buffer) => {
               const text = data.toString();
               const match = text.match(/__PRISM_AGENT_PORT__=(\d+)/);
+              const tokenMatch = text.match(/__PRISM_AGENT_TOKEN__=([a-f0-9]+)/);
+              if (tokenMatch) agentToken = tokenMatch[1];
               if (match) {
                 clearTimeout(timeout);
                 resolve(parseInt(match[1], 10));
@@ -253,7 +256,7 @@ export default function prismDesign(options: PrismDesignOptions = {}): Plugin {
               // Forward non-marker lines to logger
               for (const line of text.split("\n")) {
                 const trimmed = line.trim();
-                if (trimmed && !trimmed.startsWith("__PRISM_AGENT_PORT__")) {
+                if (trimmed && !trimmed.startsWith("__PRISM_AGENT_PORT__") && !trimmed.startsWith("__PRISM_AGENT_TOKEN__")) {
                   config.logger.info(`[PrismDesign Agent] ${trimmed}`);
                 }
               }
@@ -298,6 +301,7 @@ export default function prismDesign(options: PrismDesignOptions = {}): Plugin {
     transformIndexHtml() {
       if (!widget) return [];
       const initOptions: Record<string, string> = {};
+      if (agentToken) initOptions.agentToken = agentToken;
       if (position !== "bottom-right") initOptions.position = position;
       if (locale) initOptions.locale = locale;
 

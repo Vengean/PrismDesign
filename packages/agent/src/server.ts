@@ -22,6 +22,7 @@ export async function startServer(
   projectRoot: string,
   port: number,
 ) {
+  const accessToken = randomBytes(32).toString("hex");
   let testRuns: TestRunStore;
   const allowedOrigins = (process.env.PRISM_BROWSER_ALLOWED_ORIGINS || "")
     .split(",").map((value) => value.trim()).filter(Boolean);
@@ -60,6 +61,15 @@ export async function startServer(
 
   const app = express();
   app.use(cors());
+  app.use((req, res, next) => {
+    // Agent-side MCP tools already use a separate, short-lived capability token.
+    if (req.path.startsWith("/api/agent/") || req.path === "/api/browser/current/command") return next();
+    if (req.header("authorization") !== `Bearer ${accessToken}`) {
+      res.status(401).json({ error: "Invalid or missing Prism access token" });
+      return;
+    }
+    next();
+  });
   app.post("/api/attachments", express.raw({ type: "application/octet-stream", limit: "5mb" }), (req, res) => {
     try {
       const name = decodeURIComponent(req.header("x-attachment-name") || "attachment.txt");
@@ -93,8 +103,13 @@ export async function startServer(
   const disconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   wss.on("connection", (ws, request) => {
-    wsClients.add(ws);
     const url = new URL(request.url || "/ws", "http://localhost");
+    const protocols = String(request.headers["sec-websocket-protocol"] || "").split(",").map((value) => value.trim());
+    if (!protocols.includes(accessToken)) {
+      ws.close(1008, "Invalid or missing Prism access token");
+      return;
+    }
+    wsClients.add(ws);
     const wsClientId = url.searchParams.get("clientId") || "default";
     wsClientIds.set(ws, wsClientId);
     const reconnectTimer = disconnectTimers.get(wsClientId);
@@ -347,6 +362,7 @@ export async function startServer(
       "Capture at least one screenshot and inspect runtime/network evidence before concluding.",
       "End the final response with exactly VERIFICATION_RESULT: PASSED or VERIFICATION_RESULT: FAILED. Use FAILED when evidence is insufficient.",
     ].join("\n");
+    const agentStartedAt = performance.now();
     try {
       const result = await provider.run(clientId, runId, prompt, (event) => emitAgentEvent(clientId, event), controller.signal);
       const submitted = verifications.getOwned(verificationId, clientId);
@@ -372,6 +388,7 @@ export async function startServer(
       emitAgentEvent(clientId, { type: "run.failed", runId, error: { message } });
       throw error;
     } finally {
+      testRuns.recordAgentDuration(runId, performance.now() - agentStartedAt);
       activeRuns.delete(runId);
       activeRunClients.delete(runId);
       activeAgentTurns.delete(capabilityToken);
@@ -438,6 +455,7 @@ export async function startServer(
         "Use browser_response_body only for a relevant JSON request when an error, UI mismatch, unexpected business result, or evidence gap requires deeper diagnosis; do not inspect all response bodies.",
         "Use fixture tools when prerequisites are needed. Collect screenshot/runtime/network evidence, clean fixtures, then submit the structured outcome.",
         "If the user did not authorize testing, do not call verification_start; after file changes Prism will offer a confirmation action.",
+        "When your development turn changes files and testing still needs user confirmation, call verification_propose before finishing. Provide 2-6 concise, task-specific business test cases derived from the user's requested behavior and the actual implementation; do not use generic boilerplate checks.",
         "You may use prism_browser directly for a user-requested current-page interaction without starting a Verification. Do not call verification tools unless the user asks to test or verify behavior.",
         alwaysAllowEdits
           ? "The Chrome client has persistent permission to apply code fixes required by this request. This does not authorize publishing, deployment, Git push, or changes outside the project."
@@ -477,17 +495,6 @@ export async function startServer(
         }
       }
       let confirmationVerification = turnVerification?.status === "awaiting_confirmation" ? turnVerification : undefined;
-      if (automatedTesting && result.filesModified.length > 0 && pageUrl && !turnVerification) {
-        confirmationVerification = verifications.create({
-          clientId,
-          developmentRunId: runId,
-          goal: `验证本次修改：${message.slice(0, 240)}`,
-          baseUrl: pageUrl,
-          changedFiles: result.filesModified,
-          proposedChecks: ["页面能够正常加载", "关键交互可以完成", "请求和跳转符合预期", "页面无 Console/Page Error"],
-        });
-        broadcast("verification.proposed", confirmationVerification, clientId);
-      }
       if (confirmationVerification) {
         result.verification = {
           id: confirmationVerification.id,
@@ -779,7 +786,13 @@ export async function startServer(
         } });
         return;
       }
-      const rawResult = await executeCurrentTab(pageUrl, command, clientIds[0]);
+      const browserStartedAt = performance.now();
+      let rawResult: unknown;
+      try {
+        rawResult = await executeCurrentTab(pageUrl, command, clientIds[0]);
+      } finally {
+        if (running.length === 1) testRuns.recordBrowserCommand(running[0].id, String(command.action || "unknown"), performance.now() - browserStartedAt);
+      }
       if (command.action === "evidence" && running.length !== 1) throw new Error("A running verification is required to collect test evidence");
       if (command.action === "evidence" && running.length === 1) {
         const evidence = testRuns.recordEvidence(running[0].id, normalizeBrowserEvidence(rawResult));
@@ -897,6 +910,8 @@ export async function startServer(
   // before the first chat thread is created so MCP calls reach this server
   // when the requested port was already occupied and auto-incremented.
   process.env.PRISM_AGENT_URL = `http://127.0.0.1:${actualPort}`;
+  console.log(`[Server] 访问 Token: ${accessToken}`);
+  console.log(`__PRISM_AGENT_TOKEN__=${accessToken}`);
 
   function shutdown() {
     for (const controller of activeRuns.values()) controller.abort();

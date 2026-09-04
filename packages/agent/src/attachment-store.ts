@@ -55,8 +55,7 @@ export class AttachmentStore {
 
   remove(clientId: string, id: string) {
     const record = this.getOwned(id, clientId);
-    this.records.delete(id);
-    try { fs.unlinkSync(record.filePath); } catch {}
+    this.deleteRecord(record);
   }
 
   close() {
@@ -68,8 +67,16 @@ export class AttachmentStore {
   private getOwned(id: string, clientId: string) {
     const record = this.records.get(id);
     if (!record || record.clientId !== clientId) throw new Error("Attachment not found or expired");
-    if (Date.now() - record.createdAt > TTL_MS) { this.remove(clientId, id); throw new Error("Attachment expired"); }
+    if (Date.now() - record.createdAt > TTL_MS) {
+      this.deleteRecord(record);
+      throw new Error("Attachment expired");
+    }
     return record;
+  }
+
+  private deleteRecord(record: Attachment) {
+    this.records.delete(record.id);
+    try { fs.unlinkSync(record.filePath); } catch {}
   }
 
   private meta(record: Attachment): AttachmentMeta {
@@ -77,6 +84,8 @@ export class AttachmentStore {
   }
 
   private cleanupExpired() {
-    for (const record of this.records.values()) if (Date.now() - record.createdAt > TTL_MS) this.remove(record.clientId, record.id);
+    for (const record of this.records.values()) {
+      if (Date.now() - record.createdAt > TTL_MS) this.deleteRecord(record);
+    }
   }
 }

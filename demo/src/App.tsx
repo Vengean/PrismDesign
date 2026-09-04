@@ -1,5 +1,5 @@
 import { memo, type FormEvent, useEffect, useMemo, useState } from 'react'
-import { ArrowRight, CalendarDays, Check, ChevronRight, Clock3, Eye, EyeOff, LoaderCircle, LockKeyhole, LogOut, Mail, Menu, NotebookPen, Pencil, Plus, Search, ShieldCheck, Sparkles, X } from 'lucide-react'
+import { ArrowRight, CalendarDays, Check, ChevronRight, Clock3, Eye, EyeOff, History, LoaderCircle, LockKeyhole, LogOut, Mail, Menu, NotebookPen, Pencil, Plus, Search, ShieldCheck, Sparkles, X } from 'lucide-react'
 import Markdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Button } from './components/ui/button'
@@ -7,7 +7,7 @@ import { Checkbox } from './components/ui/checkbox'
 import { Input } from './components/ui/input'
 import { Label } from './components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
-import { api, type Note, type User } from './api'
+import { api, type Note, type NoteRevision, type User } from './api'
 
 const SESSION_KEY = 'prism-demo-session'
 const markdownPlugins = [remarkGfm]
@@ -23,6 +23,27 @@ const formatUpdatedAt = (value: string) => {
   if (elapsed < 60_000) return '刚刚'
   if (elapsed < 24 * 60 * 60_000 && date.getDate() === new Date().getDate()) return `今天 ${date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}`
   return new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric' }).format(date)
+}
+
+type DiffLine = { kind: 'same' | 'add' | 'remove'; value: string }
+function buildLineDiff(before: string, after: string): DiffLine[] {
+  const left = before.split('\n'); const right = after.split('\n')
+  const table = Array.from({ length: left.length + 1 }, () => Array<number>(right.length + 1).fill(0))
+  for (let i = left.length - 1; i >= 0; i--) for (let j = right.length - 1; j >= 0; j--) table[i][j] = left[i] === right[j] ? table[i + 1][j + 1] + 1 : Math.max(table[i + 1][j], table[i][j + 1])
+  const result: DiffLine[] = []; let i = 0; let j = 0
+  while (i < left.length || j < right.length) {
+    if (i < left.length && j < right.length && left[i] === right[j]) { result.push({ kind: 'same', value: left[i++] }); j++ }
+    else if (j < right.length && (i === left.length || table[i][j + 1] >= table[i + 1][j])) result.push({ kind: 'add', value: right[j++] })
+    else result.push({ kind: 'remove', value: left[i++] })
+  }
+  return result
+}
+
+function DiffView({ before, after }: { before: string; after: string }) {
+  const lines = useMemo(() => buildLineDiff(before, after), [before, after])
+  return <div className="overflow-x-auto rounded-xl border border-[#e5e2da] bg-white font-mono text-xs leading-6" aria-label="内容差异">
+    {lines.map((line, index) => <div key={`${index}-${line.kind}`} className={`grid min-w-[520px] grid-cols-[40px_28px_1fr] px-3 ${line.kind === 'add' ? 'bg-emerald-50 text-emerald-900' : line.kind === 'remove' ? 'bg-red-50 text-red-900' : 'text-[#77736b]'}`}><span className="select-none text-right text-[#aaa69d]">{index + 1}</span><span className="select-none text-center" aria-label={line.kind === 'add' ? '新增' : line.kind === 'remove' ? '删除' : '未变化'}>{line.kind === 'add' ? '+' : line.kind === 'remove' ? '−' : ' '}</span><span className="whitespace-pre-wrap break-words">{line.value || ' '}</span></div>)}
+  </div>
 }
 
 type FieldErrors = { name?: string; email?: string; password?: string; confirmPassword?: string; form?: string }
@@ -48,6 +69,10 @@ function NotesPage({ user, token, onLogout }: { user: User; token: string; onLog
   const [isLoadingNotes, setIsLoadingNotes] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [noteError, setNoteError] = useState('')
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [history, setHistory] = useState<NoteRevision[]>([])
+  const [selectedRevisionId, setSelectedRevisionId] = useState<number | string | null>(null)
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
 
   useEffect(() => {
     api.notes(token).then(({ notes: loadedNotes }) => {
@@ -80,6 +105,16 @@ function NotesPage({ user, token, onLogout }: { user: User; token: string; onLog
     setEditingId(null)
     setDraftTitle('')
     setDraftContent('')
+  }
+
+  const openHistory = async (note: Note) => {
+    setHistoryOpen(true); setIsLoadingHistory(true); setHistory([]); setSelectedRevisionId(null); setNoteError('')
+    try {
+      const result = await api.noteHistory(token, note.id)
+      setHistory(result.revisions)
+      setSelectedRevisionId(result.revisions.find((revision) => !revision.isCurrent)?.id ?? null)
+    } catch (error) { setNoteError(error instanceof Error ? error.message : '读取历史失败，请重试。') }
+    finally { setIsLoadingHistory(false) }
   }
 
   const saveNote = async (event: FormEvent) => {
@@ -143,7 +178,7 @@ function NotesPage({ user, token, onLogout }: { user: User; token: string; onLog
 
         <section className="relative flex min-w-0 flex-1 justify-center bg-[#eeece6] px-5 py-8 sm:px-8 sm:py-10 lg:px-10 xl:px-12 2xl:px-16">
           {selectedNote && <article className="animate-login-in w-full max-w-[1080px] rounded-2xl border border-black/[0.055] bg-[#fffefa] px-6 py-8 shadow-[0_18px_60px_rgba(48,44,35,0.08)] sm:px-12 sm:py-11 lg:px-14">
-            <div className="mb-9 flex items-center justify-between border-b border-[#ece8de] pb-6"><span className="rounded-full bg-[#f0ebdf] px-3 py-1 text-xs font-medium text-[#80683e]">{selectedNote.category}</span><div className="flex items-center gap-3"><div className="flex items-center gap-1.5 text-xs text-[#a09b91]"><Clock3 className="h-3.5 w-3.5" />更新于 {formatUpdatedAt(selectedNote.updatedAt)}</div><button type="button" onClick={() => openEditNote(selectedNote)} className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#80683e] transition hover:bg-[#f0ebdf]" aria-label={`编辑笔记：${selectedNote.title}`}><Pencil className="h-3.5 w-3.5" />编辑</button></div></div>
+            <div className="mb-9 flex flex-wrap items-center justify-between gap-3 border-b border-[#ece8de] pb-6"><span className="rounded-full bg-[#f0ebdf] px-3 py-1 text-xs font-medium text-[#80683e]">{selectedNote.category}</span><div className="flex flex-wrap items-center justify-end gap-2"><div className="flex items-center gap-1.5 text-xs text-[#a09b91]"><Clock3 className="h-3.5 w-3.5" />更新于 {formatUpdatedAt(selectedNote.updatedAt)}</div><button type="button" onClick={() => openHistory(selectedNote)} className="flex min-h-11 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-[#80683e] transition hover:bg-[#f0ebdf]" aria-label={`查看修改历史：${selectedNote.title}`}><History className="h-3.5 w-3.5" />历史</button><button type="button" onClick={() => openEditNote(selectedNote)} className="flex min-h-11 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-[#80683e] transition hover:bg-[#f0ebdf]" aria-label={`编辑笔记：${selectedNote.title}`}><Pencil className="h-3.5 w-3.5" />编辑</button></div></div>
             <h2 className="text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">{selectedNote.title}</h2>
             <div className="mt-4 flex items-center gap-2 text-xs text-[#a09b91]"><CalendarDays className="h-3.5 w-3.5" />{formatDate(selectedNote.createdAt)}</div>
             <MarkdownContent className="mt-9 text-[15px] text-[#4e4b44] sm:text-base">{selectedNote.content}</MarkdownContent>
@@ -176,6 +211,15 @@ function NotesPage({ user, token, onLogout }: { user: User; token: string; onLog
           {noteError && <p role="alert" className="mt-4 text-sm text-red-600">{noteError}</p>}
           <div className="mt-5 flex shrink-0 justify-end gap-3"><Button type="button" variant="outline" onClick={closeNoteEditor} className="rounded-xl">取消</Button><Button type="submit" disabled={isSaving || !draftTitle.trim() || !draftContent.trim()} className="rounded-xl px-5">{isSaving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}{isSaving ? '正在保存...' : editingId !== null ? '保存修改' : '保存笔记'}</Button></div>
         </form>
+      </div>}
+      {historyOpen && selectedNote && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/35 backdrop-blur-[2px] sm:items-center sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) setHistoryOpen(false) }}>
+        <section role="dialog" aria-modal="true" aria-labelledby="history-title" className="flex h-[calc(100dvh-16px)] w-full max-w-5xl flex-col overflow-hidden rounded-t-3xl bg-[#fffefa] shadow-2xl sm:h-[min(760px,calc(100dvh-48px))] sm:rounded-3xl">
+          <header className="flex items-center justify-between border-b border-[#e5e2da] px-6 py-5 sm:px-8"><div><p className="text-xs font-medium uppercase tracking-[0.18em] text-[#9a7b43]">Version history</p><h2 id="history-title" className="mt-1 text-xl font-semibold">修改历史</h2></div><button type="button" onClick={() => setHistoryOpen(false)} className="rounded-lg p-2 text-[#77736b] hover:bg-black/5" aria-label="关闭修改历史"><X className="h-5 w-5" /></button></header>
+          {isLoadingHistory ? <div className="flex flex-1 items-center justify-center gap-2 text-sm text-[#77736b]"><LoaderCircle className="h-4 w-4 animate-spin" />正在读取历史...</div> : noteError ? <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-red-600" role="alert">{noteError}</div> : history.length <= 1 ? <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-[#77736b]">这篇笔记还没有修改记录。保存一次修改后即可在这里对比。</div> : <div className="grid min-h-0 flex-1 md:grid-cols-[240px_1fr]">
+            <aside className="border-b border-[#e5e2da] bg-[#f8f7f3] p-3 md:overflow-y-auto md:border-b-0 md:border-r"><p className="px-3 py-2 text-xs text-[#99958c]">选择要与当前版本对比的记录</p>{history.map((revision, index) => <button key={revision.id} type="button" disabled={revision.isCurrent} onClick={() => setSelectedRevisionId(revision.id)} className={`mb-1 w-full rounded-xl px-3 py-3 text-left ${revision.isCurrent ? 'cursor-default text-[#99958c]' : selectedRevisionId === revision.id ? 'bg-white shadow-sm ring-1 ring-black/5' : 'hover:bg-black/[0.035]'}`}><span className="block text-xs font-medium">{revision.isCurrent ? '当前版本' : `历史版本 ${history.length - index}`}</span><span className="mt-1 block text-[10px] text-[#99958c]">{new Date(revision.createdAt).toLocaleString('zh-CN', { hour12: false })}</span></button>)}</aside>
+            <div className="min-h-0 overflow-y-auto p-5 sm:p-8">{(() => { const revision = history.find((item) => item.id === selectedRevisionId); if (!revision) return null; return <><div className="mb-6"><p className="mb-2 text-xs font-medium text-[#77736b]">标题差异</p><DiffView before={revision.title} after={selectedNote.title} /></div><div><p className="mb-2 text-xs font-medium text-[#77736b]">正文差异</p><DiffView before={revision.content} after={selectedNote.content} /></div></> })()}</div>
+          </div>}
+        </section>
       </div>}
     </main>
   )

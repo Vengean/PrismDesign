@@ -3,6 +3,7 @@ import type { AgentPermissions, ProjectInfo, TestRunInfo } from "../shared/types
 export interface TabState {
   clientId: string;
   agentUrl: string | null;
+  agentToken: string | null;
   connected: boolean;
   project: ProjectInfo | null;
   ws: WebSocket | null;
@@ -20,6 +21,7 @@ export function getTabState(tabId: number): TabState {
     tabs.set(tabId, {
       clientId: `chrome-tab-${tabId}`,
       agentUrl: null,
+      agentToken: null,
       connected: false,
       project: null,
       ws: null,

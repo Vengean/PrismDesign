@@ -91,10 +91,31 @@ app.put('/api/notes/:id', requireAuth, (req: AuthRequest, res) => {
   const title = String(req.body?.title || '').trim()
   const content = String(req.body?.content || '').trim()
   if (!Number.isInteger(id) || !title || !content) return res.status(400).json({ message: '笔记参数无效。' })
-  const result = db.prepare('UPDATE notes SET title = ?, content = ?, updated_at = ? WHERE id = ? AND user_id = ?').run(title, content, new Date().toISOString(), id, req.user!.id)
+  const existing = db.prepare('SELECT title, content FROM notes WHERE id = ? AND user_id = ?').get(id, req.user!.id) as { title: string; content: string } | undefined
+  if (!existing) return res.status(404).json({ message: '笔记不存在。' })
+  if (existing.title === title && existing.content === content) {
+    const note = db.prepare('SELECT id, title, content, category, created_at AS createdAt, updated_at AS updatedAt FROM notes WHERE id = ? AND user_id = ?').get(id, req.user!.id)
+    return res.json({ note })
+  }
+  const now = new Date().toISOString()
+  const update = db.transaction(() => {
+    // The previous snapshot is retained before every meaningful edit.
+    db.prepare('INSERT INTO note_revisions (note_id, user_id, title, content, created_at) VALUES (?, ?, ?, ?, ?)').run(id, req.user!.id, existing.title, existing.content, now)
+    return db.prepare('UPDATE notes SET title = ?, content = ?, updated_at = ? WHERE id = ? AND user_id = ?').run(title, content, now, id, req.user!.id)
+  })
+  const result = update()
   if (!result.changes) return res.status(404).json({ message: '笔记不存在。' })
   const note = db.prepare('SELECT id, title, content, category, created_at AS createdAt, updated_at AS updatedAt FROM notes WHERE id = ? AND user_id = ?').get(id, req.user!.id)
   res.json({ note })
+})
+
+app.get('/api/notes/:id/history', requireAuth, (req: AuthRequest, res) => {
+  const id = Number(req.params.id)
+  if (!Number.isInteger(id)) return res.status(400).json({ message: '笔记参数无效。' })
+  const note = db.prepare('SELECT id, title, content, updated_at AS createdAt FROM notes WHERE id = ? AND user_id = ?').get(id, req.user!.id)
+  if (!note) return res.status(404).json({ message: '笔记不存在。' })
+  const revisions = db.prepare('SELECT id, title, content, created_at AS createdAt FROM note_revisions WHERE note_id = ? AND user_id = ? ORDER BY created_at DESC, id DESC').all(id, req.user!.id)
+  res.json({ revisions: [{ ...note, id: `current-${id}`, isCurrent: true }, ...revisions] })
 })
 
 app.use((_req, res) => res.status(404).json({ message: '接口不存在。' }))
@@ -104,4 +125,12 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
   res.status(500).json({ message: '服务器暂时不可用，请稍后重试。' })
 })
 
-app.listen(port, '0.0.0.0', () => console.log(`[Prism Demo API] http://127.0.0.1:${port}`))
+const server = app.listen(port, '0.0.0.0', () => console.log(`[Prism Demo API] http://127.0.0.1:${port}`))
+server.on('error', (error: NodeJS.ErrnoException) => {
+  if (error.code === 'EADDRINUSE') {
+    console.error(`[Prism Demo API] 端口 ${port} 已被占用，请关闭已有 API 进程或设置 PRISM_API_PORT`)
+    process.exitCode = 1
+    return
+  }
+  throw error
+})

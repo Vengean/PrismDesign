@@ -10,7 +10,7 @@ import {
 } from "./editor.js";
 import { buildDOMTree, resetIdCounter } from "./dom-tree.js";
 import { initKeyboard, destroyKeyboard } from "./keyboard.js";
-import { createToolbar, destroyToolbar, isToolbarElement, setActiveMode, setToolbarDisabled, isToolbarDisabled, triggerMode, updatePendingBadge } from "./toolbar.js";
+import { createToolbar, destroyToolbar, isToolbarElement, setActiveMode, setToolbarDisabled, isToolbarDisabled, triggerMode } from "./toolbar.js";
 import { initCommentPopup, showCommentPopup, hideCommentPopup, destroyCommentPopup, isCommentPopupElement } from "./comment-popup.js";
 import { safeSendMessage, isContextInvalidated, onContextInvalidated } from "./runtime.js";
 import type { PrismMessage } from "../shared/types.js";
@@ -222,7 +222,7 @@ const HANDLED_TYPES = new Set([
   "GET_DOM_TREE", "GET_PENDING_CHANGES", "CLEAR_CHANGES",
   "HIGHLIGHT_ELEMENT", "UNHIGHLIGHT_ELEMENT", "SELECT_ELEMENT",
   "APPLY_STYLE_PREVIEW", "CLEAR_STYLE_PREVIEW",
-  "SHOW_TOOLBAR", "HIDE_TOOLBAR", "TOOLBAR_DISABLE", "UPDATE_PENDING_COUNT", "RELOAD_IF_STATIC", "PING",
+  "SHOW_TOOLBAR", "HIDE_TOOLBAR", "TOOLBAR_DISABLE", "RELOAD_IF_STATIC", "PING",
 ]);
 
 chrome.runtime.onMessage.addListener((message: PrismMessage, _sender, sendResponse) => {
@@ -315,10 +315,6 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, _sender, sendRespon
       }
       sendResponse({ success: true });
       break;
-    case "UPDATE_PENDING_COUNT":
-      updatePendingBadge(message.payload.count);
-      sendResponse({ success: true });
-      break;
     case "RELOAD_IF_STATIC":
       // Static HTML pages (file://) have no dev server / HMR, so reload manually
       if (location.protocol === "file:") {
@@ -359,18 +355,15 @@ function ensureToolbar() {
 
       if (mode === "select") {
         enableDesignMode();
-        safeSendMessage({ type: "OPEN_SIDE_PANEL" });
         safeSendMessage({ type: "OPEN_NAVIGATOR", payload: { mode: "select" } });
       } else if (mode === "drag") {
         dragModeActive = true;
         enableDesignMode();
-        safeSendMessage({ type: "OPEN_SIDE_PANEL" });
         safeSendMessage({ type: "OPEN_NAVIGATOR", payload: { mode: "drag" } });
       } else if (mode === "comment") {
         commentModeActive = true;
         enableDesignMode();
-        safeSendMessage({ type: "OPEN_SIDE_PANEL" });
-        safeSendMessage({ type: "OPEN_PENDING" });
+        safeSendMessage({ type: "OPEN_CHAT" });
       } else {
         // null — exit current mode
         safeSendMessage({ type: "OPEN_CHAT" });

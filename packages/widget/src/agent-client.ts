@@ -14,7 +14,7 @@ export class AgentClient {
   private ws: WebSocket | null = null;
   private clientId = getOrCreateClientId();
 
-  constructor(private baseUrl: string) {}
+  constructor(private baseUrl: string, private accessToken: string) {}
 
   getBaseUrl(): string {
     return this.baseUrl;
@@ -22,7 +22,7 @@ export class AgentClient {
 
   async getStatus(): Promise<{ status: string; project: Record<string, unknown> }> {
     const res = await fetch(`${this.baseUrl}/api/status`, {
-      headers: { "x-client-id": this.clientId },
+      headers: { "x-client-id": this.clientId, Authorization: `Bearer ${this.accessToken}` },
     });
     return res.json();
   }
@@ -30,7 +30,7 @@ export class AgentClient {
   async uploadAttachment(file: File): Promise<{ id: string; name: string; mimeType: string; size: number }> {
     const res = await fetch(`${this.baseUrl}/api/attachments`, {
       method: "POST",
-      headers: { "Content-Type": "application/octet-stream", "x-client-id": this.clientId, "x-attachment-name": encodeURIComponent(file.name), "x-attachment-type": file.type || "text/plain" },
+      headers: { "Content-Type": "application/octet-stream", "x-client-id": this.clientId, "x-attachment-name": encodeURIComponent(file.name), "x-attachment-type": file.type || "text/plain", Authorization: `Bearer ${this.accessToken}` },
       body: file,
     });
     const text = await res.text();
@@ -43,7 +43,7 @@ export class AgentClient {
   }
 
   async deleteAttachment(id: string): Promise<void> {
-    await fetch(`${this.baseUrl}/api/attachments/${encodeURIComponent(id)}`, { method: "DELETE", headers: { "x-client-id": this.clientId } });
+    await fetch(`${this.baseUrl}/api/attachments/${encodeURIComponent(id)}`, { method: "DELETE", headers: { "x-client-id": this.clientId, Authorization: `Bearer ${this.accessToken}` } });
   }
 
   async chat(message: string, runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, attachmentIds: string[] = []): Promise<{ success: boolean; message: string; filesModified?: string[]; runId?: string; verification?: { id: string; goal: string; proposedChecks: string[] } }> {
@@ -52,6 +52,7 @@ export class AgentClient {
       headers: {
         "Content-Type": "application/json",
         "x-client-id": this.clientId,
+        Authorization: `Bearer ${this.accessToken}`,
       },
       body: JSON.stringify({ message, runId, pageUrl: location.href, attachmentIds, capabilities: { browserInteraction: false, automatedTesting: false } }),
     });
@@ -60,11 +61,11 @@ export class AgentClient {
 
   async startVerification(
     verification: { id: string; goal: string; proposedChecks: string[] },
-  ): Promise<{ verification: { status: string }; observation?: { url: string; title: string }; agentResult?: { message?: string } }> {
+  ): Promise<{ verification: { status: string }; observation?: { url: string; title: string }; agentResult?: { message?: string }; testRun?: { performance?: TestPerformance } }> {
     const id = verification.id;
     const res = await fetch(`${this.baseUrl}/api/verifications/${encodeURIComponent(id)}/start`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-client-id": this.clientId },
+      headers: { "Content-Type": "application/json", "x-client-id": this.clientId, Authorization: `Bearer ${this.accessToken}` },
       body: JSON.stringify({
         pageUrl: location.href,
         goal: verification.goal,
@@ -81,7 +82,7 @@ export class AgentClient {
       this.ws.close();
     }
     const wsUrl = this.baseUrl.replace(/^http/, "ws") + `/ws?clientId=${encodeURIComponent(this.clientId)}`;
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(wsUrl, ["prism", this.accessToken]);
     ws.onmessage = (event) => {
       try {
         const { type, data } = JSON.parse(event.data);
@@ -102,15 +103,26 @@ export class AgentClient {
   /**
    * Check if an agent server is reachable at the given URL.
    */
-  static async checkConnection(url: string): Promise<boolean> {
+  static async checkConnection(url: string, accessToken: string): Promise<boolean> {
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 3000);
-      const res = await fetch(`${url}/api/status`, { signal: controller.signal });
+      const res = await fetch(`${url}/api/status`, { headers: { Authorization: `Bearer ${accessToken}` }, signal: controller.signal });
       clearTimeout(timer);
       return res.ok;
     } catch {
       return false;
     }
   }
+}
+
+export interface TestPerformance {
+  totalDurationMs: number;
+  agentDurationMs: number;
+  toolDurationMs: number;
+  browserDurationMs: number;
+  cleanupDurationMs: number;
+  toolCallCount: number;
+  browserCommandCount: number;
+  browserCommands: Record<string, { count: number; durationMs: number; maxDurationMs: number }>;
 }

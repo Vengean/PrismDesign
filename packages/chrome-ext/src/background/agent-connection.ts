@@ -8,6 +8,7 @@ import type { TestRunInfo } from "../shared/types.js";
 export async function connectAgent(
   state: TabState,
   url: string,
+  token: string,
   onEvent: (type: string, data: unknown) => void,
   onBrowserCommand?: (data: any) => Promise<unknown>,
   pageUrl?: string,
@@ -22,27 +23,29 @@ export async function connectAgent(
   }
 
   state.agentUrl = url;
+  state.agentToken = token;
 
   // Test connection with timeout
   let res: Response;
   try {
-    res = await fetch(`${url}/api/status`, { signal: AbortSignal.timeout(3000) });
+    res = await fetch(`${url}/api/status`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(3000) });
   } catch (err) {
     state.agentUrl = null;
+    state.agentToken = null;
     if (err instanceof DOMException && err.name === "TimeoutError") {
       throw new Error("连接超时，请检查 Agent 服务是否已启动");
     }
     throw new Error("无法连接到 Agent 服务，请检查地址是否正确以及服务是否已启动");
   }
-  if (!res.ok) { state.agentUrl = null; throw new Error(`Agent 返回错误 (${res.status})`); }
+  if (!res.ok) { state.agentUrl = null; state.agentToken = null; throw new Error(res.status === 401 ? "访问 Token 不正确" : `Agent 返回错误 (${res.status})`); }
   let status: any;
-  try { status = await res.json(); } catch { state.agentUrl = null; throw new Error("Agent 返回了无效数据"); }
+  try { status = await res.json(); } catch { state.agentUrl = null; state.agentToken = null; throw new Error("Agent 返回了无效数据"); }
 
   state.project = status.project;
 
   // Establish WebSocket
   const wsUrl = url.replace(/^http/, "ws") + `/ws?clientId=${encodeURIComponent(state.clientId)}`;
-  const ws = new WebSocket(wsUrl);
+  const ws = new WebSocket(wsUrl, ["prism", token]);
   let opened = false;
   let rejectOpen: ((error: Error) => void) | undefined;
   const openPromise = new Promise<void>((resolve, reject) => {
@@ -78,7 +81,7 @@ export async function connectAgent(
     // Auto-reconnect after 3s
     setTimeout(() => {
       if (state.agentUrl === url) {
-        connectAgent(state, url, onEvent, onBrowserCommand, pageUrl)
+        connectAgent(state, url, token, onEvent, onBrowserCommand, pageUrl)
           .then((project) => onEvent("connection_restored", { project }))
           .catch(() => {});
       }
@@ -98,6 +101,7 @@ export async function connectAgent(
     state.ws = null;
     state.connected = false;
     state.agentUrl = null;
+    state.agentToken = null;
     state.project = null;
     throw error;
   }
@@ -126,6 +130,7 @@ export function disconnectAgent(state: TabState) {
   }
   state.connected = false;
   state.agentUrl = null;
+  state.agentToken = null;
   state.project = null;
 }
 
@@ -137,12 +142,12 @@ export async function chatWithAgent(
   message: string,
   attachmentIds: string[] = [],
 ): Promise<{ success: boolean; message: string; filesModified?: string[]; runId?: string }> {
-  if (!state.agentUrl) throw new Error("Agent not connected");
+  if (!state.agentUrl || !state.agentToken) throw new Error("Agent not connected");
 
   const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const res = await fetch(`${state.agentUrl}/api/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "x-client-id": state.clientId },
+    headers: { "Content-Type": "application/json", "x-client-id": state.clientId, Authorization: `Bearer ${state.agentToken}` },
     body: JSON.stringify({
       message,
       runId,
@@ -160,10 +165,10 @@ export async function chatWithAgent(
 }
 
 export async function uploadAgentAttachment(state: TabState, file: { name: string; mimeType: string; data: number[] }) {
-  if (!state.agentUrl) throw new Error("Agent not connected");
+  if (!state.agentUrl || !state.agentToken) throw new Error("Agent not connected");
   const res = await fetch(`${state.agentUrl}/api/attachments`, {
     method: "POST",
-    headers: { "Content-Type": "application/octet-stream", "x-client-id": state.clientId, "x-attachment-name": encodeURIComponent(file.name), "x-attachment-type": file.mimeType || "text/plain" },
+    headers: { "Content-Type": "application/octet-stream", "x-client-id": state.clientId, "x-attachment-name": encodeURIComponent(file.name), "x-attachment-type": file.mimeType || "text/plain", Authorization: `Bearer ${state.agentToken}` },
     body: new Uint8Array(file.data),
   });
   const text = await res.text();
@@ -176,23 +181,23 @@ export async function uploadAgentAttachment(state: TabState, file: { name: strin
 }
 
 export async function deleteAgentAttachment(state: TabState, id: string) {
-  if (!state.agentUrl) return;
-  await fetch(`${state.agentUrl}/api/attachments/${encodeURIComponent(id)}`, { method: "DELETE", headers: { "x-client-id": state.clientId } });
+  if (!state.agentUrl || !state.agentToken) return;
+  await fetch(`${state.agentUrl}/api/attachments/${encodeURIComponent(id)}`, { method: "DELETE", headers: { "x-client-id": state.clientId, Authorization: `Bearer ${state.agentToken}` } });
 }
 
 export async function cancelCurrentAgentRun(state: TabState): Promise<{ success: boolean }> {
-  if (!state.agentUrl) throw new Error("Agent not connected");
+  if (!state.agentUrl || !state.agentToken) throw new Error("Agent not connected");
   const response = await fetch(`${state.agentUrl}/api/runs/current`, {
     method: "DELETE",
-    headers: { "x-client-id": state.clientId },
+    headers: { "x-client-id": state.clientId, Authorization: `Bearer ${state.agentToken}` },
   });
   if (!response.ok && response.status !== 404) throw new Error(`取消运行失败 (${response.status})`);
   return { success: response.ok };
 }
 
 export async function getAgentRuntimeState(state: TabState): Promise<{ activeTestRuns: TestRunInfo[]; activeAgentRuns: Array<{ runId: string; progress: string }> }> {
-  if (!state.agentUrl) return { activeTestRuns: [], activeAgentRuns: [] };
-  const response = await fetch(`${state.agentUrl}/api/browser/diagnostics`, { headers: { "x-client-id": state.clientId } });
+  if (!state.agentUrl || !state.agentToken) return { activeTestRuns: [], activeAgentRuns: [] };
+  const response = await fetch(`${state.agentUrl}/api/browser/diagnostics`, { headers: { "x-client-id": state.clientId, Authorization: `Bearer ${state.agentToken}` } });
   if (!response.ok) return { activeTestRuns: [], activeAgentRuns: [] };
   return response.json();
 }
@@ -201,12 +206,12 @@ export async function startAgentVerification(
   state: TabState,
   verification: { id: string; goal: string; proposedChecks: string[] },
 ) {
-  if (!state.agentUrl) throw new Error("Agent not connected");
+  if (!state.agentUrl || !state.agentToken) throw new Error("Agent not connected");
   const tabId = Number(state.clientId.replace("chrome-tab-", ""));
   const tab = await chrome.tabs.get(tabId);
   const res = await fetch(`${state.agentUrl}/api/verifications/${encodeURIComponent(verification.id)}/start`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "x-client-id": state.clientId },
+    headers: { "Content-Type": "application/json", "x-client-id": state.clientId, Authorization: `Bearer ${state.agentToken}` },
     body: JSON.stringify({ pageUrl: tab.url, goal: verification.goal, proposedChecks: verification.proposedChecks }),
   });
   const result = await res.json();
@@ -220,8 +225,8 @@ export async function startAgentVerification(
 export async function rollbackAgent(
   state: TabState
 ): Promise<{ success: boolean }> {
-  if (!state.agentUrl) throw new Error("Agent not connected");
+  if (!state.agentUrl || !state.agentToken) throw new Error("Agent not connected");
 
-  const res = await fetch(`${state.agentUrl}/api/rollback`, { method: "POST" });
+  const res = await fetch(`${state.agentUrl}/api/rollback`, { method: "POST", headers: { Authorization: `Bearer ${state.agentToken}` } });
   return res.json();
 }

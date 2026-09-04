@@ -10,19 +10,16 @@ import { useNavigator } from "./hooks/use-navigator";
 import { ChatPanel } from "./components/ChatPanel";
 import { Navigator } from "./components/Navigator";
 import { PropertiesPanel } from "./components/PropertiesPanel";
-import type { StyleEditEvent } from "./components/PropertiesPanel";
 import { ChangesPanel } from "./components/ChangesPanel";
-import { PendingPanel } from "./components/PendingPanel";
-import type { PendingComment, PendingEdit, PendingDrag } from "./components/PendingPanel";
+import type { CommentAnnotation } from "../shared/types.js";
 
-type ViewType = "chat" | "navigator" | "properties" | "changes" | "pending";
+type ViewType = "chat" | "navigator" | "properties" | "changes";
 
 const VIEW_TITLE_KEYS: Record<ViewType, string> = {
   chat: "view.chat",
   navigator: "view.navigator",
   properties: "view.properties",
   changes: "view.changes",
-  pending: "view.pending",
 };
 
 export function App() {
@@ -30,9 +27,7 @@ export function App() {
   const chat = useChat();
   const [view, setView] = useState<ViewType>("chat");
   const [isDragMode, setIsDragMode] = useState(false);
-  const [pendingComments, setPendingComments] = useState<PendingComment[]>([]);
-  const [pendingEdits, setPendingEdits] = useState<Map<string, PendingEdit>>(new Map());
-  const [pendingDrags, setPendingDrags] = useState<PendingDrag[]>([]);
+  const [pendingComments, setPendingComments] = useState<CommentAnnotation[]>([]);
   const [connectionMenuOpen, setConnectionMenuOpen] = useState(false);
   const connectionMenuRef = useRef<HTMLDivElement>(null);
   const isDragModeRef = useRef(false);
@@ -90,17 +85,10 @@ export function App() {
     return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", closeOnEscape); };
   }, [connectionMenuOpen]);
 
-  const pendingTotal = pendingComments.length + pendingEdits.size + pendingDrags.length;
-
   // Disable toolbar when AI is working
   useEffect(() => {
     chrome.runtime.sendMessage({ type: "TOOLBAR_DISABLE", payload: { disabled: agent.aiWorking } });
   }, [agent.aiWorking]);
-
-  // Sync pending count badge to toolbar
-  useEffect(() => {
-    chrome.runtime.sendMessage({ type: "UPDATE_PENDING_COUNT", payload: { count: pendingTotal } }).catch(() => {});
-  }, [pendingTotal]);
 
   // Listen for toolbar mode changes and comments
   useEffect(() => {
@@ -114,55 +102,13 @@ export function App() {
         setIsDragMode(message.payload?.mode === "drag");
       } else if (message.type === "OPEN_CHANGES") {
         setView("changes");
-      } else if (message.type === "OPEN_PENDING") {
-        setView("pending");
       } else if (message.type === "COMMENT_ADDED") {
         setPendingComments((prev) => [...prev, message.payload]);
-        setView("pending");
-      } else if (message.type === "DRAG_MOVE") {
-        setPendingDrags((prev) => [...prev, message.payload]);
+        setView("chat");
       }
     };
     chrome.runtime.onMessage.addListener(handler);
     return () => chrome.runtime.onMessage.removeListener(handler);
-  }, []);
-
-  // ── Style edit merge logic ──
-  const handleStyleEdit = useCallback((edit: StyleEditEvent) => {
-    setPendingEdits((prev) => {
-      const next = new Map(prev);
-      const key = edit.element.domPath;
-      const existing = next.get(key);
-
-      if (existing) {
-        const props = { ...existing.properties };
-        const prevEntry = props[edit.property];
-        // Keep the original oldValue from the first edit
-        const origOld = prevEntry ? prevEntry.oldValue : edit.oldValue;
-        // If new value === original old value, user reverted — remove this property
-        if (edit.newValue === origOld) {
-          delete props[edit.property];
-        } else {
-          props[edit.property] = { oldValue: origOld, newValue: edit.newValue };
-        }
-        // If no properties left, remove the element entirely
-        if (Object.keys(props).length === 0) {
-          next.delete(key);
-        } else {
-          next.set(key, { ...existing, properties: props });
-        }
-      } else {
-        // First edit for this element
-        if (edit.newValue !== edit.oldValue) {
-          next.set(key, {
-            element: edit.element,
-            properties: { [edit.property]: { oldValue: edit.oldValue, newValue: edit.newValue } },
-          });
-        }
-      }
-
-      return next;
-    });
   }, []);
 
   const handleBack = () => {
@@ -182,104 +128,9 @@ export function App() {
     setPendingComments((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
-  const handleRemoveEdit = useCallback((domPath: string) => {
-    setPendingEdits((prev) => {
-      const next = new Map(prev);
-      next.delete(domPath);
-      return next;
-    });
+  const handleEditComment = useCallback((index: number, comment: string) => {
+    setPendingComments((prev) => prev.map((item, i) => i === index ? { ...item, comment } : item));
   }, []);
-
-  const handleRemoveDrag = useCallback((index: number) => {
-    setPendingDrags((prev) => prev.filter((_, i) => i !== index));
-  }, []);
-
-  // ── Sync: format all pending items as a single message ──
-  const handleSync = useCallback(() => {
-    const editsArr = Array.from(pendingEdits.values());
-    if (pendingComments.length === 0 && editsArr.length === 0 && pendingDrags.length === 0) return;
-
-    const PROP_LABELS: Record<string, string> = {
-      color: t("props.color"), backgroundColor: t("props.background"), "background-color": t("props.background"),
-      fontSize: t("props.fontSize"), "font-size": t("props.fontSize"),
-      fontWeight: t("props.fontWeight"), "font-weight": t("props.fontWeight"),
-      opacity: t("props.opacity"), borderRadius: t("props.borderRadius"), "border-radius": t("props.borderRadius"),
-      padding: t("sync.padding"), margin: t("sync.margin"), gap: t("props.gap"),
-    };
-
-    function formatElementInfo(el: typeof pendingComments[0]["element"]): string[] {
-      const comp = el.component;
-      const name = comp?.name || `<${el.tagName}>`;
-      const lines: string[] = [];
-
-      lines.push(`**${name}**${el.id ? ` #${el.id}` : ""}${el.tagName !== name ? ` \`<${el.tagName}>\`` : ""}`);
-
-      if (el.pagePath && el.pagePath !== "/") lines.push(`${t("sync.page")}: ${el.pagePath}`);
-
-      if (el.componentChainDetail?.length > 0) {
-        const chainStr = el.componentChainDetail.map((item) => {
-          let s = item.name;
-          if (item.sourceFile) {
-            const short = item.sourceFile.split("/").slice(-2).join("/");
-            s += `(${short}${item.sourceLine ? `:${item.sourceLine}` : ""}${item.sourceColumn ? `:${item.sourceColumn}` : ""})`;
-          }
-          return s;
-        }).join(" > ");
-        lines.push(`${t("sync.chain")}: ${chainStr}`);
-      } else if (el.componentChain) {
-        lines.push(`${t("sync.chain")}: ${el.componentChain}`);
-      }
-
-      if (comp?.sourceFile) {
-        let loc = comp.sourceFile;
-        if (comp.sourceLine) loc += `:${comp.sourceLine}`;
-        if (comp.sourceColumn) loc += `:${comp.sourceColumn}`;
-        lines.push(`${t("sync.source")}: ${loc}`);
-      }
-
-      if (el.role) lines.push(`role: ${el.role}`);
-      if (el.ariaLabel) lines.push(`aria-label: ${el.ariaLabel}`);
-      if (el.textContent) {
-        lines.push(`${t("sync.text")}:`);
-        lines.push(el.textContent);
-      }
-
-      return lines;
-    }
-
-    const parts: string[] = [];
-
-    // Style edits
-    for (const edit of editsArr) {
-      const lines = formatElementInfo(edit.element);
-      lines.push(`${t("sync.modify")}:`);
-      for (const [prop, { oldValue, newValue }] of Object.entries(edit.properties)) {
-        const label = PROP_LABELS[prop] || prop;
-        lines.push(`- ${label}: ${oldValue || t("pending.none")} → ${newValue}`);
-      }
-      parts.push(lines.join("\n"));
-    }
-
-    // Drag moves
-    for (const d of pendingDrags) {
-      const lines = formatElementInfo(d.element);
-      lines.push(`${t("sync.move")}: ${t("pending.itemN", { n: d.from + 1 })} → ${t("pending.itemN", { n: d.to + 1 })}`);
-      parts.push(lines.join("\n"));
-    }
-
-    // Comments
-    for (const c of pendingComments) {
-      const lines = formatElementInfo(c.element);
-      lines.push(`${t("sync.comment")}: ${c.comment}`);
-      parts.push(lines.join("\n"));
-    }
-
-    setPendingComments([]);
-    setPendingEdits(new Map());
-    setPendingDrags([]);
-    setView("chat");
-    chat.sendMessage(parts.join("\n\n---\n\n"));
-  }, [pendingComments, pendingEdits, pendingDrags, chat]);
 
   return (
     <div className="flex flex-col h-screen">
@@ -293,7 +144,7 @@ export function App() {
             <ArrowLeft className="h-3.5 w-3.5" />
           </button>
         )}
-        {(view === "navigator" || view === "pending") && (
+        {view === "navigator" && (
           <button
             className="flex items-center text-xs text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded hover:bg-muted"
             onClick={handleBackToChat}
@@ -330,32 +181,18 @@ export function App() {
             </div>}
           </div>
         )}
-        {view === "pending" && (
-          <span className="ml-auto text-[10px] text-muted-foreground">{t("pending.count", { n: pendingTotal })}</span>
-        )}
       </div>
 
       {/* Content */}
       <div className="flex-1 min-h-0">
-        {view === "chat" && <ChatPanel agent={agent} chat={chat} selection={selection} />}
+        {view === "chat" && <ChatPanel agent={agent} chat={chat} selection={selection} comments={pendingComments} onEditComment={handleEditComment} onRemoveComment={handleRemoveComment} onCommentsSent={() => setPendingComments([])} />}
         {view === "navigator" && (
           <Navigator selection={selection} tree={tree} refreshTree={refreshTree} highlightElement={highlightElement} unhighlightElement={unhighlightElement} selectElement={selectElement} />
         )}
         {view === "properties" && (
-          <PropertiesPanel selection={selection} applyStylePreview={applyStylePreview} onStyleEdit={handleStyleEdit} />
+          <PropertiesPanel selection={selection} applyStylePreview={applyStylePreview} />
         )}
         {view === "changes" && <ChangesPanel />}
-        {view === "pending" && (
-          <PendingPanel
-            comments={pendingComments}
-            edits={Array.from(pendingEdits.values())}
-            drags={pendingDrags}
-            onRemoveComment={handleRemoveComment}
-            onRemoveEdit={handleRemoveEdit}
-            onRemoveDrag={handleRemoveDrag}
-            onSync={handleSync}
-          />
-        )}
       </div>
     </div>
   );

@@ -99,24 +99,6 @@ export function createToolbar(toolbarActions: ToolbarActions) {
     #prism-design-toolbar button.pd-active .pd-tooltip {
       opacity: 0;
     }
-    .pd-pending-badge {
-      position: absolute;
-      top: -4px;
-      right: -4px;
-      background: #ef4444;
-      color: #fff;
-      font-size: 9px;
-      font-weight: 600;
-      line-height: 1;
-      min-width: 14px;
-      height: 14px;
-      padding: 0 3px;
-      border-radius: 7px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      pointer-events: none;
-    }
   `;
   document.head.appendChild(styleEl);
 
@@ -185,26 +167,6 @@ export function isToolbarDisabled(): boolean {
 
 export function isToolbarElement(el: HTMLElement): boolean {
   return !!el.closest("#prism-design-toolbar");
-}
-
-export function updatePendingBadge(count: number) {
-  if (!toolbar) return;
-  let badge = toolbar.querySelector(".pd-pending-badge") as HTMLElement;
-  if (count <= 0) {
-    badge?.remove();
-    return;
-  }
-  if (!badge) {
-    badge = document.createElement("span");
-    badge.className = "pd-pending-badge";
-    // Find the comment button to attach badge
-    const commentBtn = toolbar.querySelector("#pd-tb-comment");
-    if (commentBtn) {
-      (commentBtn as HTMLElement).style.position = "relative";
-      commentBtn.appendChild(badge);
-    }
-  }
-  badge.textContent = count > 99 ? "99+" : String(count);
 }
 
 /** Trigger mode switch from keyboard shortcut */

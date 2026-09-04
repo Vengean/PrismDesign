@@ -1,7 +1,7 @@
-import { ICON_SEND, ICON_COMMENT, ICON_TRASH, ICON_PAPERCLIP } from "./icons.js";
+import { ICON_SEND, ICON_COMMENT, ICON_TRASH, ICON_PAPERCLIP, ICON_EDIT, ICON_CLOSE, ICON_TEST } from "./icons.js";
 import { t } from "./i18n.js";
 import { renderMarkdown } from "./markdown.js";
-import type { AgentClient } from "./agent-client.js";
+import type { AgentClient, TestPerformance } from "./agent-client.js";
 import { showCommentMode, type CommentInfo } from "./comment.js";
 import type { PanelAPI } from "./panel.js";
 
@@ -14,6 +14,11 @@ interface ChatMessage {
   comments?: CommentInfo[];
   attachments?: Array<{ id: string; name: string; mimeType: string; size: number }>;
   verification?: { id: string; goal: string; proposedChecks: string[]; status?: string; summary?: string };
+  testPerformance?: TestPerformance;
+}
+
+function formatDuration(milliseconds: number): string {
+  return milliseconds < 1000 ? `${Math.round(milliseconds)} ms` : `${(milliseconds / 1000).toFixed(milliseconds < 10_000 ? 1 : 0)} s`;
 }
 
 function formatVerificationMessage(content: string): string {
@@ -38,6 +43,7 @@ export function createChat(
   const commentTags: CommentInfo[] = [];
   let pendingAttachments: Array<{ id: string; name: string; mimeType: string; size: number; status: "uploading" | "ready" | "failed"; error?: string }> = [];
   let tooltip: HTMLElement | null = null;
+  let tooltipHideTimer: ReturnType<typeof setTimeout> | null = null;
 
   // ── Load history ──
   try {
@@ -172,30 +178,9 @@ export function createChat(
   // ── Render comment tags ──
   function renderTags() {
     tagsRow.innerHTML = "";
-    commentTags.forEach((tag, idx) => {
-      const el = document.createElement("span");
-      el.className = "comment-tag";
-
-      const target = document.createElement("span");
-      target.className = "tag-target";
-      target.textContent = `<${tag.target}>`;
-      el.appendChild(target);
-
-      const close = document.createElement("span");
-      close.className = "tag-close";
-      close.textContent = "\u00D7";
-      close.onclick = (e) => {
-        e.stopPropagation();
-        commentTags.splice(idx, 1);
-        renderTags();
-      };
-      el.appendChild(close);
-
-      el.onmouseenter = (e) => showTooltip(e, tag);
-      el.onmouseleave = () => hideTooltip();
-
-      tagsRow.appendChild(el);
-    });
+    if (!commentTags.length) return;
+    const tag = createCommentCountTag(commentTags, true);
+    tagsRow.appendChild(tag);
   }
 
   async function uploadFiles(files: File[]) {
@@ -236,23 +221,120 @@ export function createChat(
   }
 
   // ── Tooltip ──
-  function showTooltip(e: MouseEvent, tag: CommentInfo) {
+  function commentNodeLabel(comment: CommentInfo) {
+    return comment.component || comment.domStructure?.split("\n")[0]?.trim() || `<${comment.target}>`;
+  }
+
+  function commentNodeDetails(comment: CommentInfo): Array<[string, string]> {
+    const source = comment.sourceFile ? `${comment.sourceFile}${comment.sourceLine ? `:${comment.sourceLine}` : ""}` : "";
+    return [
+      ["节点", `<${comment.target}>`],
+      ["组件", comment.component || ""],
+      ["组件链", comment.componentChain || ""],
+      ["源码", source],
+      ["Props", comment.props ? JSON.stringify(comment.props, null, 2) : ""],
+      ["DOM 结构", comment.domStructure || ""],
+    ].filter((entry): entry is [string, string] => Boolean(entry[1]));
+  }
+
+  function createCommentCountTag(comments: CommentInfo[], editable: boolean) {
+    const tag = document.createElement("button");
+    tag.type = "button";
+    tag.className = "comment-count-tag";
+    tag.innerHTML = `${ICON_COMMENT}<span>${comments.length} 条评论</span>`;
+    tag.onmouseenter = () => {
+      if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) showTooltip(tag, comments, editable);
+    };
+    tag.onmouseleave = () => { if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) scheduleHideTooltip(); };
+    tag.onclick = (event) => {
+      event.stopPropagation();
+      if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) showTooltip(tag, comments, editable);
+      else if (tooltip) hideTooltip(); else showTooltip(tag, comments, editable);
+    };
+    return tag;
+  }
+
+  function showTooltip(anchor: HTMLElement, comments: CommentInfo[], editable: boolean) {
     hideTooltip();
-    tooltip = document.createElement("div");
-    tooltip.className = "comment-tooltip";
-    tooltip.innerHTML =
-      `<div class="tt-target">&lt;${escapeHtml(tag.target)}&gt;</div>` +
-      `<div class="tt-text">${escapeHtml(tag.text)}</div>`;
+    const popover = document.createElement("div");
+    tooltip = popover;
+    popover.className = "comment-popover";
 
-    shadowRoot.appendChild(tooltip);
+    comments.forEach((comment, index) => {
+      const item = document.createElement("div");
+      item.className = "comment-popover-item";
+      item.innerHTML = `<span class="comment-number">${index + 1}.</span><div class="comment-label">节点信息：</div><div class="comment-node-details"><div class="comment-node"></div></div><div class="comment-label comment-user-label">用户评论：</div><div class="comment-text"></div>`;
+      (item.querySelector(".comment-node") as HTMLElement).textContent = commentNodeLabel(comment);
+      const details = item.querySelector(".comment-node-details") as HTMLElement;
+      commentNodeDetails(comment).forEach(([label, value]) => {
+        const row = document.createElement("div");
+        row.className = "comment-detail-row";
+        const key = document.createElement("span");
+        key.className = "comment-detail-key";
+        key.textContent = label;
+        const content = document.createElement("span");
+        content.className = "comment-detail-value";
+        content.textContent = value;
+        row.append(key, content);
+        details.appendChild(row);
+      });
+      (item.querySelector(".comment-text") as HTMLElement).textContent = comment.text;
+      if (editable) {
+        const actions = document.createElement("div");
+        actions.className = "comment-actions";
+        const edit = document.createElement("button");
+        edit.type = "button"; edit.title = "编辑评论"; edit.innerHTML = ICON_EDIT;
+        edit.onclick = (event) => {
+          event.stopPropagation();
+          const text = item.querySelector(".comment-text") as HTMLElement;
+          const textarea = document.createElement("textarea");
+          textarea.className = "comment-edit-input";
+          textarea.value = comment.text;
+          const finish = () => {
+            const value = textarea.value.trim();
+            if (value) comment.text = value;
+            renderTags();
+            showTooltip(tagsRow.querySelector(".comment-count-tag") as HTMLElement, commentTags, true);
+          };
+          textarea.onblur = finish;
+          textarea.onkeydown = (keyEvent) => { if (keyEvent.key === "Escape" || (keyEvent.key === "Enter" && (keyEvent.ctrlKey || keyEvent.metaKey))) textarea.blur(); };
+          text.replaceWith(textarea);
+          textarea.focus();
+        };
+        const remove = document.createElement("button");
+        remove.type = "button"; remove.title = "删除评论"; remove.innerHTML = ICON_CLOSE;
+        remove.onclick = (event) => {
+          event.stopPropagation();
+          commentTags.splice(index, 1);
+          hideTooltip();
+          renderTags();
+        };
+        actions.append(edit, remove);
+        item.appendChild(actions);
+      }
+      popover.appendChild(item);
+    });
+    popover.onmouseenter = () => { if (tooltipHideTimer) clearTimeout(tooltipHideTimer); };
+    popover.onmouseleave = () => scheduleHideTooltip();
 
-    const rect = (e.target as HTMLElement).getBoundingClientRect();
+    shadowRoot.appendChild(popover);
+
+    const rect = anchor.getBoundingClientRect();
     const hostRect = shadowRoot.host.getBoundingClientRect();
-    tooltip.style.left = Math.max(4, rect.left - hostRect.left) + "px";
-    tooltip.style.bottom = (hostRect.bottom - rect.top + 6) + "px";
+    const width = Math.min(320, hostRect.width - 16);
+    popover.style.width = `${width}px`;
+    popover.style.left = Math.max(8, Math.min(rect.left - hostRect.left, hostRect.width - width - 8)) + "px";
+    popover.style.bottom = (hostRect.bottom - rect.top + 6) + "px";
+  }
+
+  function scheduleHideTooltip() {
+    if (tooltipHideTimer) clearTimeout(tooltipHideTimer);
+    tooltipHideTimer = setTimeout(() => hideTooltip(), 350);
   }
 
   function hideTooltip() {
+    if (tooltipHideTimer) clearTimeout(tooltipHideTimer);
+    tooltipHideTimer = null;
     if (tooltip) {
       tooltip.remove();
       tooltip = null;
@@ -317,23 +399,7 @@ export function createChat(
           : msg.content;
         bubble.innerHTML = renderMarkdown(formatVerificationMessage(renderedContent));
       } else {
-        if (msg.comments && msg.comments.length > 0) {
-          for (const c of msg.comments) {
-            const tagEl = document.createElement("span");
-            tagEl.className = "comment-tag-display";
-            tagEl.innerHTML =
-              `<span class="tag-target">&lt;${escapeHtml(c.target)}&gt;</span> ${escapeHtml(c.text)}`;
-            bubble.appendChild(tagEl);
-          }
-          if (msg.content) {
-            const textNode = document.createElement("div");
-            textNode.style.marginTop = "4px";
-            textNode.textContent = msg.content;
-            bubble.appendChild(textNode);
-          }
-        } else {
-          bubble.textContent = msg.content;
-        }
+        bubble.textContent = msg.content;
       }
       if (msg.attachments?.length) {
         const files = document.createElement("div");
@@ -346,14 +412,33 @@ export function createChat(
         bubble.prepend(files);
       }
       content.appendChild(bubble);
+      if (msg.role === "user" && msg.comments?.length) {
+        const tagWrap = document.createElement("div");
+        tagWrap.className = "message-comment-tag";
+        tagWrap.appendChild(createCommentCountTag(msg.comments, false));
+        content.appendChild(tagWrap);
+      }
       if (msg.role === "ai" && msg.verification) {
+        const anchor = document.createElement("div");
+        anchor.className = "verification-anchor";
+        const tag = document.createElement("button");
+        tag.type = "button";
+        tag.className = "verification-tag";
+        const isComplete = ["passed", "failed", "inconclusive"].includes(msg.verification.status || "");
+        tag.innerHTML = `${ICON_TEST}<span>${isComplete ? "测试结果" : "测试"}</span>`;
         const card = document.createElement("div");
         card.className = "verification-card";
         const title = document.createElement("div");
         title.className = "verification-title";
-        title.textContent = ({ passed: "测试通过", failed: "测试未通过", inconclusive: "测试结果不确定" } as Record<string, string>)[msg.verification.status || ""] || "是否开始真实浏览器测试？";
+        title.textContent = ({ passed: "测试通过", failed: "测试未通过", inconclusive: "测试结果不确定" } as Record<string, string>)[msg.verification.status || ""] || "是否开始测试？";
         card.appendChild(title);
-        const isComplete = ["passed", "failed", "inconclusive"].includes(msg.verification.status || "");
+        if (isComplete && msg.testPerformance) {
+          const metrics = msg.testPerformance;
+          const performanceBox = document.createElement("div");
+          performanceBox.className = "verification-performance";
+          performanceBox.innerHTML = `<strong>性能监测</strong><dl><dt>端到端耗时</dt><dd>${formatDuration(metrics.totalDurationMs)}</dd><dt>Agent 回合</dt><dd>${formatDuration(metrics.agentDurationMs)}</dd><dt>工具调用</dt><dd>${formatDuration(metrics.toolDurationMs)} · ${metrics.toolCallCount} 次</dd><dt>浏览器命令</dt><dd>${formatDuration(metrics.browserDurationMs)} · ${metrics.browserCommandCount} 次</dd><dt>资源清理</dt><dd>${formatDuration(metrics.cleanupDurationMs)}</dd></dl><small>各指标存在包含关系，不应相加。</small>`;
+          card.appendChild(performanceBox);
+        }
         if (!isComplete && msg.verification.summary) {
           const summary = document.createElement("div");
           summary.className = "verification-summary";
@@ -369,19 +454,23 @@ export function createChat(
           }
           card.appendChild(checks);
         }
+        const actions = document.createElement("div");
+        actions.className = "verification-actions";
         const start = document.createElement("button");
         start.className = "verification-start-btn";
         const isStarting = msg.verification.status === "preparing" || msg.verification.status === "running";
         const canRetry = ["failed", "passed", "inconclusive"].includes(msg.verification.status || "");
-        start.textContent = isStarting ? "测试运行中…" : canRetry ? "重新测试" : "开始测试";
+        start.textContent = isStarting ? "测试运行中…" : canRetry ? "重新测试" : "开始";
         start.disabled = isStarting;
-        start.onclick = async () => {
+        const runVerification = async (always = false) => {
           if (!msg.verification) return;
+          if (always) localStorage.setItem("prism-always-execute-tests", "true");
           msg.verification.status = "running";
           saveHistory();
           render();
           try {
             const result = await agentClient.startVerification(msg.verification);
+            msg.testPerformance = result.testRun?.performance;
             const verificationMessage = result.agentResult?.message || "";
             msg.verification.status = /VERIFICATION_RESULT:\s*PASSED/i.test(verificationMessage)
               ? "passed"
@@ -398,8 +487,27 @@ export function createChat(
           saveHistory();
           render();
         };
-        card.appendChild(start);
-        content.appendChild(card);
+        start.onclick = () => runVerification(false);
+        actions.appendChild(start);
+        if (!isComplete) {
+          const always = document.createElement("button");
+          always.className = "verification-always-btn";
+          always.textContent = "始终执行";
+          always.onclick = () => runVerification(true);
+          actions.appendChild(always);
+        }
+        card.appendChild(actions);
+        let closeTimer: ReturnType<typeof setTimeout> | null = null;
+        const canHover = () => window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+        const open = () => { if (closeTimer) clearTimeout(closeTimer); card.classList.add("open"); };
+        const close = () => { if (closeTimer) clearTimeout(closeTimer); closeTimer = setTimeout(() => card.classList.remove("open"), 350); };
+        tag.onmouseenter = () => { if (canHover()) open(); };
+        tag.onmouseleave = () => { if (canHover()) close(); };
+        card.onmouseenter = open;
+        card.onmouseleave = () => { if (canHover()) close(); };
+        tag.onclick = () => { if (canHover()) open(); else card.classList.toggle("open"); };
+        anchor.append(tag, card);
+        content.appendChild(anchor);
       }
       row.appendChild(content);
       messagesEl.appendChild(row);

@@ -1,5 +1,6 @@
 export type User = { id: number; email: string; name: string }
 export type Note = { id: number; title: string; content: string; category: string; createdAt: string; updatedAt: string }
+export type NoteRevision = { id: number | string; title: string; content: string; createdAt: string; isCurrent?: boolean }
 
 async function request<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
   const response = await fetch(path, {
@@ -36,4 +37,5 @@ export const api = {
   notes: (token: string) => getOnce<{ notes: Note[] }>('/api/notes', token),
   createNote: (token: string, input: { title: string; content: string }) => request<{ note: Note }>('/api/notes', { method: 'POST', body: JSON.stringify(input) }, token),
   updateNote: (token: string, id: number, input: { title: string; content: string }) => request<{ note: Note }>(`/api/notes/${id}`, { method: 'PUT', body: JSON.stringify(input) }, token),
+  noteHistory: (token: string, id: number) => request<{ revisions: NoteRevision[] }>(`/api/notes/${id}/history`, {}, token),
 }

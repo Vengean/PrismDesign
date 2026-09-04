@@ -33,6 +33,21 @@ export interface TestRunStep {
   error?: string;
 }
 
+export interface TestRunPerformance {
+  /** Wall-clock time observed from test-run creation to the latest measurement. */
+  totalDurationMs: number;
+  /** Full model verification turn. This includes tool and browser wait time. */
+  agentDurationMs: number;
+  /** Sum of all tool-call durations. Tool calls are currently sequential. */
+  toolDurationMs: number;
+  /** Sum of Chrome command round trips, also included in agent/tool time. */
+  browserDurationMs: number;
+  cleanupDurationMs: number;
+  toolCallCount: number;
+  browserCommandCount: number;
+  browserCommands: Record<string, { count: number; durationMs: number; maxDurationMs: number }>;
+}
+
 export interface TestRun {
   id: string;
   verificationId: string;
@@ -47,6 +62,7 @@ export interface TestRun {
   evidence: TestEvidence[];
   steps: TestRunStep[];
   cleanup: CleanupResult[];
+  performance: TestRunPerformance;
 }
 
 interface InternalRun extends TestRun {
@@ -86,6 +102,16 @@ export class TestRunStore {
       evidence: [],
       steps: [],
       cleanup: [],
+      performance: {
+        totalDurationMs: 0,
+        agentDurationMs: 0,
+        toolDurationMs: 0,
+        browserDurationMs: 0,
+        cleanupDurationMs: 0,
+        toolCallCount: 0,
+        browserCommandCount: 0,
+        browserCommands: {},
+      },
       cleanupStack: new CleanupStack(),
       responseHandles: new Map(),
     };
@@ -238,6 +264,30 @@ export class TestRunStore {
     return this.public(run);
   }
 
+  recordAgentDuration(agentRunId: string, durationMs: number): TestRun | undefined {
+    const run = this.byAgentRun(agentRunId);
+    if (!run) return undefined;
+    run.performance.agentDurationMs = Math.max(run.performance.agentDurationMs, Math.round(durationMs));
+    this.patch(run, { performance: run.performance });
+    return this.public(run);
+  }
+
+  recordBrowserCommand(verificationId: string, action: string, durationMs: number): TestRun | undefined {
+    const run = this.byVerification(verificationId);
+    if (!run) return undefined;
+    const elapsed = Math.max(0, Math.round(durationMs));
+    const current = run.performance.browserCommands[action] || { count: 0, durationMs: 0, maxDurationMs: 0 };
+    run.performance.browserCommands[action] = {
+      count: current.count + 1,
+      durationMs: current.durationMs + elapsed,
+      maxDurationMs: Math.max(current.maxDurationMs, elapsed),
+    };
+    run.performance.browserDurationMs += elapsed;
+    run.performance.browserCommandCount += 1;
+    this.patch(run, { performance: run.performance });
+    return this.public(run);
+  }
+
   registerCleanup(id: string, entry: { id: string; label: string; cleanup: () => Promise<void> | void }): void {
     this.get(id).cleanupStack.register(entry);
   }
@@ -252,7 +302,9 @@ export class TestRunStore {
       if (testCase.status === "pending") Object.assign(testCase, { status: "not_run" as const, updatedAt: now });
     }
     this.patch(run, { status: "cleaning", error });
+    const cleanupStartedAt = performance.now();
     const cleanup = await run.cleanupStack.runAll();
+    run.performance.cleanupDurationMs = Math.round(performance.now() - cleanupStartedAt);
     this.patch(run, { status, cleanup, error, finishedAt: new Date().toISOString() });
     return this.public(run);
   }
@@ -301,6 +353,15 @@ export class TestRunStore {
 
   private public(run: InternalRun): TestRun {
     const { cleanupStack: _cleanupStack, responseHandles: _responseHandles, abort: _abort, timeout: _timeout, ...value } = run;
-    return { ...value, cases: value.cases.map((item) => ({ ...item, evidenceIds: [...item.evidenceIds] })), evidence: value.evidence.map((item) => ({ ...item, caseIds: [...item.caseIds], responseRedactedPaths: item.responseRedactedPaths ? [...item.responseRedactedPaths] : undefined, responsePreview: item.responsePreview === undefined ? undefined : JSON.parse(JSON.stringify(item.responsePreview)) })), steps: value.steps.map((step) => ({ ...step })), cleanup: value.cleanup.map((item) => ({ ...item })) };
+    const measuredAt = value.finishedAt ? Date.parse(value.finishedAt) : Date.now();
+    const toolDurationMs = value.steps.reduce((sum, step) => sum + (step.durationMs || 0), 0);
+    const performanceSnapshot: TestRunPerformance = {
+      ...value.performance,
+      totalDurationMs: Math.max(value.performance.totalDurationMs, measuredAt - Date.parse(value.startedAt), value.performance.agentDurationMs),
+      toolDurationMs,
+      toolCallCount: value.steps.length,
+      browserCommands: Object.fromEntries(Object.entries(value.performance.browserCommands).map(([action, metric]) => [action, { ...metric }])),
+    };
+    return { ...value, performance: performanceSnapshot, cases: value.cases.map((item) => ({ ...item, evidenceIds: [...item.evidenceIds] })), evidence: value.evidence.map((item) => ({ ...item, caseIds: [...item.caseIds], responseRedactedPaths: item.responseRedactedPaths ? [...item.responseRedactedPaths] : undefined, responsePreview: item.responsePreview === undefined ? undefined : JSON.parse(JSON.stringify(item.responsePreview)) })), steps: value.steps.map((step) => ({ ...step })), cleanup: value.cleanup.map((item) => ({ ...item })) };
   }
 }

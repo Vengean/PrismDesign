@@ -1,9 +1,9 @@
 import { useRef, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Send, Trash2, MessageSquare, Plug, Loader2, AlertCircle, CheckCircle2, Circle, XCircle, ChevronDown, Paperclip, X } from "lucide-react";
+import { Send, Trash2, MessageSquare, MessageSquareText, Plug, Loader2, AlertCircle, CheckCircle2, Circle, XCircle, ChevronDown, Paperclip, X, Pencil, FlaskConical } from "lucide-react";
 import { t } from "../../shared/i18n.js";
-import type { AgentPermissions, ChatMessage, ElementSelection, TestRunInfo } from "../../shared/types.js";
+import type { AgentPermissions, ChatMessage, CommentAnnotation, ElementSelection, TestRunInfo } from "../../shared/types.js";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -13,7 +13,9 @@ interface AgentState {
   error: string | null;
   agentUrl: string;
   setAgentUrl: (url: string) => void;
-  connect: (url: string) => Promise<void>;
+  agentToken: string;
+  setAgentToken: (token: string) => void;
+  connect: (url: string, token: string) => Promise<void>;
   permissions: AgentPermissions;
   updatePermission: (key: keyof AgentPermissions, enabled: boolean) => Promise<void>;
 }
@@ -21,7 +23,7 @@ interface AgentState {
 interface ChatState {
   messages: ChatMessage[];
   sending: boolean;
-  sendMessage: (text: string, attachments?: ChatMessage["attachments"]) => void;
+  sendMessage: (text: string, attachments?: ChatMessage["attachments"], comments?: CommentAnnotation[], agentText?: string) => void;
   startVerification: (verification: NonNullable<ChatMessage["verification"]>) => void;
   fixVerification: (verification: NonNullable<ChatMessage["verification"]>, testRun?: TestRunInfo) => void;
   cancelCurrent: () => void;
@@ -29,7 +31,17 @@ interface ChatState {
   deleteMessage: (index: number) => void;
 }
 
-export function ChatPanel({ agent, chat, selection }: { agent: AgentState; chat: ChatState; selection: ElementSelection | null }) {
+interface ChatPanelProps {
+  agent: AgentState;
+  chat: ChatState;
+  selection: ElementSelection | null;
+  comments: CommentAnnotation[];
+  onEditComment: (index: number, comment: string) => void;
+  onRemoveComment: (index: number) => void;
+  onCommentsSent: () => void;
+}
+
+export function ChatPanel({ agent, chat, selection, comments, onEditComment, onRemoveComment, onCommentsSent }: ChatPanelProps) {
   if (!agent.connected && !agent.connecting) {
     return <ConnectionForm agent={agent} />;
   }
@@ -41,11 +53,13 @@ export function ChatPanel({ agent, chat, selection }: { agent: AgentState; chat:
       </div>
     );
   }
-  return <ChatView agent={agent} chat={chat} selection={selection} />;
+  return <ChatView agent={agent} chat={chat} selection={selection} comments={comments} onEditComment={onEditComment} onRemoveComment={onRemoveComment} onCommentsSent={onCommentsSent} />;
 }
 
 function ConnectionForm({ agent }: { agent: AgentState }) {
   const [url, setUrl] = useState(agent.agentUrl);
+  const [token, setToken] = useState(agent.agentToken);
+  const connect = () => agent.connect(url.trim(), token.trim());
 
   return (
     <div className="flex flex-col items-center justify-center h-full px-6 gap-4">
@@ -61,9 +75,16 @@ function ConnectionForm({ agent }: { agent: AgentState }) {
           placeholder={agent.agentUrl}
           value={url}
           onChange={(e) => setUrl(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") agent.connect(url); }}
+          onKeyDown={(e) => { if (e.key === "Enter") connect(); }}
         />
-        <Button className="w-full" onClick={() => agent.connect(url)}>
+        <Input
+          type="password"
+          placeholder={t("agent.tokenPlaceholder")}
+          value={token}
+          onChange={(e) => { setToken(e.target.value); agent.setAgentToken(e.target.value); }}
+          onKeyDown={(e) => { if (e.key === "Enter") connect(); }}
+        />
+        <Button className="w-full" onClick={connect} disabled={!url.trim() || !token.trim()}>
           <Plug className="h-3.5 w-3.5 mr-1.5" />
           {t("agent.connect")}
         </Button>
@@ -107,7 +128,162 @@ function formatSelectionContext(sel: ElementSelection): string {
   return lines.join("\n");
 }
 
-function ChatView({ agent, chat, selection }: { agent: AgentState; chat: ChatState; selection: ElementSelection | null }) {
+function commentNodeLabel(comment: CommentAnnotation) {
+  const el = comment.element;
+  return el.component?.name || el.textContent?.trim().slice(0, 60) || `<${el.tagName}>`;
+}
+
+function commentNodeDetails(comment: CommentAnnotation) {
+  const el = comment.element;
+  const source = el.component?.sourceFile
+    ? `${el.component.sourceFile}${el.component.sourceLine ? `:${el.component.sourceLine}` : ""}${el.component.sourceColumn ? `:${el.component.sourceColumn}` : ""}`
+    : "";
+  return [
+    ["节点", `<${el.tagName}> ${el.domPath}`],
+    ["组件", el.component?.name || ""],
+    ["组件链", el.componentChain || ""],
+    ["页面", el.pagePath || ""],
+    ["源码", source],
+    ["ID", el.id || ""],
+    ["Class", el.className || ""],
+    ["Role", el.role || ""],
+    ["ARIA label", el.ariaLabel || ""],
+    ["文本 / DOM", el.textContent || ""],
+  ].filter((entry): entry is [string, string] => Boolean(entry[1]));
+}
+
+function formatCommentsForAgent(comments: CommentAnnotation[]) {
+  return comments.map(({ element: el, comment }) => {
+    const lines = [`Element: <${el.tagName}> ${el.domPath}`];
+    if (el.componentChain) lines.push(`Component: ${el.componentChain}`);
+    if (el.component?.sourceFile) lines.push(`Source: ${el.component.sourceFile}${el.component.sourceLine ? `:${el.component.sourceLine}` : ""}`);
+    if (el.textContent) lines.push(`DOM Structure:\n${el.textContent}`);
+    lines.push(`Comment: "${comment}"`);
+    return lines.join("\n");
+  }).join("\n\n");
+}
+
+function CommentTag({ comments, editable = false, align = "left", onEdit, onRemove }: { comments: CommentAnnotation[]; editable?: boolean; align?: "left" | "right"; onEdit?: (index: number, value: string) => void; onRemove?: (index: number) => void }) {
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<number | null>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+  }, []);
+  if (!comments.length) return null;
+  const supportsHover = () => window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+  const cancelClose = () => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = null;
+  };
+  const scheduleClose = () => {
+    cancelClose();
+    closeTimerRef.current = setTimeout(() => {
+      setOpen(false);
+      setEditing(null);
+      closeTimerRef.current = null;
+    }, 350);
+  };
+  return <div
+    className="comment-tag-anchor relative inline-flex"
+    onMouseEnter={() => { if (supportsHover()) { cancelClose(); setOpen(true); } }}
+    onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}
+  >
+    <button type="button" className="inline-flex h-6 w-max shrink-0 items-center gap-1 whitespace-nowrap rounded-full border bg-background px-2 text-[11px] text-foreground shadow-sm hover:bg-muted" onClick={(event) => { event.stopPropagation(); setOpen((value) => supportsHover() ? true : !value); }} aria-expanded={open}>
+      <MessageSquareText className="h-3 w-3 text-muted-foreground" />{comments.length} 条评论
+    </button>
+    {open && <div className={`comment-popover absolute bottom-[calc(100%+6px)] z-50 w-[min(320px,calc(100vw-32px))] overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-lg ${align === "right" ? "right-0" : "left-0"}`} onMouseEnter={cancelClose} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
+      {comments.map((item, index) => <div key={`${item.element.domPath}-${index}`} className="group/comment relative border-b px-3 py-2.5 last:border-0">
+        <div className="pr-12 text-[10px] text-muted-foreground">{index + 1}.</div>
+        <div className="mt-0.5 text-[10px] text-muted-foreground">节点信息：</div>
+        <div className="mt-1 space-y-1 rounded-md bg-muted/50 p-2">
+          <div className="text-xs font-semibold" title={commentNodeLabel(item)}>{commentNodeLabel(item)}</div>
+          {commentNodeDetails(item).map(([label, value]) => <div key={label} className="grid grid-cols-[58px_minmax(0,1fr)] gap-1 text-[10px] leading-4">
+            <span className="text-muted-foreground">{label}</span>
+            <span className="whitespace-pre-wrap break-all font-mono text-foreground">{value}</span>
+          </div>)}
+        </div>
+        <div className="mt-1.5 text-[10px] text-muted-foreground">用户评论：</div>
+        {editing === index ? <textarea autoFocus className="mt-0.5 min-h-14 w-full resize-none rounded-md border bg-background p-1.5 text-xs outline-none focus:ring-1 focus:ring-ring" value={item.comment} onChange={(event) => onEdit?.(index, event.target.value)} onBlur={() => setEditing(null)} onKeyDown={(event) => { if (event.key === "Escape" || (event.key === "Enter" && (event.metaKey || event.ctrlKey))) setEditing(null); }} /> : <div className="whitespace-pre-wrap break-words text-xs">{item.comment}</div>}
+        {editable && editing !== index && <div className="absolute right-2 top-2 flex gap-0.5 opacity-70 group-hover/comment:opacity-100">
+          <button type="button" className="rounded p-1 hover:bg-muted" title="编辑评论" onClick={() => setEditing(index)}><Pencil className="h-3 w-3" /></button>
+          <button type="button" className="rounded p-1 hover:bg-destructive/10 hover:text-destructive" title="删除评论" onClick={() => onRemove?.(index)}><X className="h-3 w-3" /></button>
+        </div>}
+      </div>)}
+    </div>}
+  </div>;
+}
+
+function TestPromptTag({ verification, onStart, onAlways }: { verification: NonNullable<ChatMessage["verification"]>; onStart: () => void; onAlways: () => void }) {
+  const [open, setOpen] = useState(false);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const supportsHover = () => window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+  const cancelClose = () => { if (closeTimerRef.current) clearTimeout(closeTimerRef.current); closeTimerRef.current = null; };
+  const scheduleClose = () => { cancelClose(); closeTimerRef.current = setTimeout(() => setOpen(false), 350); };
+  useEffect(() => () => cancelClose(), []);
+  return <div className="absolute left-0 top-full mt-1 inline-flex" onMouseEnter={() => { if (supportsHover()) { cancelClose(); setOpen(true); } }} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
+    <button type="button" className="inline-flex h-6 w-max shrink-0 items-center gap-1 whitespace-nowrap rounded-full border bg-background px-2 text-[11px] text-foreground shadow-sm hover:bg-muted" onClick={() => setOpen((value) => supportsHover() ? true : !value)} aria-expanded={open}>
+      <FlaskConical className="h-3 w-3 text-muted-foreground" />测试
+    </button>
+    {open && <div className="absolute bottom-[calc(100%+6px)] left-0 z-50 w-[min(300px,calc(100vw-32px))] rounded-xl border bg-popover p-3 text-popover-foreground shadow-lg" onMouseEnter={cancelClose} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
+      <div className="text-xs font-medium">是否开始测试？</div>
+      {!!verification.proposedChecks.length && <div className="mt-2">
+        <div className="text-[10px] text-muted-foreground">建议测试案例</div>
+        <ul className="mt-1 list-disc space-y-1 pl-4 text-[11px] text-foreground">{verification.proposedChecks.map((check) => <li key={check}>{check}</li>)}</ul>
+      </div>}
+      <div className="mt-3 flex justify-start gap-1.5">
+        <Button size="sm" className="h-7 px-3 text-xs" onClick={onStart}>开始</Button>
+        <Button size="sm" variant="outline" className="h-7 px-3 text-xs" onClick={onAlways}>始终执行</Button>
+      </div>
+    </div>}
+  </div>;
+}
+
+function TestResultTag({ verification, run, onRetest }: { verification: NonNullable<ChatMessage["verification"]>; run?: TestRunInfo; onRetest: () => void }) {
+  const [open, setOpen] = useState(false);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const supportsHover = () => window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+  const cancelClose = () => { if (closeTimerRef.current) clearTimeout(closeTimerRef.current); closeTimerRef.current = null; };
+  const scheduleClose = () => { cancelClose(); closeTimerRef.current = setTimeout(() => setOpen(false), 350); };
+  useEffect(() => () => cancelClose(), []);
+  const statusTitle = { passed: "测试通过", failed: "测试未通过", inconclusive: "测试结果不确定" }[verification.status || ""] || "测试结果";
+  return <div className="relative inline-flex" onMouseEnter={() => { if (supportsHover()) { cancelClose(); setOpen(true); } }} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
+    <button type="button" className="inline-flex h-6 w-max shrink-0 items-center gap-1 whitespace-nowrap rounded-full border bg-background px-2 text-[11px] text-foreground shadow-sm hover:bg-muted" onClick={() => setOpen((value) => supportsHover() ? true : !value)} aria-expanded={open}>
+      <FlaskConical className="h-3 w-3 text-muted-foreground" />测试结果
+    </button>
+    {open && <div className="absolute bottom-[calc(100%+6px)] left-0 z-50 flex max-h-[min(70vh,520px)] w-[min(320px,calc(100vw-64px))] max-w-[calc(100vw-64px)] flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-lg" onMouseEnter={cancelClose} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
+      <div className="shrink-0 border-b px-3 py-2.5 text-xs font-medium">{statusTitle}</div>
+      <div className="min-h-0 overflow-y-auto p-3">
+        {verification.summary && <div className="mb-2 text-xs text-muted-foreground">{verification.summary}</div>}
+        {verification.status === "failed" && verification.fixSuggestion && <div className="mb-2 rounded-md border border-destructive/20 bg-destructive/5 p-2 text-xs text-muted-foreground"><div className="font-medium text-foreground">建议修复</div><div className="mt-0.5">{verification.fixSuggestion}</div></div>}
+        {run ? <TestRunDetails run={run} onRetest={onRetest} /> : <><ul className="list-disc space-y-1 pl-4 text-xs text-muted-foreground">{verification.proposedChecks.map((check) => <li key={check}>{check}</li>)}</ul><div className="mt-3 flex justify-end"><Button size="sm" variant="outline" className="h-7 text-xs" onClick={onRetest}>重新测试</Button></div></>}
+      </div>
+    </div>}
+  </div>;
+}
+
+function EditPromptTag({ onEdit, onAlways }: { onEdit: () => void; onAlways: () => void }) {
+  const [open, setOpen] = useState(false);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const supportsHover = () => window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+  const cancelClose = () => { if (closeTimerRef.current) clearTimeout(closeTimerRef.current); closeTimerRef.current = null; };
+  const scheduleClose = () => { cancelClose(); closeTimerRef.current = setTimeout(() => setOpen(false), 350); };
+  useEffect(() => () => cancelClose(), []);
+  return <div className="relative inline-flex" onMouseEnter={() => { if (supportsHover()) { cancelClose(); setOpen(true); } }} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
+    <button type="button" className="inline-flex h-6 w-max shrink-0 items-center gap-1 whitespace-nowrap rounded-full border bg-background px-2 text-[11px] text-foreground shadow-sm hover:bg-muted" onClick={() => setOpen((value) => supportsHover() ? true : !value)} aria-expanded={open}>
+      <Pencil className="h-3 w-3 text-muted-foreground" />修改
+    </button>
+    {open && <div className="absolute bottom-[calc(100%+6px)] left-0 z-50 w-[min(280px,calc(100vw-32px))] rounded-xl border bg-popover p-3 text-popover-foreground shadow-lg" onMouseEnter={cancelClose} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
+      <div className="text-xs font-medium">是否允许修改代码？</div>
+      <div className="mt-3 flex justify-end gap-1.5">
+        <Button size="sm" className="h-7 px-3 text-xs" onClick={onEdit}>修改</Button>
+        <Button size="sm" variant="outline" className="h-7 px-3 text-xs" onClick={onAlways}>始终允许</Button>
+      </div>
+    </div>}
+  </div>;
+}
+
+function ChatView({ agent, chat, selection, comments, onEditComment, onRemoveComment, onCommentsSent }: ChatPanelProps) {
   const { messages, sending, sendMessage, startVerification, cancelCurrent, clearHistory, deleteMessage } = chat;
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<Array<{ id: string; name: string; mimeType: string; size: number; uploading?: boolean; error?: string }>>([]);
@@ -119,14 +295,17 @@ function ChatView({ agent, chat, selection }: { agent: AgentState; chat: ChatSta
   }, [messages]);
 
   const handleSend = () => {
-    if (!input.trim() && !attachments.some((item) => !item.uploading && !item.error)) return;
+    if (!input.trim() && !comments.length && !attachments.some((item) => !item.uploading && !item.error)) return;
     let message = input;
     if (selection) {
       message += `\n\n--- Context ---\n${formatSelectionContext(selection)}`;
     }
-    sendMessage(message, attachments.filter((item) => !item.uploading && !item.error).map(({ id, name, mimeType, size }) => ({ id, name, mimeType, size })));
+    const readyAttachments = attachments.filter((item) => !item.uploading && !item.error).map(({ id, name, mimeType, size }) => ({ id, name, mimeType, size }));
+    const agentMessage = comments.length ? [formatCommentsForAgent(comments), message].filter(Boolean).join("\n\n") : message;
+    sendMessage(message, readyAttachments, comments, agentMessage);
     setInput("");
     setAttachments([]);
+    onCommentsSent();
   };
 
   const addFiles = async (files: FileList | null) => {
@@ -148,7 +327,7 @@ function ChatView({ agent, chat, selection }: { agent: AgentState; chat: ChatSta
 
   return (
     <div className="flex flex-col h-full">
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0">
+      <div ref={scrollRef} className="flex-1 overflow-x-hidden overflow-y-auto p-3 space-y-3 min-h-0">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-xs gap-2 py-8">
             <MessageSquare className="h-8 w-8 text-primary/30" />
@@ -161,7 +340,7 @@ function ChatView({ agent, chat, selection }: { agent: AgentState; chat: ChatSta
               {msg.role === "ai" && (
                 <div className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[9px] font-bold shrink-0 mt-0.5">AI</div>
               )}
-              <div className={`relative max-w-[85%] space-y-2 px-3 py-2 rounded-xl text-xs leading-relaxed ${msg.role === "user" ? "bg-blue-100 text-gray-900 rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}>
+              <div className={`relative min-w-0 max-w-[85%] space-y-2 px-3 py-2 rounded-xl text-xs leading-relaxed ${msg.verification || (msg.role === "user" && msg.comments?.length) ? "mb-7" : ""} ${msg.role === "user" ? "bg-blue-100 text-gray-900 rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}>
                 {!msg.pending && <button
                   type="button"
                   title="删除此消息"
@@ -184,52 +363,14 @@ function ChatView({ agent, chat, selection }: { agent: AgentState; chat: ChatSta
                       : msg.content}</Markdown>
                   </div>
                 )}
-                {msg.verification && (
-                  <div className="border border-primary/20 bg-background/70 rounded-lg p-2.5 space-y-2">
-                    <div className="font-medium">{{ passed: "测试通过", failed: "测试未通过", inconclusive: "测试结果不确定" }[msg.verification.status || ""] || "是否开始当前页面真实浏览器测试？"}</div>
-                    {msg.verification.status === "failed" && msg.verification.fixSuggestion && <div className="rounded-md border border-destructive/20 bg-destructive/5 p-2 text-muted-foreground">
-                      <div className="font-medium text-foreground">建议修复</div>
-                      <div className="mt-0.5">{msg.verification.fixSuggestion}</div>
-                    </div>}
-                    {!msg.testRun && !['passed', 'failed', 'inconclusive'].includes(msg.verification.status || "") && <>
-                      {msg.verification.summary && <div className="text-muted-foreground">{msg.verification.summary}</div>}
-                      <ul className="list-disc pl-4 text-muted-foreground space-y-0.5">
-                        {msg.verification.proposedChecks.map((check) => <li key={check}>{check}</li>)}
-                      </ul>
-                    </>}
-                    {msg.testRun ? (
-                      <TestRunDetails
-                        run={msg.testRun}
-                        onRetest={() => startVerification(msg.verification!)}
-                        onFix={() => chat.fixVerification(msg.verification!, msg.testRun)}
-                        onAlwaysAllowFix={!agent.permissions.alwaysAllowEdits ? async () => {
-                          await agent.updatePermission("alwaysAllowEdits", true);
-                          chat.fixVerification(msg.verification!, msg.testRun);
-                        } : undefined}
-                      />
-                    ) : (
-                      <div className="flex flex-wrap gap-1.5">
-                        <Button
-                          size="sm"
-                          className="h-7 text-xs"
-                          disabled={["preparing", "running"].includes(msg.verification.status || "")}
-                          onClick={() => startVerification(msg.verification!)}
-                        >
-                          {["preparing", "running"].includes(msg.verification.status || "") ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" />测试运行中…</> : ["passed", "failed", "inconclusive"].includes(msg.verification.status || "") ? "重新测试" : "开始测试"}
-                        </Button>
-                        {!agent.permissions.alwaysAllowAutomatedTesting && !["preparing", "running", "passed", "failed", "inconclusive"].includes(msg.verification.status || "") && <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 text-xs"
-                          onClick={async () => {
-                            await agent.updatePermission("alwaysAllowAutomatedTesting", true);
-                            startVerification(msg.verification!);
-                          }}
-                        >始终允许并开始测试</Button>}
-                      </div>
-                    )}
-                  </div>
+                {msg.verification && !msg.testRun && !["passed", "failed", "inconclusive"].includes(msg.verification.status || "") && (
+                  <TestPromptTag verification={msg.verification} onStart={() => startVerification(msg.verification!)} onAlways={async () => { await agent.updatePermission("alwaysAllowAutomatedTesting", true); startVerification(msg.verification!); }} />
                 )}
+                {msg.verification && (msg.testRun || ["passed", "failed", "inconclusive"].includes(msg.verification.status || "")) && <div className="absolute left-0 top-full mt-1 flex gap-1.5">
+                  <TestResultTag verification={msg.verification} run={msg.testRun} onRetest={() => startVerification(msg.verification!)} />
+                  {msg.verification.status === "failed" && msg.testRun && <EditPromptTag onEdit={() => chat.fixVerification(msg.verification!, msg.testRun)} onAlways={async () => { await agent.updatePermission("alwaysAllowEdits", true); chat.fixVerification(msg.verification!, msg.testRun); }} />}
+                </div>}
+                {msg.role === "user" && !!msg.comments?.length && <div className="absolute right-0 top-full mt-1"><CommentTag comments={msg.comments} align="right" /></div>}
               </div>
             </div>
           ))}
@@ -238,6 +379,7 @@ function ChatView({ agent, chat, selection }: { agent: AgentState; chat: ChatSta
       </div>
 
       <div className="border-t p-2 space-y-1.5">
+        {!!comments.length && <CommentTag comments={comments} editable onEdit={onEditComment} onRemove={onRemoveComment} />}
         {!!attachments.length && <div className="flex flex-col gap-1">{attachments.map((file) => <div key={file.id} title={file.error} className={`flex max-w-full flex-wrap items-center gap-1 rounded border px-1.5 py-1 text-[11px] ${file.error ? "border-destructive bg-destructive/5 text-destructive" : "bg-muted"}`}>
           {file.uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : "📄"}
           <span className="min-w-0 flex-1 truncate">{file.name}</span>
@@ -263,7 +405,7 @@ function ChatView({ agent, chat, selection }: { agent: AgentState; chat: ChatSta
               {t("chat.clearHistory")}
             </Button>
           )}
-          <Button size="sm" className="h-7 text-xs px-3 gap-1" onClick={handleSend} disabled={sending || attachments.some((item) => item.uploading || item.error) || (!input.trim() && !attachments.some((item) => !item.error))}>
+          <Button size="sm" className="h-7 text-xs px-3 gap-1" onClick={handleSend} disabled={sending || attachments.some((item) => item.uploading || item.error) || (!input.trim() && !comments.length && !attachments.some((item) => !item.error))}>
             <Send className="h-3 w-3" />
             {t("chat.send")}
           </Button>
@@ -280,15 +422,34 @@ function durationLabel(startedAt: string, finishedAt?: string) {
   return milliseconds < 1000 ? `${milliseconds} ms` : `${(milliseconds / 1000).toFixed(milliseconds < 10_000 ? 1 : 0)} s`;
 }
 
-function TestRunDetails({ run, onRetest, onFix, onAlwaysAllowFix }: { run: TestRunInfo; onRetest: () => void; onFix: () => void; onAlwaysAllowFix?: () => void }) {
+function millisecondsLabel(milliseconds: number) {
+  return milliseconds < 1000 ? `${Math.round(milliseconds)} ms` : `${(milliseconds / 1000).toFixed(milliseconds < 10_000 ? 1 : 0)} s`;
+}
+
+function TestRunDetails({ run, onRetest }: { run: TestRunInfo; onRetest: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const [evidenceExpanded, setEvidenceExpanded] = useState(false);
   const terminal = terminalRunStatuses.includes(run.status);
   const cases = run.cases || [];
   const evidence = run.evidence || [];
+  const metrics = run.performance;
 
   return (
     <div className="space-y-2">
+      {metrics && <div className="rounded-md border bg-background/70 p-2">
+        <div className="mb-1.5 font-medium">性能监测</div>
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
+          <span className="text-muted-foreground">端到端耗时</span><span className="text-right">{millisecondsLabel(metrics.totalDurationMs)}</span>
+          <span className="text-muted-foreground">Agent 回合</span><span className="text-right">{millisecondsLabel(metrics.agentDurationMs)}</span>
+          <span className="text-muted-foreground">工具调用</span><span className="text-right">{millisecondsLabel(metrics.toolDurationMs)} · {metrics.toolCallCount} 次</span>
+          <span className="text-muted-foreground">浏览器命令</span><span className="text-right">{millisecondsLabel(metrics.browserDurationMs)} · {metrics.browserCommandCount} 次</span>
+          <span className="text-muted-foreground">资源清理</span><span className="text-right">{millisecondsLabel(metrics.cleanupDurationMs)}</span>
+        </div>
+        {Object.keys(metrics.browserCommands).length > 0 && <div className="mt-2 border-t pt-1.5 text-[10px] text-muted-foreground">
+          {Object.entries(metrics.browserCommands).sort(([, a], [, b]) => b.durationMs - a.durationMs).map(([action, metric]) => <div key={action} className="flex justify-between gap-2"><span className="break-all">{action} × {metric.count}</span><span className="shrink-0">累计 {millisecondsLabel(metric.durationMs)} · 最慢 {millisecondsLabel(metric.maxDurationMs)}</span></div>)}
+        </div>}
+        <div className="mt-1.5 text-[10px] text-muted-foreground">各指标存在包含关系，不应相加。</div>
+      </div>}
       {cases.length > 0 && <div className="space-y-1.5">
         <div className="font-medium">业务测试用例</div>
         {cases.map((testCase) => {
@@ -365,7 +526,7 @@ function TestRunDetails({ run, onRetest, onFix, onAlwaysAllowFix }: { run: TestR
       </div>}
       <div className="flex flex-wrap gap-1.5">
         {terminal
-          ? <>{run.status === "failed" && <Button size="sm" className="h-7 text-xs" onClick={onFix}>修复问题</Button>}{run.status === "failed" && onAlwaysAllowFix && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={onAlwaysAllowFix}>始终允许并修复</Button>}<Button size="sm" variant="outline" className="h-7 text-xs" onClick={onRetest}>重新测试</Button></>
+          ? <Button size="sm" variant="outline" className="h-7 text-xs" onClick={onRetest}>重新测试</Button>
           : <div className="inline-flex items-center text-xs text-muted-foreground"><Loader2 className="mr-1 h-3 w-3 animate-spin" />测试运行中…</div>}
       </div>
     </div>

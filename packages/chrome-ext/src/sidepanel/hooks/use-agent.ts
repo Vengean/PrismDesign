@@ -9,6 +9,7 @@ export function useAgent() {
   const [error, setError] = useState<string | null>(null);
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [aiWorking, setAiWorking] = useState(false);
+  const [agentToken, setAgentToken] = useState("");
   const [agentUrl, setAgentUrl] = useState(() => {
     // Default to current page's hostname so LAN access works out of the box
     try {
@@ -21,8 +22,9 @@ export function useAgent() {
 
   // Load saved URL (overrides default if exists)
   useEffect(() => {
-    chrome.storage.local.get("agentUrl", (result) => {
+    chrome.storage.local.get(["agentUrl", "agentToken"], (result) => {
       if (result.agentUrl) setAgentUrl(result.agentUrl);
+      if (result.agentToken) setAgentToken(result.agentToken);
     });
   }, []);
 
@@ -84,13 +86,13 @@ export function useAgent() {
     return () => chrome.runtime.onMessage.removeListener(handler);
   }, []);
 
-  const connect = useCallback(async (url: string) => {
+  const connect = useCallback(async (url: string, token: string) => {
     setConnecting(true);
     connectingRef.current = true;
     setError(null);
     setAgentUrl(url);
     try {
-      const result = await chrome.runtime.sendMessage({ type: "AGENT_CONNECT", payload: { url } }) as any;
+      const result = await chrome.runtime.sendMessage({ type: "AGENT_CONNECT", payload: { url, token } }) as any;
       if (!result?.success) {
         setConnecting(false);
         setConnected(false);
@@ -114,7 +116,7 @@ export function useAgent() {
   }, []);
 
   return {
-    connected, connecting, error, project, aiWorking, agentUrl, setAgentUrl,
+    connected, connecting, error, project, aiWorking, agentUrl, setAgentUrl, agentToken, setAgentToken,
     connect, disconnect, rollback, permissions, updatePermission,
   };
 }

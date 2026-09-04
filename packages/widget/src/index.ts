@@ -2,12 +2,14 @@ import { WIDGET_CSS } from "./styles.js";
 import { AgentClient } from "./agent-client.js";
 import { createPanel, type PanelAPI } from "./panel.js";
 import { createChat, type ChatAPI } from "./chat.js";
-import { createConnectForm, getSavedAgentUrl, clearSavedAgentUrl } from "./connect-form.js";
+import { createConnectForm, getSavedAgentUrl, getSavedAgentToken, clearSavedAgentUrl } from "./connect-form.js";
 import { setLocale, t } from "./i18n.js";
 
 export interface PrismWidgetOptions {
   /** Agent server URL. If provided, skips the connection form. */
   agentUrl?: string;
+  /** Access token printed by the Agent at startup. */
+  agentToken?: string;
   /** FAB position. Default: "bottom-right" */
   position?: "bottom-right" | "bottom-left";
   /** Override locale auto-detection */
@@ -65,7 +67,7 @@ export function init(options?: PrismWidgetOptions) {
   }
 
   /** Show a "connecting / retry" status when agentUrl is preconfigured */
-  function mountAutoConnect(url: string) {
+  function mountAutoConnect(url: string, token: string) {
     const body = panel.getBody();
     body.innerHTML = "";
     currentChat = null;
@@ -94,10 +96,10 @@ export function init(options?: PrismWidgetOptions) {
       statusEl.textContent = t("connect.connecting");
       retryBtn.style.display = "none";
 
-      const ok = await AgentClient.checkConnection(url);
+      const ok = await AgentClient.checkConnection(url, token);
       if (ok) {
         if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
-        const client = new AgentClient(url);
+        const client = new AgentClient(url, token);
         mountChat(client);
       } else {
         statusEl.textContent = t("connect.waiting");
@@ -119,7 +121,8 @@ export function init(options?: PrismWidgetOptions) {
     }
     if (options?.agentUrl) {
       // Preconfigured URL — show auto-reconnect, not manual form
-      mountAutoConnect(options.agentUrl);
+      if (options.agentToken) mountAutoConnect(options.agentUrl, options.agentToken);
+      else mountConnectForm();
     } else {
       clearSavedAgentUrl();
       mountConnectForm();
@@ -127,16 +130,17 @@ export function init(options?: PrismWidgetOptions) {
   }
 
   // ── Init flow ──
-  if (options?.agentUrl) {
+  if (options?.agentUrl && options.agentToken) {
     // Preconfigured URL — check connection first, auto-retry if unavailable
-    mountAutoConnect(options.agentUrl);
+    mountAutoConnect(options.agentUrl, options.agentToken);
   } else {
     // Try saved URL
     const savedUrl = getSavedAgentUrl();
-    if (savedUrl) {
-      AgentClient.checkConnection(savedUrl).then((ok) => {
+    const savedToken = getSavedAgentToken();
+    if (savedUrl && savedToken) {
+      AgentClient.checkConnection(savedUrl, savedToken).then((ok) => {
         if (ok) {
-          const client = new AgentClient(savedUrl);
+          const client = new AgentClient(savedUrl, savedToken);
           mountChat(client);
         } else {
           mountConnectForm();
@@ -153,9 +157,9 @@ if (typeof window !== "undefined") {
   const cfg = (window as any).__PRISM_DESIGN__;
   if (cfg?.agentUrl) {
     if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", () => init({ agentUrl: cfg.agentUrl }));
+      document.addEventListener("DOMContentLoaded", () => init({ agentUrl: cfg.agentUrl, agentToken: cfg.agentToken }));
     } else {
-      init({ agentUrl: cfg.agentUrl });
+      init({ agentUrl: cfg.agentUrl, agentToken: cfg.agentToken });
     }
   }
 }

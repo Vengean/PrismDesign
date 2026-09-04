@@ -116,21 +116,28 @@ async function clearBoundAgentTab(): Promise<void> {
 // Handle the toolbar click ourselves so Chrome gives us the exact originating
 // tab. The automatic side-panel behavior loses this association and forces an
 // unreliable active-tab query after the panel has already started opening.
-chrome.action.onClicked.addListener(async (tab) => {
+chrome.action.onClicked.addListener((tab) => {
   if (!tab.id || !isBindablePage(tab.url)) return;
+  const tabId = tab.id;
   const panelWasOpen = sidePanelOpen;
-  const previousTabId = await getBoundAgentTabId();
-  if (previousTabId !== undefined && previousTabId !== tab.id) disconnectAgent(getTabState(previousTabId));
-  await persistBoundAgentTab(tab);
-  await chrome.sidePanel.open({ tabId: tab.id });
-  if (panelWasOpen) {
-    const state = getTabState(tab.id);
-    if (state.connected || state.ws) disconnectAgent(state);
-    const saved = await chrome.storage.local.get("agentUrl");
-    const agentUrl = saved.agentUrl || `http://${new URL(tab.url).hostname}:9527`;
-    const result = await handleAgentConnect(agentUrl, tab.id);
-    if (!result.success) broadcastToSidePanel({ type: "AGENT_STATUS", payload: { connected: false, error: result.error } });
-  }
+  // Opening must be requested before any await; Chrome expires the action
+  // click's user-gesture token once asynchronous work is crossed.
+  void chrome.sidePanel.open({ tabId }).catch((error) => {
+    console.warn("[BG] Unable to open side panel:", error instanceof Error ? error.message : String(error));
+  });
+  void (async () => {
+    const previousTabId = await getBoundAgentTabId();
+    if (previousTabId !== undefined && previousTabId !== tabId) disconnectAgent(getTabState(previousTabId));
+    await persistBoundAgentTab(tab);
+    if (panelWasOpen) {
+      const state = getTabState(tabId);
+      if (state.connected || state.ws) disconnectAgent(state);
+      const saved = await chrome.storage.local.get(["agentUrl", "agentToken"]);
+      const agentUrl = saved.agentUrl || `http://${new URL(tab.url!).hostname}:9527`;
+      const result = await handleAgentConnect(agentUrl, saved.agentToken || "", tabId);
+      if (!result.success) broadcastToSidePanel({ type: "AGENT_STATUS", payload: { connected: false, error: result.error } });
+    }
+  })();
 });
 
 chrome.runtime.onConnect.addListener((port) => {
@@ -166,7 +173,7 @@ async function handleSidePanelOpen() {
   // Auto-connect agent
   const state = getTabState(tabId);
   if (!state.connected) {
-    const result = await chrome.storage.local.get("agentUrl");
+    const result = await chrome.storage.local.get(["agentUrl", "agentToken"]);
     let url = result.agentUrl;
     if (!url) {
       // Derive default from active tab's hostname so LAN access works
@@ -182,7 +189,7 @@ async function handleSidePanelOpen() {
       type: "AGENT_STATUS",
       payload: { connected: false, connecting: true, agentUrl: url },
     });
-    const connectResult = await handleAgentConnect(url);
+    const connectResult = await handleAgentConnect(url, result.agentToken || "");
     if (!connectResult.success) {
       // Broadcast failure so side panel shows the error immediately
       broadcastToSidePanel({
@@ -257,20 +264,6 @@ async function sendToBoundTab(message: PrismMessage): Promise<unknown> {
 chrome.runtime.onMessage.addListener((message: PrismMessage, sender, sendResponse) => {
   const isFromTab = !!sender.tab;
 
-  // Handle OPEN_SIDE_PANEL from any context
-  if (message.type === "OPEN_SIDE_PANEL") {
-    (async () => {
-      const tabId = sender.tab?.id || (await getActiveTabId());
-      const tab = tabId ? await chrome.tabs.get(tabId).catch(() => undefined) : undefined;
-      if (tab && isBindablePage(tab.url)) {
-        await persistBoundAgentTab(tab);
-        await chrome.sidePanel.open({ tabId: tab.id! });
-        sendResponse({ success: true });
-      } else sendResponse({ success: false, error: "当前页面不可绑定" });
-    })();
-    return true;
-  }
-
   if (isFromTab) {
     // Forward critical events to side panel reliably
     if (
@@ -279,7 +272,6 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, sender, sendRespons
       message.type === "OPEN_CHAT" ||
       message.type === "OPEN_NAVIGATOR" ||
       message.type === "OPEN_CHANGES" ||
-      message.type === "OPEN_PENDING" ||
       message.type === "COMMENT_ADDED" ||
       message.type === "DRAG_MOVE"
     ) {
@@ -292,7 +284,7 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, sender, sendRespons
   switch (message.type) {
     // ---- Agent operations (handled by background) ----
     case "AGENT_CONNECT":
-      handleAgentConnect(message.payload.url).then(sendResponse);
+      handleAgentConnect(message.payload.url, message.payload.token).then(sendResponse);
       return true;
 
 
@@ -354,7 +346,6 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, sender, sendRespons
     case "SHOW_TOOLBAR":
     case "HIDE_TOOLBAR":
     case "TOOLBAR_DISABLE":
-    case "UPDATE_PENDING_COUNT":
     case "PING":
       sendToBoundTab(message).then(sendResponse);
       return true;
@@ -368,7 +359,19 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, sender, sendRespons
 // Agent operation handlers
 // ============================================================
 
-async function handleAgentConnect(url: string, requestedTabId?: number) {
+async function restoreAgentPermissions(state: ReturnType<typeof getTabState>) {
+  if (!state.agentUrl) return state.permissions;
+  const scope = `${state.agentUrl}|${state.project?.root || "default"}`;
+  const stored = await chrome.storage.local.get("agentPermissions");
+  const saved = stored.agentPermissions?.[scope];
+  state.permissions = {
+    alwaysAllowEdits: saved?.alwaysAllowEdits === true,
+    alwaysAllowAutomatedTesting: saved?.alwaysAllowAutomatedTesting === true,
+  };
+  return state.permissions;
+}
+
+async function handleAgentConnect(url: string, token: string, requestedTabId?: number) {
   const tabId = requestedTabId || await getBoundAgentTabId();
   if (!tabId) return { success: false, error: "尚未绑定页面，请在目标应用页面点击 Prism 插件图标" };
   const tab = await chrome.tabs.get(tabId);
@@ -378,7 +381,7 @@ async function handleAgentConnect(url: string, requestedTabId?: number) {
   const state = getTabState(tabId);
 
   try {
-    const project = await connectAgent(state, url, (eventType, data) => {
+    const project = await connectAgent(state, url, token, (eventType, data) => {
       // Forward agent WebSocket events to side panel
       if (eventType === "agent:start") {
         state.agentWorking = true;
@@ -420,6 +423,8 @@ async function handleAgentConnect(url: string, requestedTabId?: number) {
       }
     }, (command) => executeCurrentTabCommand(tabId, command), tab.url);
 
+    await restoreAgentPermissions(state);
+
     const runtime = await getAgentRuntimeState(state).catch(() => ({ activeTestRuns: [], activeAgentRuns: [] }));
     state.currentTestRun = runtime.activeTestRuns[0] || null;
     const activeAgent = runtime.activeAgentRuns[0];
@@ -427,7 +432,7 @@ async function handleAgentConnect(url: string, requestedTabId?: number) {
     state.agentProgress = activeAgent?.progress || "";
 
     // Persist URL
-    chrome.storage.local.set({ agentUrl: url });
+    chrome.storage.local.set({ agentUrl: url, agentToken: token });
 
     broadcastToSidePanel({
       type: "AGENT_STATUS",
@@ -469,6 +474,10 @@ async function handleChat(payload: { message: string; attachmentIds?: string[] }
   if (!state.connected) return { success: false, error: "not connected" };
 
   try {
+    // A Manifest V3 service worker can restart independently of the side panel.
+    // Restore the persisted project-scoped grant before every request instead
+    // of relying on an earlier AGENT_SET_PERMISSIONS message still being in memory.
+    await restoreAgentPermissions(state);
     broadcastToSidePanel({ type: "AGENT_WORKING", payload: { working: true } });
     let result: any = await chatWithAgent(state, payload.message, payload.attachmentIds);
     let iteration = 0;

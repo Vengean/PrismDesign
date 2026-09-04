@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import type { ChatMessage, PrismMessage, TestRunInfo } from "../../shared/types.js";
+import type { ChatMessage, CommentAnnotation, PrismMessage, TestRunInfo } from "../../shared/types.js";
 import { t } from "../../shared/i18n.js";
 
 const STORAGE_KEY = "pd-chat-history";
@@ -172,17 +172,17 @@ export function useChat() {
     return () => chrome.runtime.onMessage.removeListener(handler);
   }, [applyAgentWorking, applyTestRun]);
 
-  const sendMessage = useCallback(async (text: string, attachments: ChatMessage["attachments"] = []) => {
-    if ((!text.trim() && !attachments.length) || sending) return;
+  const sendMessage = useCallback(async (text: string, attachments: ChatMessage["attachments"] = [], comments: CommentAnnotation[] = [], agentText?: string) => {
+    if ((!text.trim() && !attachments.length && !comments.length) || sending) return;
 
-    const userMsg: ChatMessage = { role: "user", content: text, timestamp: Date.now(), attachments };
+    const userMsg: ChatMessage = { role: "user", content: text, timestamp: Date.now(), attachments, comments: comments.length ? comments : undefined };
     const thinkingMsg: ChatMessage = { role: "ai", content: `⏳ ${t("chat.thinking")}`, timestamp: Date.now(), pending: true };
     setMessages((prev) => [...prev, userMsg, thinkingMsg]);
     setSending(true);
 
     chrome.runtime.sendMessage({
       type: "AGENT_CHAT",
-      payload: { message: text || "请阅读并分析附件内容。", attachmentIds: attachments.map((attachment) => attachment.id) },
+      payload: { message: agentText || text || "请阅读并分析附件内容。", attachmentIds: attachments.map((attachment) => attachment.id) },
     }).catch(() => {
       setSending(false);
       setMessages((prev) => {
@@ -236,7 +236,7 @@ export function useChat() {
       .map((item) => `- ${item.title}：${item.failureReason || item.evidenceSummary || "测试未通过"}`)
       .join("\n");
     const prompt = [
-      "请修复刚才真实浏览器测试发现的问题。用户已通过“修复问题”按钮授权本次代码修改。",
+      "请修复刚才真实浏览器测试发现的问题。用户已通过“修改”按钮授权本次代码修改。",
       `原测试目标：${verification.goal}`,
       `失败分类：${verification.failureCategory || "unknown"}`,
       `测试结论：${verification.summary || "测试未通过"}`,

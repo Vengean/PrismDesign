@@ -77,6 +77,12 @@ export interface ChatMessage {
   pending?: boolean;
   streamItemId?: string;
   attachments?: Array<{ id: string; name: string; mimeType: string; size: number }>;
+  comments?: CommentAnnotation[];
+}
+
+export interface CommentAnnotation {
+  element: ElementSelection;
+  comment: string;
 }
 
 export interface ProjectInfo {
@@ -146,6 +152,16 @@ export interface TestRunInfo {
     error?: string;
   }>;
   cleanup: Array<{ id: string; label: string; success: boolean; error?: string }>;
+  performance?: {
+    totalDurationMs: number;
+    agentDurationMs: number;
+    toolDurationMs: number;
+    browserDurationMs: number;
+    cleanupDurationMs: number;
+    toolCallCount: number;
+    browserCommandCount: number;
+    browserCommands: Record<string, { count: number; durationMs: number; maxDurationMs: number }>;
+  };
 }
 
 // ============================================================
@@ -171,7 +187,6 @@ export type DownstreamMessage =
   | { type: "SHOW_TOOLBAR" }
   | { type: "HIDE_TOOLBAR" }
   | { type: "TOOLBAR_DISABLE"; payload: { disabled: boolean } }
-  | { type: "UPDATE_PENDING_COUNT"; payload: { count: number } }
   | { type: "RELOAD_IF_STATIC" }
   | { type: "PING" };
 
@@ -184,16 +199,14 @@ export type UpstreamMessage =
   | { type: "DRAG_MOVE"; payload: { element: ElementSelection; from: number; to: number } }
   | { type: "CONTENT_READY" }
   | { type: "DESIGN_MODE_STATUS"; payload: { active: boolean } }
-  | { type: "OPEN_SIDE_PANEL" }
   | { type: "OPEN_CHAT" }
   | { type: "OPEN_NAVIGATOR"; payload?: { mode: "select" | "drag" } }
   | { type: "OPEN_CHANGES" }
-  | { type: "OPEN_PENDING" }
-  | { type: "COMMENT_ADDED"; payload: { element: ElementSelection; comment: string } };
+  | { type: "COMMENT_ADDED"; payload: CommentAnnotation };
 
 // Agent operations: Side Panel -> Background (not forwarded to content)
 export type AgentMessage =
-  | { type: "AGENT_CONNECT"; payload: { url: string } }
+  | { type: "AGENT_CONNECT"; payload: { url: string; token: string } }
   | { type: "AGENT_DISCONNECT" }
   | { type: "AGENT_SET_PERMISSIONS"; payload: AgentPermissions }
   | { type: "AGENT_APPLY_CHANGES"; payload: { changes: StyleChange[]; pagePath?: string; supplement?: string } }

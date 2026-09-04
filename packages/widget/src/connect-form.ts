@@ -3,6 +3,7 @@ import { ICON_LINK } from "./icons.js";
 import { AgentClient } from "./agent-client.js";
 
 const STORAGE_KEY_URL = "prism-agent-url";
+const STORAGE_KEY_TOKEN = "prism-agent-token";
 const DEFAULT_URL = "http://localhost:9527";
 
 export interface ConnectFormAPI {
@@ -42,6 +43,13 @@ export function createConnectForm(
   input.value = savedUrl;
   inputRow.appendChild(input);
 
+  const tokenInput = document.createElement("input");
+  tokenInput.type = "password";
+  tokenInput.className = "connect-token-input";
+  tokenInput.placeholder = t("connect.tokenPlaceholder");
+  try { tokenInput.value = sessionStorage.getItem(STORAGE_KEY_TOKEN) || ""; } catch {}
+  inputRow.appendChild(tokenInput);
+
   const connectBtn = document.createElement("button");
   connectBtn.className = "connect-btn";
   connectBtn.textContent = t("connect.button");
@@ -60,17 +68,19 @@ export function createConnectForm(
   // Submit handler
   async function tryConnect() {
     const url = input.value.trim().replace(/\/+$/, "");
-    if (!url) return;
+    const token = tokenInput.value.trim();
+    if (!url || !token) return;
 
     connectBtn.disabled = true;
     connectBtn.textContent = t("connect.connecting");
     errorEl.style.display = "none";
 
-    const ok = await AgentClient.checkConnection(url);
+    const ok = await AgentClient.checkConnection(url, token);
 
     if (ok) {
       try { localStorage.setItem(STORAGE_KEY_URL, url); } catch {}
-      const client = new AgentClient(url);
+      try { sessionStorage.setItem(STORAGE_KEY_TOKEN, token); } catch {}
+      const client = new AgentClient(url, token);
       onConnected(client, url);
     } else {
       errorEl.textContent = t("connect.error");
@@ -87,6 +97,7 @@ export function createConnectForm(
       tryConnect();
     }
   };
+  tokenInput.onkeydown = input.onkeydown;
 
   return {
     destroy() {
@@ -100,7 +111,12 @@ export function getSavedAgentUrl(): string | null {
   try { return localStorage.getItem(STORAGE_KEY_URL); } catch { return null; }
 }
 
+export function getSavedAgentToken(): string | null {
+  try { return sessionStorage.getItem(STORAGE_KEY_TOKEN); } catch { return null; }
+}
+
 /** Clear the saved agent URL */
 export function clearSavedAgentUrl(): void {
   try { localStorage.removeItem(STORAGE_KEY_URL); } catch {}
+  try { sessionStorage.removeItem(STORAGE_KEY_TOKEN); } catch {}
 }
