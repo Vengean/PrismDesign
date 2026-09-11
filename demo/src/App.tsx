@@ -7,7 +7,7 @@ import { Checkbox } from './components/ui/checkbox'
 import { Input } from './components/ui/input'
 import { Label } from './components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
-import { api, type Note, type NoteRevision, type User } from './api'
+import { api, SESSION_EXPIRED_EVENT, type Note, type NoteRevision, type User } from './api'
 
 const SESSION_KEY = 'prism-demo-session'
 const markdownPlugins = [remarkGfm]
@@ -239,6 +239,20 @@ export default function App() {
   const [token, setToken] = useState('')
   const [initialToken] = useState(() => localStorage.getItem(SESSION_KEY) || sessionStorage.getItem(SESSION_KEY) || '')
   const [isRestoringSession, setIsRestoringSession] = useState(Boolean(initialToken))
+
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      localStorage.removeItem(SESSION_KEY)
+      sessionStorage.removeItem(SESSION_KEY)
+      setToken('')
+      setUser(null)
+      setAuthMode('login')
+      setErrors({ form: '登录状态已失效，请重新登录。' })
+      setIsRestoringSession(false)
+    }
+    window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired)
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired)
+  }, [])
 
   useEffect(() => {
     if (!initialToken) return

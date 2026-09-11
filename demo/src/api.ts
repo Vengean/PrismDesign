@@ -2,6 +2,8 @@ export type User = { id: number; email: string; name: string }
 export type Note = { id: number; title: string; content: string; category: string; createdAt: string; updatedAt: string }
 export type NoteRevision = { id: number | string; title: string; content: string; createdAt: string; isCurrent?: boolean }
 
+export const SESSION_EXPIRED_EVENT = 'prism:session-expired'
+
 async function request<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
   const response = await fetch(path, {
     ...options,
@@ -9,6 +11,7 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
   })
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { message?: string } | null
+    if (response.status === 401 && token) window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT))
     throw new Error(body?.message || `请求失败（${response.status}）`)
   }
   return response.status === 204 ? undefined as T : response.json() as Promise<T>

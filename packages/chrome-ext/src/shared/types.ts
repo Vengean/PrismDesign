@@ -172,6 +172,8 @@ export interface TestRunInfo {
 export type DownstreamMessage =
   | { type: "DESIGN_MODE_ON" }
   | { type: "DESIGN_MODE_OFF" }
+  | { type: "START_COMMENT_MODE" }
+  | { type: "STOP_COMMENT_MODE" }
   | { type: "APPLY_STYLE_PREVIEW"; payload: { domPath: string; property: string; value: string } }
   | { type: "CLEAR_STYLE_PREVIEW"; payload: { domPath: string } }
   | { type: "HIGHLIGHT_ELEMENT"; payload: { domPath: string } }
@@ -202,6 +204,8 @@ export type UpstreamMessage =
   | { type: "OPEN_CHAT" }
   | { type: "OPEN_NAVIGATOR"; payload?: { mode: "select" | "drag" } }
   | { type: "OPEN_CHANGES" }
+  | { type: "COMMENT_TARGET_SELECTED"; payload: ElementSelection }
+  | { type: "COMMENT_CANCELLED"; payload: { domPath: string } }
   | { type: "COMMENT_ADDED"; payload: CommentAnnotation };
 
 // Agent operations: Side Panel -> Background (not forwarded to content)

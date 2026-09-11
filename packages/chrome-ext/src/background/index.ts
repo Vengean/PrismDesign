@@ -45,11 +45,10 @@ chrome.tabs.onActivated.addListener(async (info) => {
   const boundTabId = await getBoundAgentTabId();
   if (sidePanelOpen && boundTabId === info.tabId) {
     await ensureContentScript(info.tabId);
-    chrome.tabs.sendMessage(info.tabId, { type: "SHOW_TOOLBAR" }).catch(() => {});
   }
 });
 
-// When a page finishes loading, re-show toolbar if side panel is open
+// Keep the content script available after navigation while the side panel is open.
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
   const boundTabId = await getBoundAgentTabId();
   if (boundTabId !== tabId) return;
@@ -62,7 +61,6 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
     const tab = await chrome.tabs.get(tabId);
     if (tab.url) updateBrowserRegistration(getTabState(tabId), tab.url);
     await ensureContentScript(tabId);
-    chrome.tabs.sendMessage(tabId, { type: "SHOW_TOOLBAR" }).catch(() => {});
   }
 });
 
@@ -167,9 +165,6 @@ async function handleSidePanelOpen() {
   if (!openingTab || !isBindablePage(openingTab.url)) return;
   await ensureContentScript(tabId);
 
-  // Show toolbar
-  sendToBoundTab({ type: "SHOW_TOOLBAR" } as PrismMessage);
-
   // Auto-connect agent
   const state = getTabState(tabId);
   if (!state.connected) {
@@ -207,8 +202,8 @@ async function handleSidePanelOpen() {
 }
 
 async function handleSidePanelClose() {
-  // Hide toolbar + exit design mode
-  sendToBoundTab({ type: "HIDE_TOOLBAR" } as PrismMessage);
+  // Exit any active page selection mode.
+  sendToBoundTab({ type: "DESIGN_MODE_OFF" } as PrismMessage);
 
   // Disconnect agent
   const tabId = await getBoundAgentTabId();
@@ -272,6 +267,8 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, sender, sendRespons
       message.type === "OPEN_CHAT" ||
       message.type === "OPEN_NAVIGATOR" ||
       message.type === "OPEN_CHANGES" ||
+      message.type === "COMMENT_TARGET_SELECTED" ||
+      message.type === "COMMENT_CANCELLED" ||
       message.type === "COMMENT_ADDED" ||
       message.type === "DRAG_MOVE"
     ) {
@@ -331,6 +328,8 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, sender, sendRespons
     // ---- Content script operations (forwarded to tab) ----
     case "DESIGN_MODE_ON":
     case "DESIGN_MODE_OFF":
+    case "START_COMMENT_MODE":
+    case "STOP_COMMENT_MODE":
     case "APPLY_STYLE_PREVIEW":
     case "CLEAR_STYLE_PREVIEW":
     case "HIGHLIGHT_ELEMENT":

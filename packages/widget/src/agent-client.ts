@@ -82,7 +82,7 @@ export class AgentClient {
       this.ws.close();
     }
     const wsUrl = this.baseUrl.replace(/^http/, "ws") + `/ws?clientId=${encodeURIComponent(this.clientId)}`;
-    const ws = new WebSocket(wsUrl, ["prism", this.accessToken]);
+    const ws = new WebSocket(wsUrl, this.accessToken ? ["prism", this.accessToken] : ["prism"]);
     ws.onmessage = (event) => {
       try {
         const { type, data } = JSON.parse(event.data);

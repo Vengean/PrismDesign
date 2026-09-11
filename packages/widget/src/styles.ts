@@ -435,6 +435,7 @@ export const WIDGET_CSS = `
   box-shadow: 0 10px 30px rgba(0,0,0,.14);
   word-break: break-word;
 }
+.comment-popover { max-height: min(70vh, 520px); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
 .comment-popover-item { position: relative; padding: 10px 12px; border-bottom: 1px solid #eef0f3; }
 .comment-popover-item:last-child { border-bottom: 0; }
 .comment-number { position: absolute; left: 10px; top: 10px; color: #9ca3af; }

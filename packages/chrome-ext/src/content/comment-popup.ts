@@ -6,6 +6,8 @@ let styleEl: HTMLStyleElement | null = null;
 
 type CommentCallback = (comment: string) => void;
 let onConfirm: CommentCallback | null = null;
+let onDismiss: (() => void) | null = null;
+let outsideListener: ((event: PointerEvent) => void) | null = null;
 
 export function initCommentPopup() {
   if (styleEl) return;
@@ -76,9 +78,10 @@ export function initCommentPopup() {
   document.head.appendChild(styleEl);
 }
 
-export function showCommentPopup(target: HTMLElement, callback: CommentCallback) {
+export function showCommentPopup(target: HTMLElement, callback: CommentCallback, dismiss?: () => void) {
   hideCommentPopup();
   onConfirm = callback;
+  onDismiss = dismiss || null;
 
   popup = document.createElement("div");
   popup.id = "prism-design-comment-popup";
@@ -108,8 +111,18 @@ export function showCommentPopup(target: HTMLElement, callback: CommentCallback)
   });
 
   cancelBtn.addEventListener("click", () => {
+    onDismiss?.();
     hideCommentPopup();
   });
+
+  outsideListener = (event: PointerEvent) => {
+    if (popup?.contains(event.target as Node)) return;
+    onDismiss?.();
+    hideCommentPopup();
+  };
+  setTimeout(() => {
+    if (outsideListener) document.addEventListener("pointerdown", outsideListener, true);
+  }, 0);
 
   // Position near the target element
   const rect = target.getBoundingClientRect();
@@ -133,9 +146,12 @@ export function showCommentPopup(target: HTMLElement, callback: CommentCallback)
 }
 
 export function hideCommentPopup() {
+  if (outsideListener) document.removeEventListener("pointerdown", outsideListener, true);
+  outsideListener = null;
   popup?.remove();
   popup = null;
   onConfirm = null;
+  onDismiss = null;
 }
 
 export function destroyCommentPopup() {

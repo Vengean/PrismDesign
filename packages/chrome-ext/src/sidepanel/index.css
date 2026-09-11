@@ -80,7 +80,8 @@
   min-width: 0;
   max-width: 100%;
   font-size: 12px;
-  line-height: 1.6;
+  /* Inter/CJK fallback fonts carry more visual space below the baseline. */
+  line-height: 1.5;
   word-break: break-word;
   overflow-wrap: anywhere;
 }

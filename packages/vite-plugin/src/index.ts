@@ -15,6 +15,8 @@ export interface PrismDesignOptions {
   agentType?: "claude" | "claude-sub" | "openai" | "codex" | "glm";
   /** Disable auto-starting agent (if you run it manually) */
   agentAutoStart?: boolean;
+  /** Require the Agent's random startup token. Default: true. */
+  agentAccessToken?: boolean;
   /** Agent URL override (skips auto-start, connects to existing agent) */
   agentUrl?: string;
   /** Provider API key. Not used by the Codex subscription-login provider. */
@@ -146,6 +148,7 @@ export default function prismDesign(options: PrismDesignOptions = {}): Plugin {
     agentPort: preferredPort = 9527,
     agentType = "claude",
     agentAutoStart = true,
+    agentAccessToken = true,
     agentUrl: agentUrlOverride,
     apiKey,
     baseUrl,
@@ -236,7 +239,9 @@ export default function prismDesign(options: PrismDesignOptions = {}): Plugin {
             if (model) agentEnv.ANTHROPIC_MODEL = model;
           }
 
-          agentProcess = spawn("node", [agentCli, "start", "--port", String(preferredPort), "--project", projectRoot, "--provider", agentType], {
+          const agentArgs = [agentCli, "start", "--port", String(preferredPort), "--project", projectRoot, "--provider", agentType];
+          if (!agentAccessToken) agentArgs.push("--no-access-token");
+          agentProcess = spawn("node", agentArgs, {
             stdio: ["ignore", "pipe", "pipe"],
             env: agentEnv,
           });
@@ -300,8 +305,9 @@ export default function prismDesign(options: PrismDesignOptions = {}): Plugin {
 
     transformIndexHtml() {
       if (!widget) return [];
-      const initOptions: Record<string, string> = {};
+      const initOptions: Record<string, string | boolean> = {};
       if (agentToken) initOptions.agentToken = agentToken;
+      if (!agentAccessToken) initOptions.accessTokenRequired = false;
       if (position !== "bottom-right") initOptions.position = position;
       if (locale) initOptions.locale = locale;
 

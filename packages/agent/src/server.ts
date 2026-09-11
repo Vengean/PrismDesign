@@ -21,7 +21,9 @@ function getClientId(req: express.Request): string {
 export async function startServer(
   projectRoot: string,
   port: number,
+  options: { accessTokenRequired?: boolean } = {},
 ) {
+  const accessTokenRequired = options.accessTokenRequired !== false;
   const accessToken = randomBytes(32).toString("hex");
   let testRuns: TestRunStore;
   const allowedOrigins = (process.env.PRISM_BROWSER_ALLOWED_ORIGINS || "")
@@ -62,6 +64,7 @@ export async function startServer(
   const app = express();
   app.use(cors());
   app.use((req, res, next) => {
+    if (!accessTokenRequired) return next();
     // Agent-side MCP tools already use a separate, short-lived capability token.
     if (req.path.startsWith("/api/agent/") || req.path === "/api/browser/current/command") return next();
     if (req.header("authorization") !== `Bearer ${accessToken}`) {
@@ -105,7 +108,7 @@ export async function startServer(
   wss.on("connection", (ws, request) => {
     const url = new URL(request.url || "/ws", "http://localhost");
     const protocols = String(request.headers["sec-websocket-protocol"] || "").split(",").map((value) => value.trim());
-    if (!protocols.includes(accessToken)) {
+    if (accessTokenRequired && !protocols.includes(accessToken)) {
       ws.close(1008, "Invalid or missing Prism access token");
       return;
     }
@@ -229,11 +232,15 @@ export async function startServer(
     }
     if (event.type === "tool.completed") {
       const safeError = event.error?.replace(/(authorization|token|password|cookie)(["'=:\s]+)[^\s,&}]+/gi, "$1$2[REDACTED]");
-      testRuns?.finishStep(event.runId, {
+      const updatedRun = testRuns?.finishStep(event.runId, {
         id: event.toolCallId,
         success: event.success,
         error: event.success ? undefined : safeError || `${event.tool} 执行失败`,
       });
+      const step = updatedRun?.steps.find((item) => item.id === event.toolCallId);
+      if (step) {
+        console.log(`[TestPerformance] run=${updatedRun.id} phase=tool tool=${JSON.stringify(step.tool)} durationMs=${step.durationMs || 0} success=${event.success}`);
+      }
     }
     if (process.env.PRISM_AGENT_DEBUG === "1" || process.env.PRISM_AGENT_DEBUG_EVENTS === "1") {
       const detail = event.type === "message.delta"
@@ -340,7 +347,8 @@ export async function startServer(
     activeRuns.set(runId, controller);
     activeRunClients.set(runId, clientId);
     activeAgentTurns.set(capabilityToken, { clientId, runId, pageUrl: verification.baseUrl, browserInteraction: true, automatedTesting: true });
-    createTestRun(verification, runId, () => controller.abort());
+    const testRun = createTestRun(verification, runId, () => controller.abort());
+    console.log(`[TestPerformance] run=${testRun.id} phase=start verification=${verificationId}`);
     emitAgentEvent(clientId, { type: "run.started", runId });
     const prompt = [
       "The user confirmed that real browser verification should start.",
@@ -388,7 +396,11 @@ export async function startServer(
       emitAgentEvent(clientId, { type: "run.failed", runId, error: { message } });
       throw error;
     } finally {
-      testRuns.recordAgentDuration(runId, performance.now() - agentStartedAt);
+      const measuredRun = testRuns.recordAgentDuration(runId, performance.now() - agentStartedAt);
+      if (measuredRun) {
+        const metrics = measuredRun.performance;
+        console.log(`[TestPerformance] run=${measuredRun.id} phase=summary status=${measuredRun.status} totalMs=${metrics.totalDurationMs} agentMs=${metrics.agentDurationMs} toolMs=${metrics.toolDurationMs} toolCalls=${metrics.toolCallCount} browserMs=${metrics.browserDurationMs} browserCommands=${metrics.browserCommandCount} cleanupMs=${metrics.cleanupDurationMs}`);
+      }
       activeRuns.delete(runId);
       activeRunClients.delete(runId);
       activeAgentTurns.delete(capabilityToken);
@@ -404,6 +416,7 @@ export async function startServer(
       agentType: provider.name,
       agent: { provider: provider.name, model: provider.model, capabilities: provider.capabilities },
       project: { root: projectRoot },
+      accessTokenRequired,
     });
   });
 
@@ -791,7 +804,15 @@ export async function startServer(
       try {
         rawResult = await executeCurrentTab(pageUrl, command, clientIds[0]);
       } finally {
-        if (running.length === 1) testRuns.recordBrowserCommand(running[0].id, String(command.action || "unknown"), performance.now() - browserStartedAt);
+        if (running.length === 1) {
+          const action = String(command.action || "unknown");
+          const durationMs = Math.round(performance.now() - browserStartedAt);
+          const measuredRun = testRuns.recordBrowserCommand(running[0].id, action, durationMs);
+          const metric = measuredRun?.performance.browserCommands[action];
+          if (measuredRun && metric) {
+            console.log(`[TestPerformance] run=${measuredRun.id} phase=browser action=${JSON.stringify(action)} durationMs=${durationMs} count=${metric.count}`);
+          }
+        }
       }
       if (command.action === "evidence" && running.length !== 1) throw new Error("A running verification is required to collect test evidence");
       if (command.action === "evidence" && running.length === 1) {
@@ -910,7 +931,7 @@ export async function startServer(
   // before the first chat thread is created so MCP calls reach this server
   // when the requested port was already occupied and auto-incremented.
   process.env.PRISM_AGENT_URL = `http://127.0.0.1:${actualPort}`;
-  console.log(`[Server] 访问 Token: ${accessToken}`);
+  console.log(accessTokenRequired ? `[Server] 访问 Token: ${accessToken}` : "[Server] Token 鉴权已关闭");
   console.log(`__PRISM_AGENT_TOKEN__=${accessToken}`);
 
   function shutdown() {

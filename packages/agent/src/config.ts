@@ -7,6 +7,8 @@ import { pathToFileURL } from "node:url";
  * All fields are optional — CLI args and env vars fill in defaults.
  */
 export interface PrismConfig {
+  /** Require the random startup token for HTTP and WebSocket clients. Defaults to true. */
+  accessTokenRequired?: boolean;
   /** Agent provider. `agentType` is kept for backwards compatibility. */
   provider?: "claude" | "claude-sub" | "openai" | "codex" | "glm";
   agentType?: "claude" | "claude-sub" | "openai" | "codex" | "glm";

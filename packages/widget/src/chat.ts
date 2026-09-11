@@ -418,7 +418,7 @@ export function createChat(
         tagWrap.appendChild(createCommentCountTag(msg.comments, false));
         content.appendChild(tagWrap);
       }
-      if (msg.role === "ai" && msg.verification) {
+      if (msg.role === "ai" && msg.verification && ["passed", "failed", "inconclusive"].includes(msg.verification.status || "")) {
         const anchor = document.createElement("div");
         anchor.className = "verification-anchor";
         const tag = document.createElement("button");
@@ -454,49 +454,6 @@ export function createChat(
           }
           card.appendChild(checks);
         }
-        const actions = document.createElement("div");
-        actions.className = "verification-actions";
-        const start = document.createElement("button");
-        start.className = "verification-start-btn";
-        const isStarting = msg.verification.status === "preparing" || msg.verification.status === "running";
-        const canRetry = ["failed", "passed", "inconclusive"].includes(msg.verification.status || "");
-        start.textContent = isStarting ? "测试运行中…" : canRetry ? "重新测试" : "开始";
-        start.disabled = isStarting;
-        const runVerification = async (always = false) => {
-          if (!msg.verification) return;
-          if (always) localStorage.setItem("prism-always-execute-tests", "true");
-          msg.verification.status = "running";
-          saveHistory();
-          render();
-          try {
-            const result = await agentClient.startVerification(msg.verification);
-            msg.testPerformance = result.testRun?.performance;
-            const verificationMessage = result.agentResult?.message || "";
-            msg.verification.status = /VERIFICATION_RESULT:\s*PASSED/i.test(verificationMessage)
-              ? "passed"
-              : /VERIFICATION_RESULT:\s*FAILED/i.test(verificationMessage) ? "failed" : "inconclusive";
-            messages.push({
-              role: "ai",
-              content: formatVerificationMessage(result.agentResult?.message || `浏览器测试已启动，已打开 ${result.observation?.url || "当前页面"}。当前 Agent provider 尚未接入浏览器工具适配器。`),
-              timestamp: Date.now(),
-            });
-          } catch (error) {
-            msg.verification.status = "failed";
-            messages.push({ role: "ai", content: `浏览器测试启动失败：${error instanceof Error ? error.message : String(error)}`, timestamp: Date.now() });
-          }
-          saveHistory();
-          render();
-        };
-        start.onclick = () => runVerification(false);
-        actions.appendChild(start);
-        if (!isComplete) {
-          const always = document.createElement("button");
-          always.className = "verification-always-btn";
-          always.textContent = "始终执行";
-          always.onclick = () => runVerification(true);
-          actions.appendChild(always);
-        }
-        card.appendChild(actions);
         let closeTimer: ReturnType<typeof setTimeout> | null = null;
         const canHover = () => window.matchMedia("(hover: hover) and (pointer: fine)").matches;
         const open = () => { if (closeTimer) clearTimeout(closeTimer); card.classList.add("open"); };

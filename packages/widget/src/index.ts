@@ -10,6 +10,8 @@ export interface PrismWidgetOptions {
   agentUrl?: string;
   /** Access token printed by the Agent at startup. */
   agentToken?: string;
+  /** Set false when the target Agent was started without token authentication. */
+  accessTokenRequired?: boolean;
   /** FAB position. Default: "bottom-right" */
   position?: "bottom-right" | "bottom-left";
   /** Override locale auto-detection */
@@ -121,7 +123,7 @@ export function init(options?: PrismWidgetOptions) {
     }
     if (options?.agentUrl) {
       // Preconfigured URL — show auto-reconnect, not manual form
-      if (options.agentToken) mountAutoConnect(options.agentUrl, options.agentToken);
+      if (options.agentToken || options.accessTokenRequired === false) mountAutoConnect(options.agentUrl, options.agentToken || "");
       else mountConnectForm();
     } else {
       clearSavedAgentUrl();
@@ -130,14 +132,14 @@ export function init(options?: PrismWidgetOptions) {
   }
 
   // ── Init flow ──
-  if (options?.agentUrl && options.agentToken) {
+  if (options?.agentUrl && (options.agentToken || options.accessTokenRequired === false)) {
     // Preconfigured URL — check connection first, auto-retry if unavailable
-    mountAutoConnect(options.agentUrl, options.agentToken);
+    mountAutoConnect(options.agentUrl, options.agentToken || "");
   } else {
     // Try saved URL
     const savedUrl = getSavedAgentUrl();
     const savedToken = getSavedAgentToken();
-    if (savedUrl && savedToken) {
+    if (savedUrl && savedToken !== null) {
       AgentClient.checkConnection(savedUrl, savedToken).then((ok) => {
         if (ok) {
           const client = new AgentClient(savedUrl, savedToken);
@@ -157,9 +159,9 @@ if (typeof window !== "undefined") {
   const cfg = (window as any).__PRISM_DESIGN__;
   if (cfg?.agentUrl) {
     if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", () => init({ agentUrl: cfg.agentUrl, agentToken: cfg.agentToken }));
+      document.addEventListener("DOMContentLoaded", () => init({ agentUrl: cfg.agentUrl, agentToken: cfg.agentToken, accessTokenRequired: cfg.accessTokenRequired }));
     } else {
-      init({ agentUrl: cfg.agentUrl, agentToken: cfg.agentToken });
+      init({ agentUrl: cfg.agentUrl, agentToken: cfg.agentToken, accessTokenRequired: cfg.accessTokenRequired });
     }
   }
 }

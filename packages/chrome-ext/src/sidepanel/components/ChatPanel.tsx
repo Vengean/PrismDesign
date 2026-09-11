@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Send, Trash2, MessageSquare, MessageSquareText, Plug, Loader2, AlertCircle, CheckCircle2, Circle, XCircle, ChevronDown, Paperclip, X, Pencil, FlaskConical } from "lucide-react";
+import { Send, Trash2, MessageSquare, MessageSquareText, Plug, Loader2, AlertCircle, CheckCircle2, Circle, XCircle, ChevronDown, Paperclip, X, Pencil, FlaskConical, Copy } from "lucide-react";
 import { t } from "../../shared/i18n.js";
 import type { AgentPermissions, ChatMessage, CommentAnnotation, ElementSelection, TestRunInfo } from "../../shared/types.js";
 import Markdown from "react-markdown";
@@ -39,9 +39,12 @@ interface ChatPanelProps {
   onEditComment: (index: number, comment: string) => void;
   onRemoveComment: (index: number) => void;
   onCommentsSent: () => void;
+  commentMode: boolean;
+  onToggleCommentMode: () => void;
+  onRestoreMessage: (message: string, comments: CommentAnnotation[]) => void;
 }
 
-export function ChatPanel({ agent, chat, selection, comments, onEditComment, onRemoveComment, onCommentsSent }: ChatPanelProps) {
+export function ChatPanel({ agent, chat, selection, comments, onEditComment, onRemoveComment, onCommentsSent, commentMode, onToggleCommentMode, onRestoreMessage }: ChatPanelProps) {
   if (!agent.connected && !agent.connecting) {
     return <ConnectionForm agent={agent} />;
   }
@@ -53,7 +56,7 @@ export function ChatPanel({ agent, chat, selection, comments, onEditComment, onR
       </div>
     );
   }
-  return <ChatView agent={agent} chat={chat} selection={selection} comments={comments} onEditComment={onEditComment} onRemoveComment={onRemoveComment} onCommentsSent={onCommentsSent} />;
+  return <ChatView agent={agent} chat={chat} selection={selection} comments={comments} onEditComment={onEditComment} onRemoveComment={onRemoveComment} onCommentsSent={onCommentsSent} commentMode={commentMode} onToggleCommentMode={onToggleCommentMode} onRestoreMessage={onRestoreMessage} />;
 }
 
 function ConnectionForm({ agent }: { agent: AgentState }) {
@@ -84,7 +87,7 @@ function ConnectionForm({ agent }: { agent: AgentState }) {
           onChange={(e) => { setToken(e.target.value); agent.setAgentToken(e.target.value); }}
           onKeyDown={(e) => { if (e.key === "Enter") connect(); }}
         />
-        <Button className="w-full" onClick={connect} disabled={!url.trim() || !token.trim()}>
+        <Button className="w-full" onClick={connect} disabled={!url.trim()}>
           <Plug className="h-3.5 w-3.5 mr-1.5" />
           {t("agent.connect")}
         </Button>
@@ -185,14 +188,14 @@ function CommentTag({ comments, editable = false, align = "left", onEdit, onRemo
     }, 350);
   };
   return <div
-    className="comment-tag-anchor relative inline-flex"
+    className="comment-tag-anchor relative inline-flex max-w-full"
     onMouseEnter={() => { if (supportsHover()) { cancelClose(); setOpen(true); } }}
     onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}
   >
-    <button type="button" className="inline-flex h-6 w-max shrink-0 items-center gap-1 whitespace-nowrap rounded-full border bg-background px-2 text-[11px] text-foreground shadow-sm hover:bg-muted" onClick={(event) => { event.stopPropagation(); setOpen((value) => supportsHover() ? true : !value); }} aria-expanded={open}>
+    <button type="button" className="inline-flex h-6 max-w-full items-center gap-1 overflow-hidden text-ellipsis whitespace-nowrap rounded-full border bg-background px-2 text-[11px] text-foreground shadow-sm hover:bg-muted" onClick={(event) => { event.stopPropagation(); setOpen((value) => supportsHover() ? true : !value); }} aria-expanded={open}>
       <MessageSquareText className="h-3 w-3 text-muted-foreground" />{comments.length} 条评论
     </button>
-    {open && <div className={`comment-popover absolute bottom-[calc(100%+6px)] z-50 w-[min(320px,calc(100vw-32px))] overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-lg ${align === "right" ? "right-0" : "left-0"}`} onMouseEnter={cancelClose} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
+    {open && <div className={`comment-popover absolute bottom-[calc(100%+6px)] z-50 max-h-[min(70vh,520px)] w-[min(320px,calc(100vw-32px))] overflow-x-hidden overflow-y-auto overscroll-contain rounded-xl border bg-popover text-popover-foreground shadow-lg ${align === "right" ? "right-0" : "left-0"}`} onMouseEnter={cancelClose} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
       {comments.map((item, index) => <div key={`${item.element.domPath}-${index}`} className="group/comment relative border-b px-3 py-2.5 last:border-0">
         <div className="pr-12 text-[10px] text-muted-foreground">{index + 1}.</div>
         <div className="mt-0.5 text-[10px] text-muted-foreground">节点信息：</div>
@@ -283,7 +286,7 @@ function EditPromptTag({ onEdit, onAlways }: { onEdit: () => void; onAlways: () 
   </div>;
 }
 
-function ChatView({ agent, chat, selection, comments, onEditComment, onRemoveComment, onCommentsSent }: ChatPanelProps) {
+function ChatView({ agent, chat, selection, comments, onEditComment, onRemoveComment, onCommentsSent, commentMode, onToggleCommentMode, onRestoreMessage }: ChatPanelProps) {
   const { messages, sending, sendMessage, startVerification, cancelCurrent, clearHistory, deleteMessage } = chat;
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<Array<{ id: string; name: string; mimeType: string; size: number; uploading?: boolean; error?: string }>>([]);
@@ -325,6 +328,11 @@ function ChatView({ agent, chat, selection, comments, onEditComment, onRemoveCom
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleSend(); }
   };
 
+  const editMessage = (msg: ChatMessage) => {
+    setInput(msg.content);
+    onRestoreMessage(msg.content, msg.comments || []);
+  };
+
   return (
     <div className="flex flex-col h-full">
       <div ref={scrollRef} className="flex-1 overflow-x-hidden overflow-y-auto p-3 space-y-3 min-h-0">
@@ -340,21 +348,13 @@ function ChatView({ agent, chat, selection, comments, onEditComment, onRemoveCom
               {msg.role === "ai" && (
                 <div className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[9px] font-bold shrink-0 mt-0.5">AI</div>
               )}
-              <div className={`relative min-w-0 max-w-[85%] space-y-2 px-3 py-2 rounded-xl text-xs leading-relaxed ${msg.verification || (msg.role === "user" && msg.comments?.length) ? "mb-7" : ""} ${msg.role === "user" ? "bg-blue-100 text-gray-900 rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}>
-                {!msg.pending && <button
-                  type="button"
-                  title="删除此消息"
-                  aria-label="删除此消息"
-                  className="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full border bg-background text-muted-foreground opacity-0 shadow-sm transition-opacity group-hover:opacity-100 focus:opacity-100 [@media(hover:none)]:opacity-100 hover:text-destructive"
-                  onClick={() => deleteMessage(i)}
-                >
-                  <Trash2 className="h-3 w-3" />
-                </button>}
+              <div className={`relative min-w-0 max-w-[85%] space-y-2 px-3 pt-2 pb-0.5 rounded-xl text-xs leading-relaxed ${!msg.pending ? "mb-6" : ""} ${msg.verification && (msg.testRun || ["passed", "failed", "inconclusive"].includes(msg.verification.status || "")) ? "mb-7" : ""} ${msg.role === "user" && msg.comments?.length ? "mt-7" : ""} ${msg.role === "user" ? "bg-blue-100 text-gray-900 rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}>
+                {msg.role === "user" && !!msg.comments?.length && <div className="absolute bottom-full right-0 mb-1 max-w-[calc(100vw-32px)]"><CommentTag comments={msg.comments} align="right" /></div>}
                 {!!msg.attachments?.length && <div className="flex flex-wrap gap-1">{msg.attachments.map((file) => <span key={file.id} className="rounded border bg-background/70 px-1.5 py-0.5">📄 {file.name}</span>)}</div>}
                 {msg.content.startsWith("⏳") ? (
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex min-w-0 max-w-full items-start gap-1.5 overflow-hidden">
                     <Loader2 className="h-3 w-3 animate-spin text-primary shrink-0" />
-                    <span className="text-muted-foreground">{msg.content.slice(2)}</span>
+                    <span className="min-w-0 flex-1 whitespace-pre-wrap break-all text-muted-foreground">{msg.content.slice(2)}</span>
                   </div>
                 ) : (
                   <div className="chat-markdown">
@@ -370,7 +370,11 @@ function ChatView({ agent, chat, selection, comments, onEditComment, onRemoveCom
                   <TestResultTag verification={msg.verification} run={msg.testRun} onRetest={() => startVerification(msg.verification!)} />
                   {msg.verification.status === "failed" && msg.testRun && <EditPromptTag onEdit={() => chat.fixVerification(msg.verification!, msg.testRun)} onAlways={async () => { await agent.updatePermission("alwaysAllowEdits", true); chat.fixVerification(msg.verification!, msg.testRun); }} />}
                 </div>}
-                {msg.role === "user" && !!msg.comments?.length && <div className="absolute right-0 top-full mt-1"><CommentTag comments={msg.comments} align="right" /></div>}
+                {!msg.pending && <div className="absolute right-0 top-full mt-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                  <button type="button" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-destructive" title="删除" aria-label="删除" onClick={() => deleteMessage(i)}><Trash2 className="h-3 w-3" /></button>
+                  <button type="button" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground" title="编辑" aria-label="编辑" onClick={() => { editMessage(msg); deleteMessage(i); }}><Pencil className="h-3 w-3" /></button>
+                  <button type="button" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground" title="复制正文" aria-label="复制正文" onClick={() => void navigator.clipboard.writeText(msg.content).catch(() => {})}><Copy className="h-3 w-3" /></button>
+                </div>}
               </div>
             </div>
           ))}
@@ -397,6 +401,7 @@ function ChatView({ agent, chat, selection, comments, onEditComment, onRemoveCom
           rows={3}
         />
         <div className="flex justify-end gap-1">
+          <Button size="sm" variant={commentMode ? "default" : "outline"} className="h-7 w-7 p-0" title={commentMode ? "退出评论模式" : "评论元素"} onClick={onToggleCommentMode} disabled={sending}><MessageSquareText className="h-3.5 w-3.5" /></Button>
           <Button size="sm" variant="outline" className="h-7 w-7 p-0" title="添加文件" onClick={() => fileInputRef.current?.click()} disabled={sending || attachments.length >= 5}><Paperclip className="h-3.5 w-3" /></Button>
           {sending && <Button size="sm" variant="destructive" className="h-7 text-xs px-2.5" onClick={cancelCurrent}>取消运行</Button>}
           {messages.length > 0 && (

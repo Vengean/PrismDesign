@@ -69,7 +69,7 @@ export function createConnectForm(
   async function tryConnect() {
     const url = input.value.trim().replace(/\/+$/, "");
     const token = tokenInput.value.trim();
-    if (!url || !token) return;
+    if (!url) return;
 
     connectBtn.disabled = true;
     connectBtn.textContent = t("connect.connecting");

@@ -66,6 +66,7 @@ Options:
   --model <name>         模型名称
   --provider <type>      Agent Provider: claude | claude-sub | openai | codex | glm
   --agent-type <type>    --provider 的兼容别名
+  --no-access-token      关闭 Agent Token 鉴权（默认启用）
 `);
     process.exit(0);
   }
@@ -112,7 +113,8 @@ Options:
   console.log("  PrismDesign Agent");
   console.log("=".repeat(50));
 
-  const { port: actualPort } = await startServer(projectRoot, port);
+  const accessTokenRequired = args.includes("--no-access-token") ? false : config.accessTokenRequired !== false;
+  const { port: actualPort } = await startServer(projectRoot, port, { accessTokenRequired });
 
   // Machine-readable marker for tooling (e.g. vite-plugin) to detect actual port
   console.log(`__PRISM_AGENT_PORT__=${actualPort}`);
@@ -121,6 +123,7 @@ Options:
   console.log(`  项目目录:  ${projectRoot}`);
   console.log(`  Agent:     ${agentType === "codex" ? "Codex SDK (ChatGPT login)" : agentType === "openai" ? "OpenAI Agents SDK" : agentType === "glm" ? "GLM (glm-acp-agent)" : "Claude Agent SDK"}`);
   console.log(`  模型:      ${modelName}`);
+  console.log(`  Token 鉴权: ${accessTokenRequired ? "启用" : "关闭"}`);
   const configuredBaseUrl = agentType === "openai" ? process.env.OPENAI_BASE_URL : process.env.ANTHROPIC_BASE_URL;
   if (configuredBaseUrl) {
     console.log(`  API 代理:  ${configuredBaseUrl}`);
