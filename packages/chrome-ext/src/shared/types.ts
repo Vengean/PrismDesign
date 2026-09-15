@@ -78,6 +78,8 @@ export interface ChatMessage {
   streamItemId?: string;
   attachments?: Array<{ id: string; name: string; mimeType: string; size: number }>;
   comments?: CommentAnnotation[];
+  /** Order of contextual entry chips as originally added by the user. */
+  contextOrder?: Array<"comments" | "attachments">;
 }
 
 export interface CommentAnnotation {

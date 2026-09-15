@@ -1,22 +1,17 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { ArrowLeft, LogOut } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { t } from "../shared/i18n.js";
 import type { PrismMessage } from "../shared/types.js";
 import { useAgent } from "./hooks/use-agent";
 import { useChat } from "./hooks/use-chat";
-import { useChanges } from "./hooks/use-changes";
-import { useElement } from "./hooks/use-element";
-import { useNavigator } from "./hooks/use-navigator";
 import { ChatPanel } from "./components/ChatPanel";
-import { Navigator } from "./components/Navigator";
 import { ChangesPanel } from "./components/ChangesPanel";
 import type { CommentAnnotation } from "../shared/types.js";
 
-type ViewType = "chat" | "navigator" | "changes";
+type ViewType = "chat" | "changes";
 
 const VIEW_TITLE_KEYS: Record<ViewType, string> = {
   chat: "view.chat",
-  navigator: "view.navigator",
   changes: "view.changes",
 };
 
@@ -28,17 +23,6 @@ export function App() {
   const [pendingComments, setPendingComments] = useState<CommentAnnotation[]>([]);
   const [connectionMenuOpen, setConnectionMenuOpen] = useState(false);
   const connectionMenuRef = useRef<HTMLDivElement>(null);
-  const { selection, clearSelection, highlightElement, unhighlightElement, selectElement } = useElement({
-    onSelected: () => {},
-    onDeselected: () => {},
-  });
-  const { tree, refreshTree } = useNavigator();
-  const changes = useChanges();
-
-  // Refresh tree when entering navigator view
-  useEffect(() => {
-    if (view === "navigator") refreshTree();
-  }, [view, refreshTree]);
 
   // Side panel lifecycle
   useEffect(() => {
@@ -82,8 +66,6 @@ export function App() {
       if (sender.tab) return;
       if (message.type === "OPEN_CHAT") {
         setView("chat");
-      } else if (message.type === "OPEN_NAVIGATOR") {
-        setView("navigator");
       } else if (message.type === "OPEN_CHANGES") {
         setView("changes");
       } else if (message.type === "COMMENT_TARGET_SELECTED") {
@@ -110,20 +92,23 @@ export function App() {
     return () => chrome.runtime.onMessage.removeListener(handler);
   }, []);
 
-  const handleBackToChat = useCallback(() => {
-    clearSelection();
-    setView("chat");
-    setCommentMode(false);
-    // Exit design mode and unhighlight on the page
-    chrome.runtime.sendMessage({ type: "DESIGN_MODE_OFF" }).catch(() => {});
-  }, [clearSelection]);
-
   const handleToggleCommentMode = useCallback(() => {
-    setCommentMode(true);
-    setView("navigator");
-    refreshTree();
-    chrome.runtime.sendMessage({ type: "START_COMMENT_MODE" }).catch(() => {});
-  }, [refreshTree]);
+    setCommentMode((active) => {
+      chrome.runtime.sendMessage({ type: active ? "STOP_COMMENT_MODE" : "START_COMMENT_MODE" }).catch(() => {});
+      return !active;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!commentMode) return;
+    const exitOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setCommentMode(false);
+      chrome.runtime.sendMessage({ type: "STOP_COMMENT_MODE" }).catch(() => {});
+    };
+    document.addEventListener("keydown", exitOnEscape);
+    return () => document.removeEventListener("keydown", exitOnEscape);
+  }, [commentMode]);
 
   const handleRestoreMessage = useCallback((_message: string, restoredComments: CommentAnnotation[]) => {
     setPendingComments(restoredComments);
@@ -142,14 +127,6 @@ export function App() {
     <div className="flex flex-col h-screen">
       {/* Header */}
       <div className="flex items-center gap-1.5 px-2 py-1.5 border-b bg-card">
-        {view === "navigator" && (
-          <button
-            className="flex items-center text-xs text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded hover:bg-muted"
-            onClick={handleBackToChat}
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-          </button>
-        )}
         <span className="font-semibold text-xs">{t(VIEW_TITLE_KEYS[view])}</span>
         {view === "chat" && (
           <div ref={connectionMenuRef} className="relative ml-auto">
@@ -183,10 +160,7 @@ export function App() {
 
       {/* Content */}
       <div className="flex-1 min-h-0">
-        {view === "chat" && <ChatPanel agent={agent} chat={chat} selection={selection} comments={pendingComments} onEditComment={handleEditComment} onRemoveComment={handleRemoveComment} onCommentsSent={() => setPendingComments([])} commentMode={commentMode} onToggleCommentMode={handleToggleCommentMode} onRestoreMessage={handleRestoreMessage} />}
-        {view === "navigator" && (
-          <Navigator selection={selection} tree={tree} refreshTree={refreshTree} highlightElement={highlightElement} unhighlightElement={unhighlightElement} selectElement={selectElement} />
-        )}
+        {view === "chat" && <ChatPanel agent={agent} chat={chat} selection={null} comments={pendingComments} onEditComment={handleEditComment} onRemoveComment={handleRemoveComment} onCommentsSent={() => setPendingComments([])} commentMode={commentMode} onToggleCommentMode={handleToggleCommentMode} onRestoreMessage={handleRestoreMessage} />}
         {view === "changes" && <ChangesPanel />}
       </div>
     </div>

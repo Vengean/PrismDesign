@@ -172,10 +172,10 @@ export function useChat() {
     return () => chrome.runtime.onMessage.removeListener(handler);
   }, [applyAgentWorking, applyTestRun]);
 
-  const sendMessage = useCallback(async (text: string, attachments: ChatMessage["attachments"] = [], comments: CommentAnnotation[] = [], agentText?: string) => {
+  const sendMessage = useCallback(async (text: string, attachments: ChatMessage["attachments"] = [], comments: CommentAnnotation[] = [], agentText?: string, contextOrder?: ChatMessage["contextOrder"]) => {
     if ((!text.trim() && !attachments.length && !comments.length) || sending) return;
 
-    const userMsg: ChatMessage = { role: "user", content: text, timestamp: Date.now(), attachments, comments: comments.length ? comments : undefined };
+    const userMsg: ChatMessage = { role: "user", content: text, timestamp: Date.now(), attachments, comments: comments.length ? comments : undefined, contextOrder };
     const thinkingMsg: ChatMessage = { role: "ai", content: `⏳ ${t("chat.thinking")}`, timestamp: Date.now(), pending: true };
     setMessages((prev) => [...prev, userMsg, thinkingMsg]);
     setSending(true);

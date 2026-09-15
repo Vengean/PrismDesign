@@ -83,7 +83,7 @@ export async function connectAgent(
       if (state.agentUrl === url) {
         connectAgent(state, url, token, onEvent, onBrowserCommand, pageUrl)
           .then((project) => onEvent("connection_restored", { project }))
-          .catch(() => {});
+          .catch((error) => onEvent("connection_reconnect_failed", { error: error instanceof Error ? error.message : String(error) }));
       }
     }, 3000);
   };

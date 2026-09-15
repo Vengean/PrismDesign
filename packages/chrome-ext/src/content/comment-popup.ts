@@ -102,6 +102,14 @@ export function showCommentPopup(target: HTMLElement, callback: CommentCallback,
     confirmBtn.disabled = !textarea.value.trim();
   });
 
+  textarea.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    onDismiss?.();
+    hideCommentPopup();
+  });
+
   confirmBtn.addEventListener("click", () => {
     const text = textarea.value.trim();
     if (text) {

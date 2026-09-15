@@ -53,13 +53,14 @@ export function useAgent() {
 
   // Listen for agent events from background
   const connectingRef = useRef(false);
+  const connectedRef = useRef(false);
   useEffect(() => {
     const handler = (message: PrismMessage) => {
       switch (message.type) {
         case "AGENT_STATUS":
           // Auto-connect "connecting" broadcast
           if (message.payload.connecting) {
-            setConnecting(true);
+            if (!connectedRef.current) setConnecting(true);
             connectingRef.current = true;
             setError(null);
             if (message.payload.agentUrl) setAgentUrl(message.payload.agentUrl);
@@ -68,6 +69,7 @@ export function useAgent() {
           // Ignore "disconnected" broadcasts while we're actively connecting
           // (e.g. from tab activation race) — unless it carries an error
           if (!message.payload.connected && connectingRef.current && !message.payload.error) break;
+          connectedRef.current = message.payload.connected;
           setConnected(message.payload.connected);
           setConnecting(false);
           connectingRef.current = false;
@@ -95,11 +97,13 @@ export function useAgent() {
       const result = await chrome.runtime.sendMessage({ type: "AGENT_CONNECT", payload: { url, token } }) as any;
       if (!result?.success) {
         setConnecting(false);
+        connectedRef.current = false;
         setConnected(false);
         setError(result?.error || t("agent.connectFailed"));
       }
     } catch {
       setConnecting(false);
+      connectedRef.current = false;
       setConnected(false);
       setError(t("agent.connectFailed"));
     }
@@ -107,6 +111,7 @@ export function useAgent() {
 
   const disconnect = useCallback(async () => {
     await chrome.runtime.sendMessage({ type: "AGENT_DISCONNECT" });
+    connectedRef.current = false;
     setConnected(false);
     setProject(null);
   }, []);

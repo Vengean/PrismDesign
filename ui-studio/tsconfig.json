@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "types": ["chrome"],
+    "typeRoots": ["../packages/chrome-ext/node_modules/@types", "./node_modules/@types"],
+    "paths": {
+      "@prism-design/ui": ["../packages/ui/src/index.tsx"],
+      "@/*": ["../packages/chrome-ext/src/sidepanel/*"]
+    }
+  },
+  "include": ["src"]
+}

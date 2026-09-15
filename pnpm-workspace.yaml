@@ -2,6 +2,7 @@ packages:
   - packages/*
   - demo
   - demo-next
+  - ui-studio
 
 allowBuilds:
   better-sqlite3: true

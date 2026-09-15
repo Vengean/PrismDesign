@@ -7,6 +7,7 @@
     "dev": "pnpm --filter demo dev",
     "dev:agent": "pnpm --filter prism-design-agent dev",
     "dev:demo": "pnpm --filter demo dev",
+    "dev:ui": "pnpm --parallel --filter @prism-design/ui-studio --filter prism-design-agent run dev:ui",
     "dev:next": "pnpm --filter demo-next dev",
     "build:agent": "pnpm --filter prism-design-agent build",
     "build:chrome-ext": "pnpm --filter @prism-design/chrome-ext build",

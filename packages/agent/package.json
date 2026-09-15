@@ -19,6 +19,7 @@
   ],
   "scripts": {
     "dev": "tsx watch src/cli.ts start",
+    "dev:ui": "tsx watch src/cli.ts start --project ../..",
     "build": "tsup",
     "start": "node dist/cli.js start"
   },

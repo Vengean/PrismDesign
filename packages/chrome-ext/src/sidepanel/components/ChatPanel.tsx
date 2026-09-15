@@ -1,4 +1,5 @@
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useLayoutEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Send, Trash2, MessageSquare, MessageSquareText, Plug, Loader2, AlertCircle, CheckCircle2, Circle, XCircle, ChevronDown, Paperclip, X, Pencil, FlaskConical, Copy } from "lucide-react";
@@ -23,7 +24,7 @@ interface AgentState {
 interface ChatState {
   messages: ChatMessage[];
   sending: boolean;
-  sendMessage: (text: string, attachments?: ChatMessage["attachments"], comments?: CommentAnnotation[], agentText?: string) => void;
+  sendMessage: (text: string, attachments?: ChatMessage["attachments"], comments?: CommentAnnotation[], agentText?: string, contextOrder?: ChatMessage["contextOrder"]) => void;
   startVerification: (verification: NonNullable<ChatMessage["verification"]>) => void;
   fixVerification: (verification: NonNullable<ChatMessage["verification"]>, testRun?: TestRunInfo) => void;
   cancelCurrent: () => void;
@@ -42,6 +43,39 @@ interface ChatPanelProps {
   commentMode: boolean;
   onToggleCommentMode: () => void;
   onRestoreMessage: (message: string, comments: CommentAnnotation[]) => void;
+}
+
+function FloatingPopover({ anchor, align = "left", className = "", children }: { anchor: HTMLElement | null; align?: "left" | "right"; className?: string; children: React.ReactNode }) {
+  const floatingRef = useRef<HTMLDivElement>(null);
+  const [style, setStyle] = useState<React.CSSProperties>({ visibility: "hidden" });
+  useLayoutEffect(() => {
+    const update = () => {
+      const floating = floatingRef.current;
+      const boundary = anchor?.closest<HTMLElement>("[data-chat-root]")?.querySelector<HTMLElement>("[data-chat-viewport]");
+      if (!anchor || !floating || !boundary) return;
+      const trigger = anchor.getBoundingClientRect();
+      const viewport = boundary.getBoundingClientRect();
+      const margin = 8; const gap = 6;
+      const availableBelow = viewport.bottom - trigger.bottom - margin - gap;
+      const availableAbove = trigger.top - viewport.top - margin - gap;
+      const wantedHeight = Math.min(floating.scrollHeight, viewport.height - margin * 2);
+      const openDown = availableBelow >= Math.min(wantedHeight, 220) || availableBelow >= availableAbove;
+      const maxHeight = Math.max(0, openDown ? availableBelow : availableAbove);
+      const width = floating.offsetWidth;
+      const desiredLeft = align === "right" ? trigger.right - width : trigger.left;
+      const screenLeft = Math.max(viewport.left + margin, Math.min(desiredLeft, viewport.right - width - margin));
+      const screenTop = openDown ? trigger.bottom + gap : Math.max(viewport.top + margin, trigger.top - Math.min(wantedHeight, maxHeight) - gap);
+      setStyle({ position: "absolute", left: screenLeft - viewport.left, top: screenTop - viewport.top, maxHeight, visibility: "visible" });
+    };
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => { window.removeEventListener("resize", update); window.removeEventListener("scroll", update, true); };
+  }, [anchor, align]);
+  const boundary = anchor?.closest<HTMLElement>("[data-chat-root]")?.querySelector<HTMLElement>("[data-chat-viewport]");
+  const overlay = boundary?.querySelector<HTMLElement>("[data-chat-overlay]");
+  if (!overlay) return null;
+  return createPortal(<div ref={floatingRef} style={style} className={`z-[100] overflow-y-auto overscroll-contain ${className}`}>{children}</div>, overlay);
 }
 
 export function ChatPanel({ agent, chat, selection, comments, onEditComment, onRemoveComment, onCommentsSent, commentMode, onToggleCommentMode, onRestoreMessage }: ChatPanelProps) {
@@ -168,6 +202,7 @@ function formatCommentsForAgent(comments: CommentAnnotation[]) {
 
 function CommentTag({ comments, editable = false, align = "left", onEdit, onRemove }: { comments: CommentAnnotation[]; editable?: boolean; align?: "left" | "right"; onEdit?: (index: number, value: string) => void; onRemove?: (index: number) => void }) {
   const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState<number | null>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => {
@@ -187,7 +222,7 @@ function CommentTag({ comments, editable = false, align = "left", onEdit, onRemo
       closeTimerRef.current = null;
     }, 350);
   };
-  return <div
+  return <div ref={anchorRef}
     className="comment-tag-anchor relative inline-flex max-w-full"
     onMouseEnter={() => { if (supportsHover()) { cancelClose(); setOpen(true); } }}
     onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}
@@ -195,7 +230,7 @@ function CommentTag({ comments, editable = false, align = "left", onEdit, onRemo
     <button type="button" className="inline-flex h-6 max-w-full items-center gap-1 overflow-hidden text-ellipsis whitespace-nowrap rounded-full border bg-background px-2 text-[11px] text-foreground shadow-sm hover:bg-muted" onClick={(event) => { event.stopPropagation(); setOpen((value) => supportsHover() ? true : !value); }} aria-expanded={open}>
       <MessageSquareText className="h-3 w-3 text-muted-foreground" />{comments.length} 条评论
     </button>
-    {open && <div className={`comment-popover absolute bottom-[calc(100%+6px)] z-50 max-h-[min(70vh,520px)] w-[min(320px,calc(100vw-32px))] overflow-x-hidden overflow-y-auto overscroll-contain rounded-xl border bg-popover text-popover-foreground shadow-lg ${align === "right" ? "right-0" : "left-0"}`} onMouseEnter={cancelClose} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
+    {open && <FloatingPopover anchor={anchorRef.current} align={align} className="comment-popover w-[min(320px,calc(100vw-16px))] overflow-x-hidden rounded-xl border bg-popover text-popover-foreground shadow-lg" ><div onMouseEnter={cancelClose} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
       {comments.map((item, index) => <div key={`${item.element.domPath}-${index}`} className="group/comment relative border-b px-3 py-2.5 last:border-0">
         <div className="pr-12 text-[10px] text-muted-foreground">{index + 1}.</div>
         <div className="mt-0.5 text-[10px] text-muted-foreground">节点信息：</div>
@@ -213,22 +248,45 @@ function CommentTag({ comments, editable = false, align = "left", onEdit, onRemo
           <button type="button" className="rounded p-1 hover:bg-destructive/10 hover:text-destructive" title="删除评论" onClick={() => onRemove?.(index)}><X className="h-3 w-3" /></button>
         </div>}
       </div>)}
-    </div>}
+    </div></FloatingPopover>}
   </div>;
 }
 
-function TestPromptTag({ verification, onStart, onAlways }: { verification: NonNullable<ChatMessage["verification"]>; onStart: () => void; onAlways: () => void }) {
+type AttachmentItem = { id: string; name: string; mimeType: string; size: number; uploading?: boolean; error?: string };
+function AttachmentTag({ files, editable = false, align = "left", onRemove }: { files: AttachmentItem[]; editable?: boolean; align?: "left" | "right"; onRemove?: (id: string) => void }) {
   const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLDivElement>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const supportsHover = () => window.matchMedia("(hover: hover) and (pointer: fine)").matches;
   const cancelClose = () => { if (closeTimerRef.current) clearTimeout(closeTimerRef.current); closeTimerRef.current = null; };
   const scheduleClose = () => { cancelClose(); closeTimerRef.current = setTimeout(() => setOpen(false), 350); };
   useEffect(() => () => cancelClose(), []);
-  return <div className="absolute left-0 top-full mt-1 inline-flex" onMouseEnter={() => { if (supportsHover()) { cancelClose(); setOpen(true); } }} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
+  if (!files.length) return null;
+  return <div ref={anchorRef} className="relative inline-flex" onMouseEnter={() => { if (supportsHover()) { cancelClose(); setOpen(true); } }} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
+    <button type="button" className="inline-flex h-6 max-w-full items-center gap-1 whitespace-nowrap rounded-full border bg-background px-2 text-[11px] text-foreground shadow-sm hover:bg-muted" onClick={() => setOpen((value) => supportsHover() ? true : !value)} aria-expanded={open}><Paperclip className="h-3 w-3 text-muted-foreground" />{files.length} 个附件</button>
+    {open && <FloatingPopover anchor={anchorRef.current} align={align} className="w-[min(300px,calc(100vw-16px))] rounded-xl border bg-popover p-2 text-popover-foreground shadow-lg"><div className="space-y-1" onMouseEnter={cancelClose} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
+      {files.map((file) => <div key={file.id} className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-xs ${file.error ? "bg-destructive/5 text-destructive" : "bg-muted/60"}`}>
+        {file.uploading ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" /> : <Paperclip className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+        <div className="min-w-0 flex-1"><div className="truncate">{file.name}</div><div className="text-[10px] text-muted-foreground">{file.uploading ? "上传中…" : file.error || `${Math.max(1, Math.round(file.size / 1024))} KB`}</div></div>
+        {editable && <button type="button" className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title="删除附件" onClick={() => onRemove?.(file.id)}><X className="h-3 w-3" /></button>}
+      </div>)}
+    </div></FloatingPopover>}
+  </div>;
+}
+
+function TestPromptTag({ verification, onStart, onAlways }: { verification: NonNullable<ChatMessage["verification"]>; onStart: () => void; onAlways: () => void }) {
+  const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const supportsHover = () => window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+  const cancelClose = () => { if (closeTimerRef.current) clearTimeout(closeTimerRef.current); closeTimerRef.current = null; };
+  const scheduleClose = () => { cancelClose(); closeTimerRef.current = setTimeout(() => setOpen(false), 350); };
+  useEffect(() => () => cancelClose(), []);
+  return <div ref={anchorRef} className="absolute left-0 top-full mt-1 inline-flex" onMouseEnter={() => { if (supportsHover()) { cancelClose(); setOpen(true); } }} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
     <button type="button" className="inline-flex h-6 w-max shrink-0 items-center gap-1 whitespace-nowrap rounded-full border bg-background px-2 text-[11px] text-foreground shadow-sm hover:bg-muted" onClick={() => setOpen((value) => supportsHover() ? true : !value)} aria-expanded={open}>
       <FlaskConical className="h-3 w-3 text-muted-foreground" />测试
     </button>
-    {open && <div className="absolute bottom-[calc(100%+6px)] left-0 z-50 w-[min(300px,calc(100vw-32px))] rounded-xl border bg-popover p-3 text-popover-foreground shadow-lg" onMouseEnter={cancelClose} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
+    {open && <FloatingPopover anchor={anchorRef.current} className="w-[min(300px,calc(100vw-16px))] rounded-xl border bg-popover p-3 text-popover-foreground shadow-lg"><div onMouseEnter={cancelClose} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
       <div className="text-xs font-medium">是否开始测试？</div>
       {!!verification.proposedChecks.length && <div className="mt-2">
         <div className="text-[10px] text-muted-foreground">建议测试案例</div>
@@ -238,51 +296,53 @@ function TestPromptTag({ verification, onStart, onAlways }: { verification: NonN
         <Button size="sm" className="h-7 px-3 text-xs" onClick={onStart}>开始</Button>
         <Button size="sm" variant="outline" className="h-7 px-3 text-xs" onClick={onAlways}>始终执行</Button>
       </div>
-    </div>}
+    </div></FloatingPopover>}
   </div>;
 }
 
 function TestResultTag({ verification, run, onRetest }: { verification: NonNullable<ChatMessage["verification"]>; run?: TestRunInfo; onRetest: () => void }) {
   const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLDivElement>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const supportsHover = () => window.matchMedia("(hover: hover) and (pointer: fine)").matches;
   const cancelClose = () => { if (closeTimerRef.current) clearTimeout(closeTimerRef.current); closeTimerRef.current = null; };
   const scheduleClose = () => { cancelClose(); closeTimerRef.current = setTimeout(() => setOpen(false), 350); };
   useEffect(() => () => cancelClose(), []);
   const statusTitle = { passed: "测试通过", failed: "测试未通过", inconclusive: "测试结果不确定" }[verification.status || ""] || "测试结果";
-  return <div className="relative inline-flex" onMouseEnter={() => { if (supportsHover()) { cancelClose(); setOpen(true); } }} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
+  return <div ref={anchorRef} className="relative inline-flex" onMouseEnter={() => { if (supportsHover()) { cancelClose(); setOpen(true); } }} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
     <button type="button" className="inline-flex h-6 w-max shrink-0 items-center gap-1 whitespace-nowrap rounded-full border bg-background px-2 text-[11px] text-foreground shadow-sm hover:bg-muted" onClick={() => setOpen((value) => supportsHover() ? true : !value)} aria-expanded={open}>
       <FlaskConical className="h-3 w-3 text-muted-foreground" />测试结果
     </button>
-    {open && <div className="absolute bottom-[calc(100%+6px)] left-0 z-50 flex max-h-[min(70vh,520px)] w-[min(320px,calc(100vw-64px))] max-w-[calc(100vw-64px)] flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-lg" onMouseEnter={cancelClose} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
+    {open && <FloatingPopover anchor={anchorRef.current} className="flex w-[min(320px,calc(100vw-16px))] flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-lg"><div className="flex min-h-0 flex-col" onMouseEnter={cancelClose} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
       <div className="shrink-0 border-b px-3 py-2.5 text-xs font-medium">{statusTitle}</div>
       <div className="min-h-0 overflow-y-auto p-3">
         {verification.summary && <div className="mb-2 text-xs text-muted-foreground">{verification.summary}</div>}
         {verification.status === "failed" && verification.fixSuggestion && <div className="mb-2 rounded-md border border-destructive/20 bg-destructive/5 p-2 text-xs text-muted-foreground"><div className="font-medium text-foreground">建议修复</div><div className="mt-0.5">{verification.fixSuggestion}</div></div>}
         {run ? <TestRunDetails run={run} onRetest={onRetest} /> : <><ul className="list-disc space-y-1 pl-4 text-xs text-muted-foreground">{verification.proposedChecks.map((check) => <li key={check}>{check}</li>)}</ul><div className="mt-3 flex justify-end"><Button size="sm" variant="outline" className="h-7 text-xs" onClick={onRetest}>重新测试</Button></div></>}
       </div>
-    </div>}
+    </div></FloatingPopover>}
   </div>;
 }
 
 function EditPromptTag({ onEdit, onAlways }: { onEdit: () => void; onAlways: () => void }) {
   const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLDivElement>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const supportsHover = () => window.matchMedia("(hover: hover) and (pointer: fine)").matches;
   const cancelClose = () => { if (closeTimerRef.current) clearTimeout(closeTimerRef.current); closeTimerRef.current = null; };
   const scheduleClose = () => { cancelClose(); closeTimerRef.current = setTimeout(() => setOpen(false), 350); };
   useEffect(() => () => cancelClose(), []);
-  return <div className="relative inline-flex" onMouseEnter={() => { if (supportsHover()) { cancelClose(); setOpen(true); } }} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
+  return <div ref={anchorRef} className="relative inline-flex" onMouseEnter={() => { if (supportsHover()) { cancelClose(); setOpen(true); } }} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
     <button type="button" className="inline-flex h-6 w-max shrink-0 items-center gap-1 whitespace-nowrap rounded-full border bg-background px-2 text-[11px] text-foreground shadow-sm hover:bg-muted" onClick={() => setOpen((value) => supportsHover() ? true : !value)} aria-expanded={open}>
       <Pencil className="h-3 w-3 text-muted-foreground" />修改
     </button>
-    {open && <div className="absolute bottom-[calc(100%+6px)] left-0 z-50 w-[min(280px,calc(100vw-32px))] rounded-xl border bg-popover p-3 text-popover-foreground shadow-lg" onMouseEnter={cancelClose} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
+    {open && <FloatingPopover anchor={anchorRef.current} className="w-[min(280px,calc(100vw-16px))] rounded-xl border bg-popover p-3 text-popover-foreground shadow-lg"><div onMouseEnter={cancelClose} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
       <div className="text-xs font-medium">是否允许修改代码？</div>
       <div className="mt-3 flex justify-end gap-1.5">
         <Button size="sm" className="h-7 px-3 text-xs" onClick={onEdit}>修改</Button>
         <Button size="sm" variant="outline" className="h-7 px-3 text-xs" onClick={onAlways}>始终允许</Button>
       </div>
-    </div>}
+    </div></FloatingPopover>}
   </div>;
 }
 
@@ -290,12 +350,16 @@ function ChatView({ agent, chat, selection, comments, onEditComment, onRemoveCom
   const { messages, sending, sendMessage, startVerification, cancelCurrent, clearHistory, deleteMessage } = chat;
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<Array<{ id: string; name: string; mimeType: string; size: number; uploading?: boolean; error?: string }>>([]);
+  const [contextOrder, setContextOrder] = useState<Array<"comments" | "attachments">>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages]);
+  useEffect(() => {
+    setContextOrder((order) => comments.length ? (order.includes("comments") ? order : [...order, "comments"]) : order.filter((item) => item !== "comments"));
+  }, [comments.length]);
 
   const handleSend = () => {
     if (!input.trim() && !comments.length && !attachments.some((item) => !item.uploading && !item.error)) return;
@@ -305,13 +369,15 @@ function ChatView({ agent, chat, selection, comments, onEditComment, onRemoveCom
     }
     const readyAttachments = attachments.filter((item) => !item.uploading && !item.error).map(({ id, name, mimeType, size }) => ({ id, name, mimeType, size }));
     const agentMessage = comments.length ? [formatCommentsForAgent(comments), message].filter(Boolean).join("\n\n") : message;
-    sendMessage(message, readyAttachments, comments, agentMessage);
+    sendMessage(message, readyAttachments, comments, agentMessage, contextOrder);
     setInput("");
     setAttachments([]);
+    setContextOrder([]);
     onCommentsSent();
   };
 
   const addFiles = async (files: FileList | null) => {
+    if (files?.length) setContextOrder((order) => order.includes("attachments") ? order : [...order, "attachments"]);
     for (const file of Array.from(files || []).slice(0, Math.max(0, 5 - attachments.length))) {
       const temporaryId = `pending-${Date.now()}-${Math.random()}`;
       setAttachments((prev) => [...prev, { id: temporaryId, name: file.name, mimeType: file.type, size: file.size, uploading: true }]);
@@ -334,8 +400,9 @@ function ChatView({ agent, chat, selection, comments, onEditComment, onRemoveCom
   };
 
   return (
-    <div className="flex flex-col h-full">
-      <div ref={scrollRef} className="flex-1 overflow-x-hidden overflow-y-auto p-3 space-y-3 min-h-0">
+    <div data-chat-root className="flex flex-col h-full">
+      <div data-chat-viewport className="relative flex-1 min-h-0 overflow-hidden">
+      <div ref={scrollRef} className="h-full overflow-x-hidden overflow-y-auto p-3 space-y-3">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-xs gap-2 py-8">
             <MessageSquare className="h-8 w-8 text-primary/30" />
@@ -348,9 +415,8 @@ function ChatView({ agent, chat, selection, comments, onEditComment, onRemoveCom
               {msg.role === "ai" && (
                 <div className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[9px] font-bold shrink-0 mt-0.5">AI</div>
               )}
-              <div className={`relative min-w-0 max-w-[85%] space-y-2 px-3 pt-2 pb-0.5 rounded-xl text-xs leading-relaxed ${!msg.pending ? "mb-6" : ""} ${msg.verification && (msg.testRun || ["passed", "failed", "inconclusive"].includes(msg.verification.status || "")) ? "mb-7" : ""} ${msg.role === "user" && msg.comments?.length ? "mt-7" : ""} ${msg.role === "user" ? "bg-blue-100 text-gray-900 rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}>
-                {msg.role === "user" && !!msg.comments?.length && <div className="absolute bottom-full right-0 mb-1 max-w-[calc(100vw-32px)]"><CommentTag comments={msg.comments} align="right" /></div>}
-                {!!msg.attachments?.length && <div className="flex flex-wrap gap-1">{msg.attachments.map((file) => <span key={file.id} className="rounded border bg-background/70 px-1.5 py-0.5">📄 {file.name}</span>)}</div>}
+              <div className={`relative min-w-0 max-w-[85%] space-y-2 px-3 pt-2 pb-0.5 rounded-xl text-xs leading-relaxed ${!msg.pending ? "mb-6" : ""} ${msg.verification && (msg.testRun || ["passed", "failed", "inconclusive"].includes(msg.verification.status || "")) ? "mb-7" : ""} ${msg.role === "user" && (msg.comments?.length || msg.attachments?.length) ? "mt-7" : ""} ${msg.role === "user" ? "bg-blue-100 text-gray-900 rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}>
+                {msg.role === "user" && (!!msg.comments?.length || !!msg.attachments?.length) && <div className="absolute bottom-full right-0 mb-1 flex max-w-[calc(100vw-32px)] gap-1">{(msg.contextOrder?.length ? msg.contextOrder : ["comments", "attachments"]).map((kind) => kind === "comments" ? <CommentTag key={kind} comments={msg.comments || []} align="right" /> : <AttachmentTag key={kind} files={msg.attachments || []} align="right" />)}</div>}
                 {msg.content.startsWith("⏳") ? (
                   <div className="flex min-w-0 max-w-full items-start gap-1.5 overflow-hidden">
                     <Loader2 className="h-3 w-3 animate-spin text-primary shrink-0" />
@@ -381,15 +447,11 @@ function ChatView({ agent, chat, selection, comments, onEditComment, onRemoveCom
           </>
         )}
       </div>
+      <div data-chat-overlay className="pointer-events-none absolute inset-0 z-50 [&>*]:pointer-events-auto" />
+      </div>
 
       <div className="border-t p-2 space-y-1.5">
-        {!!comments.length && <CommentTag comments={comments} editable onEdit={onEditComment} onRemove={onRemoveComment} />}
-        {!!attachments.length && <div className="flex flex-col gap-1">{attachments.map((file) => <div key={file.id} title={file.error} className={`flex max-w-full flex-wrap items-center gap-1 rounded border px-1.5 py-1 text-[11px] ${file.error ? "border-destructive bg-destructive/5 text-destructive" : "bg-muted"}`}>
-          {file.uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : "📄"}
-          <span className="min-w-0 flex-1 truncate">{file.name}</span>
-          <button onClick={() => { setAttachments((prev) => prev.filter((item) => item.id !== file.id)); if (!file.uploading && !file.error) chrome.runtime.sendMessage({ type: "AGENT_DELETE_ATTACHMENT", payload: { id: file.id } }); }}><X className="h-3 w-3" /></button>
-          {file.error && <span className="w-full break-words text-[10px] leading-4">{file.error}</span>}
-        </div>)}</div>}
+        {(comments.length > 0 || attachments.length > 0) && <div className="flex flex-wrap gap-1">{contextOrder.map((kind) => kind === "comments" ? <CommentTag key={kind} comments={comments} editable onEdit={onEditComment} onRemove={onRemoveComment} /> : <AttachmentTag key={kind} files={attachments} editable onRemove={(id) => { const file = attachments.find((item) => item.id === id); setAttachments((items) => { const next = items.filter((item) => item.id !== id); if (!next.length) setContextOrder((order) => order.filter((item) => item !== "attachments")); return next; }); if (file && !file.uploading && !file.error) chrome.runtime.sendMessage({ type: "AGENT_DELETE_ATTACHMENT", payload: { id } }); }} />)}</div>}
         <input ref={fileInputRef} type="file" multiple hidden accept=".txt,.md,.json,.csv,.html,.css,.js,.jsx,.ts,.tsx,.yaml,.yml,.xml,.sql,.log,.sh,.py,.java,.go,.rs" onChange={(event) => addFiles(event.target.files)} />
         <textarea
           className="w-full min-h-[60px] max-h-[120px] px-2.5 py-2 text-xs border rounded-md resize-none bg-background focus:outline-none focus:ring-1 focus:ring-ring"
