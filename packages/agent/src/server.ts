@@ -35,7 +35,8 @@ export async function startServer(
       if (identity.verificationId) testRuns?.recordEvidence(identity.verificationId, normalizeBrowserEvidence(evidence));
     },
   });
-  const toolRegistry = createBrowserToolRegistry(browserRuntime);
+  const browserEnabled = process.env.PRISM_PERMISSION_BROWSER !== "false";
+  const toolRegistry = browserEnabled ? createBrowserToolRegistry(browserRuntime) : undefined;
   const verifications = new VerificationStore();
   const attachments = new AttachmentStore();
   const agentType = process.env.PRISM_AGENT_PROVIDER || process.env.AGENT_TYPE || "claude";
@@ -69,6 +70,13 @@ export async function startServer(
     if (req.path.startsWith("/api/agent/") || req.path === "/api/browser/current/command") return next();
     if (req.header("authorization") !== `Bearer ${accessToken}`) {
       res.status(401).json({ error: "Invalid or missing Prism access token" });
+      return;
+    }
+    next();
+  });
+  app.use("/api/browser", (_req, res, next) => {
+    if (!browserEnabled) {
+      res.status(403).json({ error: "Browser tools are disabled by Agent permissions" });
       return;
     }
     next();

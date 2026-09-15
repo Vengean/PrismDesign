@@ -1,5 +1,5 @@
 /**
- * Lightweight i18n for PrismDesign Chrome extension.
+ * Lightweight i18n for the Prism Studio Chrome extension.
  * Detects browser language and returns the correct string.
  */
 

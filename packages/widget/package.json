@@ -1,11 +1,11 @@
 {
-  "name": "prism-design-widget",
+  "name": "@prism-studio-ai/widget",
   "version": "0.2.2",
   "type": "module",
-  "main": "dist/prism-design-widget.iife.js",
-  "module": "dist/prism-design-widget.es.js",
+  "main": "dist/prism-studio-widget.iife.js",
+  "module": "dist/prism-studio-widget.es.js",
   "types": "dist/index.d.ts",
-  "files": ["dist"],
+  "files": ["dist", "README.zh-CN.md"],
   "scripts": {
     "build": "vite build && tsc --emitDeclarationOnly --incremental false",
     "dev": "vite build --watch"

@@ -222,7 +222,7 @@ function inspectElement(el: Element): string {
       });
     }
   } catch (err) {
-    console.error("[PrismDesign page-bridge]", err);
+    console.error("[Prism Studio page-bridge]", err);
     return JSON.stringify({ error: (err as Error).message });
   }
 
@@ -242,4 +242,4 @@ document.addEventListener(
   true, // capture — handle as early as possible
 );
 
-console.log("[PrismDesign] Page bridge loaded (MAIN world)");
+console.log("[Prism Studio] Page bridge loaded (MAIN world)");

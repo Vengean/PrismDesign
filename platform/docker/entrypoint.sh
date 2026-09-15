@@ -14,8 +14,8 @@ log_main() { tee -a "$LOG_DIR/main.log"; }
 
 {
 # 1. Configure Git
-git config --global user.name "${GIT_USER_NAME:-PrismDesign Agent}"
-git config --global user.email "${GIT_USER_EMAIL:-agent@prism-design.dev}"
+git config --global user.name "${GIT_USER_NAME:-Prism Studio Agent}"
+git config --global user.email "${GIT_USER_EMAIL:-agent@prism-studio.dev}"
 git config --global http.sslVerify false
 
 # 2. Configure SSH key (for git@... URLs)

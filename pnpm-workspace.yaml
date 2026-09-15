@@ -11,7 +11,7 @@ allowBuilds:
   unrs-resolver: true
 
 minimumReleaseAgeExclude:
-  - prism-design-widget@0.1.1
+  - '@prism-studio-ai/widget@0.1.1'
 
 onlyBuiltDependencies:
   - better-sqlite3

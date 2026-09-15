@@ -7,28 +7,40 @@ import { pathToFileURL } from "node:url";
  * All fields are optional — CLI args and env vars fill in defaults.
  */
 export interface PrismConfig {
+  /** Service port. Defaults to 9527. */
+  port?: number;
+  /** Project root, resolved relative to the directory containing the config file. */
+  project?: string;
   /** Require the random startup token for HTTP and WebSocket clients. Defaults to true. */
   accessTokenRequired?: boolean;
   /** Agent provider. `agentType` is kept for backwards compatibility. */
   provider?: "claude" | "claude-sub" | "openai" | "codex" | "glm";
   agentType?: "claude" | "claude-sub" | "openai" | "codex" | "glm";
-  /** Anthropic API Key */
-  anthropicApiKey?: string;
-  /** Model name */
-  anthropicModel?: string;
-  /** API Base URL (proxy) */
-  anthropicBaseUrl?: string;
-  /** OpenAI API configuration */
-  openaiApiKey?: string;
-  openaiModel?: string;
-  openaiBaseUrl?: string;
+  /** Provider API key. Ignored by providers that use local subscription authentication. */
+  apiKey?: string;
+  /** Provider-compatible API base URL. */
+  apiBaseUrl?: string;
+  /** Provider model override. */
+  model?: string;
+  /** Provider-independent execution boundaries. */
+  permissions?: {
+    filesystem?: "read-only" | "workspace-write";
+    commands?: "none" | "workspace";
+    network?: boolean;
+    browser?: {
+      enabled?: boolean;
+      headless?: boolean;
+      allowedOrigins?: string[];
+    };
+    mcp?: {
+      enabled?: boolean;
+      defaultApproval?: "approve" | "prompt" | "deny";
+    };
+  };
   /** Codex CLI configuration; authentication is managed by `codex login`. */
-  codexModel?: string;
   codexReasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
   /** `https` avoids slow WebSocket fallback; set `websocket` when the network supports it. */
   codexTransport?: "https" | "websocket";
-  /** Run verification Chromium without a visible window. Defaults to false locally. */
-  browserHeadless?: boolean;
   /** Project-scoped MCP servers exposed to Codex. */
   mcpServers?: Record<string, {
     command: string;
@@ -40,17 +52,10 @@ export interface PrismConfig {
   httpsProxy?: string;
   /** HTTP proxy */
   httpProxy?: string;
-  /** claude-agent-sdk session options override */
-  options?: {
-    model?: string;
-    cwd?: string;
-    allowedTools?: string[];
-    disallowedTools?: string[];
-    permissionMode?: string;
-    allowDangerouslySkipPermissions?: boolean;
-    settingSources?: string[];
-    env?: Record<string, string | undefined>;
-  };
+  /** Hosts that bypass HTTP(S) proxies. */
+  noProxy?: string;
+  /** Log full Agent prompt bodies. Defaults to false. */
+  debug?: boolean;
 }
 
 const CONFIG_NAMES = ["prism.config.ts", "prism.config.js", "prism.config.mjs"];
@@ -105,25 +110,9 @@ async function loadTsConfig(filePath: string): Promise<PrismConfig> {
       } catch {}
     }
 
-    // Another fallback: defineConfig pattern
-    const defineMatch = content.match(/defineConfig\s*\(\s*({[\s\S]*})\s*\)\s*;?\s*$/m);
-    if (defineMatch) {
-      try {
-        const fn = new Function(`return (${defineMatch[1]})`);
-        return fn();
-      } catch {}
-    }
-
     console.warn("⚠️  无法解析 prism.config.ts，请确保已安装 tsx");
     return {};
   }
-}
-
-/**
- * Helper for users to get type hints in their config file.
- */
-export function defineConfig(config: PrismConfig): PrismConfig {
-  return config;
 }
 
 /**
@@ -132,24 +121,28 @@ export function defineConfig(config: PrismConfig): PrismConfig {
  */
 export function applyConfigToEnv(config: PrismConfig, force = false) {
   const mapping: Array<[keyof PrismConfig, string]> = [
-    ["anthropicApiKey", "ANTHROPIC_API_KEY"],
-    ["anthropicModel", "ANTHROPIC_MODEL"],
-    ["anthropicBaseUrl", "ANTHROPIC_BASE_URL"],
-    ["openaiApiKey", "OPENAI_API_KEY"],
-    ["openaiModel", "OPENAI_MODEL"],
-    ["openaiBaseUrl", "OPENAI_BASE_URL"],
-    ["codexModel", "CODEX_MODEL"],
     ["codexReasoningEffort", "CODEX_REASONING_EFFORT"],
     ["codexTransport", "CODEX_TRANSPORT"],
     ["provider", "PRISM_AGENT_PROVIDER"],
     ["agentType", "PRISM_AGENT_PROVIDER"],
     ["httpsProxy", "HTTPS_PROXY"],
     ["httpProxy", "HTTP_PROXY"],
+    ["noProxy", "NO_PROXY"],
   ];
 
-  if (typeof config.browserHeadless === "boolean" && (force || !process.env.PRISM_BROWSER_HEADLESS)) {
-    process.env.PRISM_BROWSER_HEADLESS = String(config.browserHeadless);
-  }
+  const permissions = config.permissions;
+  const setPermission = (name: string, value: string | boolean | undefined) => {
+    if (value !== undefined && (force || process.env[name] === undefined)) process.env[name] = String(value);
+  };
+  setPermission("PRISM_PERMISSION_FILESYSTEM", permissions?.filesystem);
+  setPermission("PRISM_PERMISSION_COMMANDS", permissions?.commands);
+  setPermission("PRISM_PERMISSION_NETWORK", permissions?.network);
+  setPermission("PRISM_PERMISSION_BROWSER", permissions?.browser?.enabled);
+  setPermission("PRISM_BROWSER_HEADLESS", permissions?.browser?.headless);
+  setPermission("PRISM_BROWSER_ALLOWED_ORIGINS", permissions?.browser?.allowedOrigins?.join(","));
+  setPermission("PRISM_PERMISSION_MCP", permissions?.mcp?.enabled ?? (config.mcpServers ? true : undefined));
+  setPermission("PRISM_MCP_APPROVAL", permissions?.mcp?.defaultApproval);
+  setPermission("PRISM_AGENT_DEBUG", config.debug);
 
   if (config.mcpServers && (force || !process.env.PRISM_MCP_SERVERS)) {
     process.env.PRISM_MCP_SERVERS = JSON.stringify(config.mcpServers);

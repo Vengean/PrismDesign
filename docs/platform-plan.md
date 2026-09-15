@@ -1,10 +1,10 @@
-# PrismDesign Platform — 多工程 AI 代码修改平台
+# Prism Studio Platform — 多工程 AI 代码修改平台
 
 > 状态：草案，待确认
 
 ## Context
 
-将 PrismDesign 从 CLI 工具升级为一个可部署的 Web 平台（内网使用）。用户通过浏览器 GUI 管理工程（workspace），配置 Git 仓库，启动容器化的开发环境（agent + dev server），通过 Chrome 插件连接 agent 指挥 AI 修改代码。Docker 部署，独立项目。
+将 Prism Studio 从 CLI 工具升级为一个可部署的 Web 平台（内网使用）。用户通过浏览器 GUI 管理工程（workspace），配置 Git 仓库，启动容器化的开发环境（agent + dev server），通过 Chrome 插件连接 agent 指挥 AI 修改代码。Docker 部署，独立项目。
 
 ## 架构概览
 
@@ -302,8 +302,8 @@ ENTRYPOINT ["/entrypoint.sh"]
 set -e
 
 # 1. 配置 Git 凭证
-git config --global user.name "${GIT_USER_NAME:-PrismDesign Agent}"
-git config --global user.email "${GIT_USER_EMAIL:-agent@prism-design.dev}"
+git config --global user.name "${GIT_USER_NAME:-Prism Studio Agent}"
+git config --global user.email "${GIT_USER_EMAIL:-agent@prism-studio.dev}"
 if [ -n "$GIT_ACCESS_TOKEN" ]; then
   git config --global credential.helper store
   IFS=',' read -ra REPO_LIST <<< "$REPOS"
@@ -412,7 +412,7 @@ open http://localhost:3000
 ## 项目结构
 
 ```
-prism-design-platform/
+prism-studio-platform/
 ├── src/
 │   ├── server.ts                     ← Express 主入口
 │   ├── middleware/

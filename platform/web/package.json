@@ -1,5 +1,5 @@
 {
-  "name": "prism-design-platform-web",
+  "name": "@prism-studio-ai/platform-web",
   "private": true,
   "type": "module",
   "scripts": {

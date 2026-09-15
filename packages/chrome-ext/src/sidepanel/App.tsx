@@ -6,6 +6,7 @@ import { useAgent } from "./hooks/use-agent";
 import { useChat } from "./hooks/use-chat";
 import { ChatPanel } from "./components/ChatPanel";
 import { ChangesPanel } from "./components/ChangesPanel";
+import { SidePanelHeader } from "./components/SidePanelHeader";
 import type { CommentAnnotation } from "../shared/types.js";
 
 type ViewType = "chat" | "changes";
@@ -126,7 +127,7 @@ export function App() {
   return (
     <div className="flex flex-col h-screen">
       {/* Header */}
-      <div className="flex items-center gap-1.5 px-2 py-1.5 border-b bg-card">
+      <SidePanelHeader>
         <span className="font-semibold text-xs">{t(VIEW_TITLE_KEYS[view])}</span>
         {view === "chat" && (
           <div ref={connectionMenuRef} className="relative ml-auto">
@@ -156,7 +157,7 @@ export function App() {
             </div>}
           </div>
         )}
-      </div>
+      </SidePanelHeader>
 
       {/* Content */}
       <div className="flex-1 min-h-0">

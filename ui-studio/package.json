@@ -1,11 +1,11 @@
 {
-  "name": "@prism-design/ui-studio",
+  "name": "@prism-studio-ai/ui-studio",
   "private": true,
   "version": "0.1.0",
   "type": "module",
   "scripts": { "dev": "vite", "dev:ui": "vite --host 0.0.0.0", "build": "tsc -b && vite build" },
   "dependencies": {
-    "@prism-design/ui": "workspace:*",
+    "@prism-studio-ai/ui": "workspace:*",
     "lucide-react": "^1.8.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"

@@ -1,5 +1,5 @@
 {
-  "name": "prism-design-platform",
+  "name": "@prism-studio-ai/platform",
   "version": "0.1.0",
   "private": true,
   "type": "module",

@@ -40,9 +40,9 @@ export function safeSendMessage(message: PrismMessage): void {
 function markInvalidated() {
   if (invalidated) return;
   invalidated = true;
-  console.warn("[PrismDesign] Extension context invalidated — cleaning up");
+  console.warn("[Prism Studio] Extension context invalidated — cleaning up");
   for (const cb of invalidatedCallbacks) {
-    try { cb(); } catch (e) { console.error("[PrismDesign] cleanup error:", e); }
+    try { cb(); } catch (e) { console.error("[Prism Studio] cleanup error:", e); }
   }
 }
 

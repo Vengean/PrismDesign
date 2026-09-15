@@ -49,7 +49,7 @@ function startAgent(opts: {
   model?: string;
   apiBaseUrl?: string;
 }): ChildProcess {
-  const args = ["prism-design-agent", "start", "--port", String(opts.agentPort)];
+  const args = ["prism-studio-agent", "start", "--port", String(opts.agentPort)];
   if (opts.provider) args.push("--provider", opts.provider);
   if (opts.apiKey) args.push("--api-key", opts.apiKey);
   if (opts.model) args.push("--model", opts.model);
@@ -70,7 +70,7 @@ function startAgent(opts: {
 
   child.on("error", (err) => {
     console.error("❌ 启动 Agent 失败:", err.message);
-    console.error("   请确保已安装 prism-design-agent: npm install -g prism-design-agent");
+    console.error("   请确保已安装 Prism Studio Agent: npm install -g @prism-studio-ai/agent");
   });
 
   return child;
@@ -83,10 +83,10 @@ async function main() {
 
   if (hasFlag(args, "--help") || hasFlag(args, "-h")) {
     console.log(`
-🎨 PrismDesign Serve
+🎨 Prism Studio Serve
 
 Usage:
-  prism-design-serve [options]
+  prism-studio-serve [options]
 
 Options:
   --port <number>          HTTP 服务端口 (default: 3000)
@@ -100,10 +100,10 @@ Options:
   --open                   启动后自动打开浏览器
 
 Examples:
-  prism-design-serve
-  prism-design-serve --dir ./dist --open
-  prism-design-serve --port 8080 --agent-port 9000
-  prism-design-serve --no-agent
+  prism-studio-serve
+  prism-studio-serve --dir ./dist --open
+  prism-studio-serve --port 8080 --agent-port 9000
+  prism-studio-serve --no-agent
 `);
     process.exit(0);
   }
@@ -147,14 +147,14 @@ Examples:
   startServer({ dir, port, agentUrl });
 
   console.log("\n" + "=".repeat(50));
-  console.log("  🎨 PrismDesign Serve");
+  console.log("  🎨 Prism Studio Serve");
   console.log("=".repeat(50));
   console.log(`\n  静态文件:  ${dir}`);
   console.log(`  访问地址:  http://${localIP}:${port}`);
   if (!noAgent) {
     console.log(`  Agent:     ${agentUrl}`);
   }
-  console.log(`\n  👉 访问页面后右下角会出现 PrismDesign 按钮`);
+  console.log(`\n  👉 访问页面后右下角会出现 Prism Studio 按钮`);
   console.log("\n" + "=".repeat(50) + "\n");
 
   // Open browser

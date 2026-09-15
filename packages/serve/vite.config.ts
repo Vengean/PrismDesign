@@ -6,7 +6,7 @@ export default defineConfig({
     lib: {
       entry: path.resolve(__dirname, "src/widget/index.ts"),
       formats: ["iife"],
-      name: "PrismDesignWidget",
+      name: "PrismStudioWidget",
       fileName: () => "widget.js",
     },
     outDir: "dist",

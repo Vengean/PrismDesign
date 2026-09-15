@@ -32,7 +32,7 @@
     "128": "icons/icon-128.png"
   },
   "action": {
-    "default_title": "PrismDesign",
+    "default_title": "Prism Studio",
     "default_icon": {
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png",

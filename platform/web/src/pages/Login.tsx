@@ -34,7 +34,7 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-muted/50">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">PrismDesign</CardTitle>
+          <CardTitle className="text-2xl">Prism Studio</CardTitle>
           <CardDescription>登录管理平台</CardDescription>
         </CardHeader>
         <CardContent>

@@ -1,4 +1,4 @@
-# PrismDesign Agent 真实应用验证方案
+# Prism Studio Agent 真实应用验证方案
 
 > 目标：Agent 自主理解开发与测试意图，在获得用户授权后准备必要数据、操作用户可见的真实 Web 应用，并以 UI、Network、Runtime 和 Data 证据证明需求成立。它不是生成和维护测试脚本的工具。
 

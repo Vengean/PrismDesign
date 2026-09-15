@@ -6,7 +6,7 @@ import { createConnectForm, getSavedAgentUrl, getSavedAgentToken, clearSavedAgen
 import { setLocale, t } from "./i18n.js";
 
 export interface PrismWidgetOptions {
-  /** Agent server URL. If provided, skips the connection form. */
+  /** Agent server URL. Auto-connects when agentToken is set or accessTokenRequired is false. */
   agentUrl?: string;
   /** Access token printed by the Agent at startup. */
   agentToken?: string;
@@ -32,7 +32,7 @@ export function init(options?: PrismWidgetOptions) {
 
   // ── Create Shadow DOM host ──
   const host = document.createElement("div");
-  host.id = "prism-design-widget";
+  host.id = "prism-studio-widget";
   host.style.cssText = "position:fixed;z-index:2147483647;bottom:0;right:0;all:initial;";
   document.body.appendChild(host);
 
@@ -156,7 +156,7 @@ export function init(options?: PrismWidgetOptions) {
 
 // Auto-init for backward compatibility with serve-style injection
 if (typeof window !== "undefined") {
-  const cfg = (window as any).__PRISM_DESIGN__;
+  const cfg = (window as any).__PRISM_STUDIO__;
   if (cfg?.agentUrl) {
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", () => init({ agentUrl: cfg.agentUrl, agentToken: cfg.agentToken, accessTokenRequired: cfg.accessTokenRequired }));

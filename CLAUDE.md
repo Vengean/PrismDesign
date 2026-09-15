@@ -1,4 +1,4 @@
-# CLAUDE.md — PrismDesign
+# CLAUDE.md — Prism Studio
 
 > AI 驱动的可视化 UI 编辑工具：在浏览器中描述修改需求，AI 自动同步修改到源码。
 
@@ -17,21 +17,21 @@ Chrome 插件加载：`chrome://extensions` → 开发者模式 → 加载 `pack
 Serve 独立部署（不依赖 Chrome 插件）：
 ```bash
 cd packages/serve && pnpm build
-prism-design-serve --dir /path/to/static --open  # 全局安装后使用
+prism-studio-serve --dir /path/to/static --open  # 全局安装后使用
 # 或开发模式：cd packages/serve && pnpm dev
 ```
 
 ## 项目结构
 
 ```
-PrismDesign/                    ← pnpm monorepo
+Prism Studio monorepo/          ← pnpm monorepo
 ├── packages/
 │   ├── agent/                  ← AI 代码修改服务 (Express + WebSocket + Claude Agent SDK)
 │   │   └── src/
 │   │       ├── cli.ts          ← CLI 入口，.env 加载，prism.config 加载，项目根检测
 │   │       ├── server.ts       ← HTTP + WS 服务器（纯透传，单一 /api/chat 端点）
 │   │       ├── agent.ts        ← 多用户 session 管理（Claude Agent SDK v2）
-│   │       ├── config.ts       ← prism.config.{ts,js,mjs} 加载 + defineConfig 导出
+│   │       ├── config.ts       ← prism.config.{ts,js,mjs} 加载与配置类型
 │   │       └── project-profiler.ts ← 框架/语言/构建工具检测
 │   ├── serve/                  ← 独立部署工具 (静态文件服务 + 内嵌 Widget)
 │   │   └── src/

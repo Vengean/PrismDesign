@@ -17,9 +17,9 @@ export interface CommentInfo {
 }
 
 // ── Global overlay & popup IDs ──
-const OVERLAY_ID = "prism-design-comment-overlay";
-const POPUP_ID = "prism-design-comment-popup";
-const STYLE_ID = "prism-design-comment-styles";
+const OVERLAY_ID = "prism-studio-comment-overlay";
+const POPUP_ID = "prism-studio-comment-popup";
+const STYLE_ID = "prism-studio-comment-styles";
 
 function ensureGlobalStyles() {
   if (document.getElementById(STYLE_ID)) return;
@@ -324,7 +324,7 @@ function buildCommentInfo(el: Element, commentText: string): CommentInfo {
 function isCommentUI(el: Element): boolean {
   const id = el.id || "";
   if (id === OVERLAY_ID || id === POPUP_ID) return true;
-  if (el.closest(`#${POPUP_ID}`) || el.closest("#prism-design-widget")) return true;
+  if (el.closest(`#${POPUP_ID}`) || el.closest("#prism-studio-widget")) return true;
   return false;
 }
 
@@ -345,7 +345,7 @@ export function showCommentMode(
   // Use !important via injected style to override input/textarea text cursors
   const cursorSvg = btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="#6366f1" stroke="white" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`);
   const cursorValue = `url(data:image/svg+xml;base64,${cursorSvg}) 4 4, pointer`;
-  const cursorStyleId = "prism-design-comment-cursor";
+  const cursorStyleId = "prism-studio-comment-cursor";
   let cursorStyle = document.getElementById(cursorStyleId) as HTMLStyleElement | null;
   if (!cursorStyle) {
     cursorStyle = document.createElement("style");
@@ -386,7 +386,7 @@ export function showCommentMode(
     document.removeEventListener("click", onClick, true);
     document.removeEventListener("keydown", onKeyDown, true);
     document.body.style.cursor = savedCursor;
-    const cs = document.getElementById("prism-design-comment-cursor");
+    const cs = document.getElementById("prism-studio-comment-cursor");
     if (cs) cs.remove();
     hideOverlay();
     removePopup();
@@ -402,7 +402,7 @@ export function showCommentMode(
     document.removeEventListener("mousemove", onMouseMove, true);
 
     // Restore normal cursor while typing in popup
-    const cs = document.getElementById("prism-design-comment-cursor");
+    const cs = document.getElementById("prism-studio-comment-cursor");
     if (cs) cs.textContent = `*, *::before, *::after { cursor: ${cursorValue} !important; } #${POPUP_ID} *, #${POPUP_ID} textarea { cursor: auto !important; }`;
 
     const popup = document.createElement("div");

@@ -1,6 +1,6 @@
-# CLAUDE.md — PrismDesign Demo
+# CLAUDE.md — Prism Studio Demo
 
-> PrismDesign 测试用 React 应用，用于验证 AI 代码修改功能。
+> Prism Studio 测试用 React 应用，用于验证 AI 代码修改功能。
 
 ## 项目信息
 
@@ -20,7 +20,7 @@
 
 ## 工作规则
 
-1. 你是 PrismDesign 的 AI 代码修改助手，负责 UI 层面的修改：样式、布局、文本、组件外观
+1. 你是 Prism Studio 的 AI 代码修改助手，负责 UI 层面的修改：样式、布局、文本、组件外观
 2. 绝不修改业务逻辑、API 调用、状态管理、路由等非 UI 代码
 3. 只做用户要求的最小改动，不做额外重构
 4. 优先复用 `src/components/ui/` 下已有的 shadcn/ui 组件

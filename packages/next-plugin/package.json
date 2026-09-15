@@ -1,7 +1,7 @@
 {
-  "name": "next-plugin-prism-design",
+  "name": "@prism-studio-ai/next-plugin",
   "version": "0.2.1",
-  "description": "Next.js plugin for PrismDesign — AI-powered visual UI editing in the browser",
+  "description": "Next.js plugin for Prism Studio — AI-powered visual UI editing in the browser",
   "type": "module",
   "license": "MIT",
   "exports": {
@@ -20,11 +20,11 @@
   "main": "dist/index.cjs",
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist"],
+  "files": ["dist", "README.zh-CN.md"],
   "keywords": [
     "next",
     "nextjs",
-    "prism-design",
+    "prism-studio",
     "ai",
     "design",
     "visual-editing",
@@ -33,15 +33,15 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/anthropics/prism-design"
+    "url": "https://github.com/anthropics/prism-studio"
   },
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch"
   },
   "dependencies": {
-    "prism-design-widget": "workspace:*",
-    "prism-design-agent": "workspace:*"
+    "@prism-studio-ai/widget": "workspace:*",
+    "@prism-studio-ai/agent": "workspace:*"
   },
   "peerDependencies": {
     "next": ">=13.0.0",

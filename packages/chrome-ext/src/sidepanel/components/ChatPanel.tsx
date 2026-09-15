@@ -51,7 +51,7 @@ function FloatingPopover({ anchor, align = "left", className = "", children }: {
   useLayoutEffect(() => {
     const update = () => {
       const floating = floatingRef.current;
-      const boundary = anchor?.closest<HTMLElement>("[data-chat-root]")?.querySelector<HTMLElement>("[data-chat-viewport]");
+      const boundary = anchor?.closest<HTMLElement>("[data-chat-root]");
       if (!anchor || !floating || !boundary) return;
       const trigger = anchor.getBoundingClientRect();
       const viewport = boundary.getBoundingClientRect();
@@ -72,7 +72,7 @@ function FloatingPopover({ anchor, align = "left", className = "", children }: {
     window.addEventListener("scroll", update, true);
     return () => { window.removeEventListener("resize", update); window.removeEventListener("scroll", update, true); };
   }, [anchor, align]);
-  const boundary = anchor?.closest<HTMLElement>("[data-chat-root]")?.querySelector<HTMLElement>("[data-chat-viewport]");
+  const boundary = anchor?.closest<HTMLElement>("[data-chat-root]");
   const overlay = boundary?.querySelector<HTMLElement>("[data-chat-overlay]");
   if (!overlay) return null;
   return createPortal(<div ref={floatingRef} style={style} className={`z-[100] overflow-y-auto overscroll-contain ${className}`}>{children}</div>, overlay);
@@ -362,7 +362,7 @@ function ChatView({ agent, chat, selection, comments, onEditComment, onRemoveCom
   }, [comments.length]);
 
   const handleSend = () => {
-    if (!input.trim() && !comments.length && !attachments.some((item) => !item.uploading && !item.error)) return;
+    if (!input.trim() && !attachments.some((item) => !item.uploading && !item.error)) return;
     let message = input;
     if (selection) {
       message += `\n\n--- Context ---\n${formatSelectionContext(selection)}`;
@@ -400,7 +400,7 @@ function ChatView({ agent, chat, selection, comments, onEditComment, onRemoveCom
   };
 
   return (
-    <div data-chat-root className="flex flex-col h-full">
+    <div data-chat-root className="relative flex h-full flex-col">
       <div data-chat-viewport className="relative flex-1 min-h-0 overflow-hidden">
       <div ref={scrollRef} className="h-full overflow-x-hidden overflow-y-auto p-3 space-y-3">
         {messages.length === 0 ? (
@@ -447,7 +447,6 @@ function ChatView({ agent, chat, selection, comments, onEditComment, onRemoveCom
           </>
         )}
       </div>
-      <div data-chat-overlay className="pointer-events-none absolute inset-0 z-50 [&>*]:pointer-events-auto" />
       </div>
 
       <div className="border-t p-2 space-y-1.5">
@@ -472,12 +471,13 @@ function ChatView({ agent, chat, selection, comments, onEditComment, onRemoveCom
               {t("chat.clearHistory")}
             </Button>
           )}
-          <Button size="sm" className="h-7 text-xs px-3 gap-1" onClick={handleSend} disabled={sending || attachments.some((item) => item.uploading || item.error) || (!input.trim() && !comments.length && !attachments.some((item) => !item.error))}>
+          <Button size="sm" className="h-7 text-xs px-3 gap-1" onClick={handleSend} disabled={sending || attachments.some((item) => item.uploading || item.error) || (!input.trim() && !attachments.some((item) => !item.error))}>
             <Send className="h-3 w-3" />
             {t("chat.send")}
           </Button>
         </div>
       </div>
+      <div data-chat-overlay className="pointer-events-none absolute inset-0 z-50 [&>*]:pointer-events-auto" />
     </div>
   );
 }

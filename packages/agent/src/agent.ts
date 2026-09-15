@@ -47,9 +47,16 @@ function getSession(clientId: string): UserSession {
 
   console.log(`[Claude] 为客户端 ${clientId} 创建新会话`);
 
+  const filesystem = process.env.PRISM_PERMISSION_FILESYSTEM || "workspace-write";
+  const commands = process.env.PRISM_PERMISSION_COMMANDS || "none";
+  const allowedTools = ["Read", "Glob", "Grep"];
+  if (filesystem === "workspace-write") allowedTools.push("Write", "Edit");
+  if (commands === "workspace") allowedTools.push("Bash");
+
   const sessionOptions: Record<string, unknown> = {
     cwd: projectRoot,
-    allowedTools: ["Read", "Write", "Edit", "Glob", "Grep"],
+    allowedTools,
+    disallowedTools: process.env.PRISM_PERMISSION_NETWORK === "true" ? [] : ["WebFetch", "WebSearch"],
     permissionMode: "bypassPermissions" as const,
     allowDangerouslySkipPermissions: true,
     settingSources: ["project" as const],

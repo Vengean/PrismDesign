@@ -5,14 +5,14 @@ import { createChat } from "./chat.js";
 
 declare global {
   interface Window {
-    __PRISM_DESIGN__?: { agentUrl: string };
+    __PRISM_STUDIO__?: { agentUrl: string };
   }
 }
 
 function init() {
-  const config = window.__PRISM_DESIGN__;
+  const config = window.__PRISM_STUDIO__;
   if (!config) {
-    console.warn("[棱镜] Missing window.__PRISM_DESIGN__ config");
+    console.warn("[棱镜] Missing window.__PRISM_STUDIO__ config");
     return;
   }
 
@@ -20,7 +20,7 @@ function init() {
 
   // ── Shadow DOM host ──
   const host = document.createElement("div");
-  host.id = "prism-design-widget";
+  host.id = "prism-studio-widget";
   host.style.cssText = "all: initial; position: fixed; z-index: 2147483647; bottom: 0; right: 0;";
   document.body.appendChild(host);
 

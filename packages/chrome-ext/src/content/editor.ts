@@ -24,24 +24,24 @@ export function setOnDragComplete(cb: (element: HTMLElement, from: number, to: n
 export function initEditor() {
   if (editorStyleEl) return;
   editorStyleEl = document.createElement("style");
-  editorStyleEl.id = "prism-design-editor-style";
+  editorStyleEl.id = "prism-studio-editor-style";
   editorStyleEl.textContent = `
-    .prism-design-text-editing {
+    .prism-studio-text-editing {
       outline: 2px dashed #f59e0b !important;
       outline-offset: 2px;
       cursor: text !important;
     }
-    .prism-design-drag-mode,
-    .prism-design-drag-mode * {
+    .prism-studio-drag-mode,
+    .prism-studio-drag-mode * {
       cursor: grab !important;
     }
-    .prism-design-drag-over-top {
+    .prism-studio-drag-over-top {
       border-top: 3px solid #6366f1 !important;
     }
-    .prism-design-drag-over-left {
+    .prism-studio-drag-over-left {
       border-left: 3px solid #6366f1 !important;
     }
-    .prism-design-dragging {
+    .prism-studio-dragging {
       opacity: 0.4 !important;
     }
   `;
@@ -56,7 +56,7 @@ export function destroyEditor() {
   // User modifications (inline styles) are intentionally preserved
   // until synced to the agent.
   originalStyles.forEach((_styles, el) => {
-    el.classList.remove("prism-design-text-editing");
+    el.classList.remove("prism-studio-text-editing");
   });
   originalTexts.forEach((text, el) => {
     el.contentEditable = "false";
@@ -81,7 +81,7 @@ export function handleElementClick(element: HTMLElement) {
   }
 }
 
-const DRAG_OVER_CLASSES = ["prism-design-drag-over-top", "prism-design-drag-over-left"];
+const DRAG_OVER_CLASSES = ["prism-studio-drag-over-top", "prism-studio-drag-over-left"];
 
 function removeDragOverClass(el: HTMLElement) {
   el.classList.remove(...DRAG_OVER_CLASSES);
@@ -108,14 +108,14 @@ export function handleElementMouseDown(e: MouseEvent, element: HTMLElement) {
   if (!parent) return;
 
   const siblings = Array.from(parent.children).filter(
-    (child) => !child.id?.startsWith("prism-design-")
+    (child) => !child.id?.startsWith("prism-studio-")
   ) as HTMLElement[];
 
   const fromIndex = siblings.indexOf(element);
-  element.classList.add("prism-design-dragging");
+  element.classList.add("prism-studio-dragging");
 
   const horizontal = isHorizontalLayout(parent);
-  const overClass = horizontal ? "prism-design-drag-over-left" : "prism-design-drag-over-top";
+  const overClass = horizontal ? "prism-studio-drag-over-left" : "prism-studio-drag-over-top";
 
   dragState = { element, startY: e.clientY, siblings };
 
@@ -134,7 +134,7 @@ export function handleElementMouseDown(e: MouseEvent, element: HTMLElement) {
     document.removeEventListener("mousemove", onMouseMove);
     document.removeEventListener("mouseup", onMouseUp);
     if (!dragState) return;
-    element.classList.remove("prism-design-dragging");
+    element.classList.remove("prism-studio-dragging");
     dragState.siblings.forEach((s) => removeDragOverClass(s));
     const hoverEl = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement;
     const target = dragState.siblings.find((s) => s === hoverEl || s.contains(hoverEl));
@@ -143,7 +143,7 @@ export function handleElementMouseDown(e: MouseEvent, element: HTMLElement) {
       if (toIndex > fromIndex) parent.insertBefore(element, target.nextSibling);
       else parent.insertBefore(element, target);
       dragMoves.push({ element: getDomPath(element), from: fromIndex, to: toIndex });
-      try { onDragComplete?.(element, fromIndex, toIndex); } catch (e) { console.error("[PrismDesign] drag callback error:", e); }
+      try { onDragComplete?.(element, fromIndex, toIndex); } catch (e) { console.error("[Prism Studio] drag callback error:", e); }
     }
     dragState = null;
   };
@@ -157,11 +157,11 @@ function getDomPath(element: HTMLElement): string {
   let el: HTMLElement | null = element;
   while (el && el !== document.body) {
     let selector = el.tagName.toLowerCase();
-    if (el.id && !el.id.startsWith("prism-design-")) {
+    if (el.id && !el.id.startsWith("prism-studio-")) {
       selector += `#${el.id}`;
     } else {
       if (el.className && typeof el.className === "string") {
-        const cls = el.className.split(/\s+/).filter((c) => !c.startsWith("prism-design-")).slice(0, 2).join(".");
+        const cls = el.className.split(/\s+/).filter((c) => !c.startsWith("prism-studio-")).slice(0, 2).join(".");
         if (cls) selector += `.${cls}`;
       }
       const parent = el.parentElement;

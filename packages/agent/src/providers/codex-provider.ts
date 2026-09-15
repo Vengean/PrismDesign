@@ -19,7 +19,7 @@ type ProjectMcpServer = {
 };
 
 function loadProjectMcpServers(): Record<string, Record<string, unknown>> {
-  if (!process.env.PRISM_MCP_SERVERS) return {};
+  if (process.env.PRISM_PERMISSION_MCP !== "true" || !process.env.PRISM_MCP_SERVERS) return {};
   try {
     const configured = JSON.parse(process.env.PRISM_MCP_SERVERS) as Record<string, ProjectMcpServer>;
     return Object.fromEntries(Object.entries(configured).map(([name, server]) => {
@@ -28,7 +28,7 @@ function loadProjectMcpServers(): Record<string, Record<string, unknown>> {
         command: server.command,
         args: server.args || [],
         env: server.env || {},
-        default_tools_approval_mode: server.defaultToolsApprovalMode || "prompt",
+        default_tools_approval_mode: server.defaultToolsApprovalMode || process.env.PRISM_MCP_APPROVAL || "prompt",
       }];
     }));
   } catch (error) {
@@ -55,6 +55,7 @@ export class CodexProvider implements AgentProvider {
     // (normally stored under CODEX_HOME). Never read or copy auth.json here.
     const useWebSocket = process.env.CODEX_TRANSPORT === "websocket";
     const mcpServerPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "testing", "mcp-browser-server.js");
+    const browserEnabled = process.env.PRISM_PERMISSION_BROWSER !== "false";
     const commonConfig = {
       // Prism verification must use its own Chrome-extension MCP. The desktop
       // Codex installation may globally enable the bundled Browser plugin and
@@ -66,7 +67,7 @@ export class CodexProvider implements AgentProvider {
       mcp_servers: {
         ...loadProjectMcpServers(),
         node_repl: { enabled: false },
-        prism_browser: {
+        ...(browserEnabled ? { prism_browser: {
           command: process.execPath,
           args: [mcpServerPath],
           // The user explicitly authorizes this bounded verification run by
@@ -76,7 +77,7 @@ export class CodexProvider implements AgentProvider {
           env: {
             PRISM_AGENT_URL: process.env.PRISM_AGENT_URL || "http://127.0.0.1:9527",
           },
-        },
+        } } : {}),
       },
     };
     this.codex = new Codex(useWebSocket ? { config: commonConfig } : {
@@ -108,11 +109,11 @@ export class CodexProvider implements AgentProvider {
     }
     const thread = this.getCodex().startThread({
       workingDirectory: this.projectRoot,
-      sandboxMode: "workspace-write",
-      approvalPolicy: "never",
+      sandboxMode: process.env.PRISM_PERMISSION_FILESYSTEM === "read-only" ? "read-only" : "workspace-write",
+      approvalPolicy: process.env.PRISM_PERMISSION_COMMANDS === "workspace" ? "never" : "on-request",
       model: process.env.CODEX_MODEL || undefined,
       modelReasoningEffort: (process.env.CODEX_REASONING_EFFORT as "minimal" | "low" | "medium" | "high" | "xhigh" | undefined),
-      networkAccessEnabled: process.env.CODEX_NETWORK_ACCESS === "true",
+      networkAccessEnabled: process.env.PRISM_PERMISSION_NETWORK === "true",
       skipGitRepoCheck: true,
     });
     this.sessions.set(clientId, { thread, lastActive: Date.now() });
