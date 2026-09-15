@@ -157,27 +157,13 @@ function MockConversationPanel() {
   return <div className="flex h-screen flex-col"><div className="relative flex items-center gap-1.5 border-b bg-card px-2 py-1.5"><span className="font-semibold text-xs">对话</span><button type="button" className="ml-auto flex h-6 w-6 items-center justify-center rounded hover:bg-muted" onClick={() => setMenuOpen((open) => !open)}><span className="h-2 w-2 rounded-full bg-green-500" /></button>{menuOpen && <div className="absolute right-2 top-8 z-50 w-56 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"><div className="truncate px-2 py-1.5 text-[10px] text-muted-foreground">http://127.0.0.1:19527</div><div className="px-2 pb-1 pt-1.5 text-[10px] font-medium text-muted-foreground">权限</div><label className="flex items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-xs hover:bg-muted"><span>始终允许编辑</span><input type="checkbox" className="h-3.5 w-3.5 accent-primary" /></label><label className="flex items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-xs hover:bg-muted"><span>始终允许自动测试</span><input type="checkbox" className="h-3.5 w-3.5 accent-primary" /></label><div className="my-1 border-t" /><button className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs text-destructive hover:bg-muted">断开连接</button></div>}</div><div className="min-h-0 flex-1"><ChatPanel agent={agent} chat={chat} selection={null} comments={comments} onEditComment={(i, comment) => setComments((items) => items.map((item, index) => index === i ? { ...item, comment } : item))} onRemoveComment={(i) => setComments((items) => items.filter((_, index) => index !== i))} onCommentsSent={() => setComments([])} commentMode={false} onToggleCommentMode={() => {}} onRestoreMessage={() => {}} initialInput="请继续调整顶部导航，并保留现有的响应式行为。" /></div></div>;
 }
 
-const processPhases = [
-  { content: "⏳ Agent 正在处理…" },
-  { content: "⏳ 正在分析页面组件、样式依赖与 DOM 结构…" },
-  { content: "⏳ 正在定位 Header 与 TaskCard 的源码实现…" },
-  { content: "⏳ 正在修改组件样式并同步共享主题 token…" },
-  { content: "⏳ 正在创建自动测试用例…" },
-  { content: "⏳ 正在通过浏览器验证页面行为…" },
-  { content: "⏳ 正在清理测试资源…" },
-  { content: "修改已完成，任务卡片样式已经更新。", complete: true },
-];
-
 function ProcessStatePanel() {
-  const [phase, setPhase] = useState(0);
-  useEffect(() => { const timer = window.setInterval(() => setPhase((value) => (value + 1) % processPhases.length), 2200); return () => window.clearInterval(timer); }, []);
-  const current = processPhases[phase];
   const agent = { connected: true, connecting: false, error: null, agentUrl: "http://127.0.0.1:19527", agentToken: "", setAgentUrl: () => {}, setAgentToken: () => {}, connect: async () => {}, permissions: { alwaysAllowEdits: false, alwaysAllowAutomatedTesting: false }, updatePermission: async () => {} };
   const messages: ChatMessage[] = [
     { role: "user", content: "请优化任务卡片并完成自动测试。", timestamp: 1 },
-    { role: "ai", content: current.content, timestamp: phase + 2, pending: !current.complete },
+    { role: "ai", content: "⏳ Agent 正在处理…", timestamp: 2, pending: true },
   ];
-  const chat = { messages, sending: !current.complete, sendMessage: () => {}, startVerification: () => {}, fixVerification: () => {}, cancelCurrent: () => {}, clearHistory: () => {}, deleteMessage: () => {} };
+  const chat = { messages, sending: true, sendMessage: () => {}, startVerification: () => {}, fixVerification: () => {}, cancelCurrent: () => {}, clearHistory: () => {}, deleteMessage: () => {} };
   return <div className="flex h-screen flex-col"><div className="flex items-center gap-1.5 border-b bg-card px-2 py-1.5"><span className="font-semibold text-xs">对话</span><span className="ml-auto flex h-6 w-6 items-center justify-center"><span className="h-2 w-2 rounded-full bg-green-500" /></span></div><div className="min-h-0 flex-1"><ChatPanel agent={agent} chat={chat} selection={null} comments={[]} onEditComment={() => {}} onRemoveComment={() => {}} onCommentsSent={() => {}} commentMode={false} onToggleCommentMode={() => {}} onRestoreMessage={() => {}} /></div></div>;
 }
 

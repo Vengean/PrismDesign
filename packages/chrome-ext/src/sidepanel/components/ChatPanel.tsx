@@ -354,9 +354,9 @@ function ChatView({ agent, chat, selection, comments, onEditComment, onRemoveCom
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages]);
+  }, [messages, comments.length, attachments.length, contextOrder.length]);
   useEffect(() => {
     setContextOrder((order) => comments.length ? (order.includes("comments") ? order : [...order, "comments"]) : order.filter((item) => item !== "comments"));
   }, [comments.length]);

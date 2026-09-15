@@ -19,7 +19,7 @@
   ],
   "scripts": {
     "dev": "tsx watch src/cli.ts start",
-    "dev:ui": "tsx watch src/cli.ts start --project ../..",
+    "dev:ui": "tsx src/cli.ts start --project ../.. --port 19527 --provider codex",
     "build": "tsup",
     "start": "node dist/cli.js start"
   },

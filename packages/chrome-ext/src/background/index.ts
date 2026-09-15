@@ -73,7 +73,6 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
 // restart) before concluding the side panel is truly closed.
 
 let sidePanelOpen = false;
-let sidePanelCloseTimer: ReturnType<typeof setTimeout> | null = null;
 let boundAgentTabId: number | undefined;
 const BOUND_AGENT_TAB_KEY = "boundAgentTab";
 
@@ -141,20 +140,12 @@ chrome.action.onClicked.addListener((tab) => {
 
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name === "prism-sidepanel") {
-    if (sidePanelCloseTimer) clearTimeout(sidePanelCloseTimer);
-    sidePanelCloseTimer = null;
     sidePanelOpen = true;
     handleSidePanelOpen();
 
     port.onDisconnect.addListener(() => {
       sidePanelOpen = false;
-      // Chrome may rotate the extension context and reconnect immediately.
-      // Avoid tearing down the Agent for a transient port disconnect.
-      if (sidePanelCloseTimer) clearTimeout(sidePanelCloseTimer);
-      sidePanelCloseTimer = setTimeout(() => {
-        sidePanelCloseTimer = null;
-        if (!sidePanelOpen) void handleSidePanelClose();
-      }, 1200);
+      handleSidePanelClose();
     });
   }
 });
@@ -413,8 +404,7 @@ async function handleAgentConnect(url: string, token: string, requestedTabId?: n
         state.agentProgress = "";
         broadcastToSidePanel({ type: "AGENT_ERROR", payload: { message: (data as any)?.message || String(data) } });
       } else if (eventType === "connection_lost") {
-        // Keep the current conversation mounted during the automatic retry.
-        // A failure is reported only after the retry attempt completes.
+        broadcastToSidePanel({ type: "AGENT_STATUS", payload: { connected: false } });
       } else if (eventType === "connection_restored") {
         broadcastToSidePanel({ type: "AGENT_STATUS", payload: { connected: true, project: (data as any)?.project } });
         void getAgentRuntimeState(state).then((runtime) => {
@@ -426,8 +416,6 @@ async function handleAgentConnect(url: string, token: string, requestedTabId?: n
             broadcastToSidePanel({ type: "AGENT_PROGRESS", payload: { text: activeAgent.progress } });
           }
         });
-      } else if (eventType === "connection_reconnect_failed") {
-        broadcastToSidePanel({ type: "AGENT_STATUS", payload: { connected: false, error: (data as any)?.error || "Agent 连接已中断" } });
       } else if (eventType === "test-run.updated") {
         state.currentTestRun = data as any;
         broadcastToSidePanel({ type: "TEST_RUN_UPDATE", payload: data as any });
