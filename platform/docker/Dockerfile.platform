@@ -1,0 +1,31 @@
+FROM docker.1ms.run/library/node:22-slim
+
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null; \
+    sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list 2>/dev/null; true
+RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
+RUN npm config set registry https://registry.npmmirror.com/
+RUN npm install -g pnpm@9
+
+WORKDIR /app
+
+# Install server dependencies
+COPY package.json pnpm-lock.yaml* ./
+RUN pnpm install --frozen-lockfile || pnpm install
+
+# Install web dependencies
+COPY web/package.json web/
+RUN cd web && pnpm install
+
+# Copy source
+COPY . .
+
+# Build
+RUN pnpm build
+
+# Runtime
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV PRISM_DATA_DIR=/data
+
+EXPOSE 3000
+CMD ["node", "dist/server.js"]

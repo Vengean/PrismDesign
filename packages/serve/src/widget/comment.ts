@@ -3,7 +3,17 @@ import { t } from "./i18n.js";
 export interface CommentInfo {
   target: string; // e.g. "div.header" or "button#submit"
   text: string;
-  textContent?: string;
+  domStructure?: string;
+  /** React/Vue component name */
+  component?: string;
+  /** Component chain (authoring hierarchy) */
+  componentChain?: string;
+  /** Component props */
+  props?: Record<string, unknown>;
+  /** Source file path (relative) */
+  sourceFile?: string;
+  /** Source line number */
+  sourceLine?: number;
 }
 
 // ── Global overlay & popup IDs ──
@@ -104,6 +114,126 @@ function removePopup() {
   if (popup) popup.remove();
 }
 
+// ── Source location detection (React / Vue) ──
+
+function parseStackLine(line: string): { fileName?: string; lineNumber?: number } | null {
+  const m = line.match(/\((.+):(\d+):(\d+)\)/) || line.match(/at\s+(.+):(\d+):(\d+)/);
+  if (!m) return null;
+  let fileName = m[1];
+  const lineNumber = parseInt(m[2], 10);
+  try { fileName = decodeURIComponent(new URL(fileName).pathname).slice(1); } catch { fileName = fileName.replace(/\?.*$/, ""); }
+  if (fileName.includes("node_modules") || fileName.startsWith("chrome-extension")) return null;
+  return { fileName, lineNumber };
+}
+
+function getSourceFromFiber(fiber: any): { fileName?: string; lineNumber?: number } | null {
+  if (fiber._debugSource) return fiber._debugSource;
+  if (fiber._debugOwner?._debugSource) return fiber._debugOwner._debugSource;
+  if (fiber._debugStack) {
+    const stack = typeof fiber._debugStack === "string" ? fiber._debugStack : fiber._debugStack?.stack;
+    if (stack) { for (const line of stack.split("\n").slice(1)) { const p = parseStackLine(line); if (p) return p; } }
+  }
+  if (typeof fiber.type === "function" && fiber.type.__source) return fiber.type.__source;
+  return null;
+}
+
+const SKIP_TAGS = new Set([6, 9, 10, 13]);
+
+function sanitizeProps(props: Record<string, unknown> | null): Record<string, unknown> {
+  if (!props) return {};
+  const clean: Record<string, unknown> = {};
+  try {
+    for (const key of Object.keys(props)) {
+      if (key === "children") continue;
+      const value = props[key];
+      const t = typeof value;
+      if (t === "string" || t === "number" || t === "boolean" || value === null) clean[key] = value;
+    }
+  } catch {}
+  return clean;
+}
+
+interface DetectedInfo {
+  component?: string;
+  componentChain?: string;
+  props?: Record<string, unknown>;
+  sourceFile?: string;
+  sourceLine?: number;
+}
+
+function detectComponentInfo(el: Element): DetectedInfo {
+  try {
+    const keys = Object.getOwnPropertyNames(el);
+    const fiberKey = keys.find(k => k.startsWith("__reactFiber$") || k.startsWith("__reactInternalInstance$"));
+    if (fiberKey) {
+      const fiber = (el as any)[fiberKey];
+      let comp: DetectedInfo | null = null;
+      let f = fiber;
+      while (f) {
+        if (typeof f.type === "function" && !SKIP_TAGS.has(f.tag)) {
+          const name = f.type.displayName || f.type.name;
+          if (name && name.length > 2) {
+            const src = getSourceFromFiber(f);
+            if (!src?.fileName?.includes("node_modules")) {
+              comp = { component: name, props: sanitizeProps(f.memoizedProps), sourceFile: src?.fileName, sourceLine: src?.lineNumber };
+              break;
+            }
+          }
+        }
+        f = f.return;
+      }
+      const chain: string[] = [];
+      let owner = fiber._debugOwner;
+      while (owner) {
+        if (typeof owner.type === "function" && !SKIP_TAGS.has(owner.tag)) {
+          const name = owner.type.displayName || owner.type.name;
+          if (name && name.length > 2) {
+            const src = getSourceFromFiber(owner);
+            if (!src?.fileName?.includes("node_modules") && (chain.length === 0 || chain[chain.length - 1] !== name)) chain.push(name);
+          }
+        }
+        owner = owner._debugOwner;
+      }
+      chain.reverse();
+      if (comp?.component && (chain.length === 0 || chain[chain.length - 1] !== comp.component)) chain.push(comp.component);
+      const trimmed = chain.length > 5 ? "... > " + chain.slice(-5).join(" > ") : chain.join(" > ");
+      return { component: comp?.component, componentChain: trimmed || undefined, props: comp?.props, sourceFile: comp?.sourceFile, sourceLine: comp?.sourceLine };
+    }
+    const vueInst = (el as any).__vueParentComponent;
+    if (vueInst) { const name = vueInst.type.__name || vueInst.type.name; return { component: name, sourceFile: vueInst.type.__file }; }
+    const vue2 = (el as any).__vue__;
+    if (vue2) { const name = vue2.$options.name; return { component: name, sourceFile: vue2.$options.__file }; }
+  } catch {}
+  return {};
+}
+
+/** Build simplified DOM snapshot */
+function collectDomSnapshot(el: Element, depth = 0, maxDepth = 4): string {
+  const indent = "  ".repeat(depth);
+  const tag = el.tagName.toLowerCase();
+  const htmlEl = el as HTMLElement;
+  let attrs = "";
+  if (el.id) attrs += ` id="${el.id}"`;
+  const cls = typeof el.className === "string" ? el.className.trim() : "";
+  if (cls) { const parts = cls.split(" "); attrs += ` class="${parts.slice(0, 3).join(" ")}${parts.length > 3 ? " ..." : ""}"`; }
+  const children = el.children;
+  if (children.length === 0 || depth >= maxDepth) {
+    const text = (htmlEl.innerText || "").trim().replace(/\s+/g, " ");
+    if (!text) return `${indent}<${tag}${attrs} />`;
+    const truncated = text.length > 30 ? text.slice(0, 30) + "..." : text;
+    return `${indent}<${tag}${attrs}>${truncated}</${tag}>`;
+  }
+  const lines: string[] = [`${indent}<${tag}${attrs}>`];
+  for (const node of el.childNodes) {
+    if (node === children[0]) break;
+    if (node.nodeType === Node.TEXT_NODE) { const t = (node.textContent || "").trim(); if (t) lines.push(`${indent}  ${t.length > 30 ? t.slice(0, 30) + "..." : t}`); }
+  }
+  lines.push(collectDomSnapshot(children[0], depth + 1, maxDepth));
+  if (children.length > 1) lines.push(`${indent}  ...`);
+  lines.push(`${indent}</${tag}>`);
+  return lines.join("\n");
+}
+
 function buildCommentInfo(el: Element, commentText: string): CommentInfo {
   const tag = el.tagName.toLowerCase();
   let target = tag;
@@ -113,8 +243,18 @@ function buildCommentInfo(el: Element, commentText: string): CommentInfo {
     const cls = el.className.trim().split(/\s+/).slice(0, 2).join(".");
     if (cls) target = `${tag}.${cls}`;
   }
-  const textContent = (el.textContent || "").trim().slice(0, 80);
-  return { target, text: commentText, textContent: textContent || undefined };
+  const domStructure = collectDomSnapshot(el);
+  const { component, componentChain, props, sourceFile, sourceLine } = detectComponentInfo(el);
+  return {
+    target,
+    text: commentText,
+    domStructure: domStructure || undefined,
+    component,
+    componentChain,
+    props: props && Object.keys(props).length > 0 ? props : undefined,
+    sourceFile,
+    sourceLine,
+  };
 }
 
 function isCommentUI(el: Element): boolean {

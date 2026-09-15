@@ -273,13 +273,28 @@ export function createChat(
     const savedComments = [...commentTags];
 
     if (hasComments) {
-      const lines = commentTags.map((c) => {
-        let line = `- <${c.target}>`;
-        if (c.textContent) line += ` (text: "${c.textContent}")`;
-        line += `: "${c.text}"`;
-        return line;
+      const parts = commentTags.map((c) => {
+        const lines: string[] = [];
+        lines.push(`Element: <${c.target}>`);
+        if (c.componentChain) lines.push(`Component: ${c.componentChain}`);
+        if (c.sourceFile) {
+          let loc = c.sourceFile;
+          if (c.sourceLine) loc += `:${c.sourceLine}`;
+          lines.push(`Source: ${loc}`);
+        }
+        if (c.props && Object.keys(c.props).length > 0) {
+          const propStr = Object.entries(c.props).slice(0, 8)
+            .map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(" ");
+          lines.push(`Props: ${propStr}`);
+        }
+        if (c.domStructure) {
+          lines.push(`DOM Structure:`);
+          lines.push(c.domStructure);
+        }
+        lines.push(`Comment: "${c.text}"`);
+        return lines.join("\n");
       });
-      agentMessage = lines.join("\n");
+      agentMessage = parts.join("\n\n");
       if (text) {
         agentMessage += `\n\n${text}`;
       }
@@ -320,6 +335,7 @@ export function createChat(
     // WebSocket for progress — also accumulate text for fallback result
     const thinkingIdx = messages.length - 1;
     let lastProgressText = "";
+    let streamedText = "";
     const ws = agentClient.connectWebSocket((type, data: any) => {
       if (type === "agent:progress") {
         const progressText = data.text || t("chat.thinking");
@@ -328,6 +344,10 @@ export function createChat(
           ...messages[thinkingIdx],
           content: `⏳ ${progressText}`,
         };
+        render();
+      } else if (type === "message.delta") {
+        streamedText += data.delta || "";
+        messages[thinkingIdx] = { ...messages[thinkingIdx], content: streamedText };
         render();
       }
     });

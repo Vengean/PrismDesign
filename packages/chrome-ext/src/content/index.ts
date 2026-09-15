@@ -10,7 +10,7 @@ import {
 } from "./editor.js";
 import { buildDOMTree, resetIdCounter } from "./dom-tree.js";
 import { initKeyboard, destroyKeyboard } from "./keyboard.js";
-import { createToolbar, destroyToolbar, isToolbarElement, setActiveMode, setToolbarDisabled, isToolbarDisabled, triggerMode, updatePendingBadge } from "./toolbar.js";
+import { createToolbar, destroyToolbar, isToolbarElement, setActiveMode, setToolbarDisabled, isToolbarDisabled, triggerMode } from "./toolbar.js";
 import { initCommentPopup, showCommentPopup, hideCommentPopup, destroyCommentPopup, isCommentPopupElement } from "./comment-popup.js";
 import { safeSendMessage, isContextInvalidated, onContextInvalidated } from "./runtime.js";
 import type { PrismMessage } from "../shared/types.js";
@@ -19,6 +19,52 @@ let designModeActive = false;
 let dragModeActive = false;
 let commentModeActive = false;
 let selectedElement: HTMLElement | null = null;
+const COMMENT_CURSOR_STYLE_ID = "prism-design-comment-cursor";
+
+function showCommentCursor() {
+  const cursorSvg = btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="#6366f1" stroke="white" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`);
+  const cursor = `url(data:image/svg+xml;base64,${cursorSvg}) 4 4, pointer`;
+  let style = document.getElementById(COMMENT_CURSOR_STYLE_ID) as HTMLStyleElement | null;
+  if (!style) {
+    style = document.createElement("style");
+    style.id = COMMENT_CURSOR_STYLE_ID;
+    document.head.appendChild(style);
+  }
+  style.textContent = `*, *::before, *::after { cursor: ${cursor} !important; } #prism-design-comment-popup *, #prism-design-comment-popup textarea { cursor: auto !important; }`;
+}
+
+function hideCommentCursor() {
+  document.getElementById(COMMENT_CURSOR_STYLE_ID)?.remove();
+}
+
+function finishCommentTargetSelection(info: ReturnType<typeof inspectElement>) {
+  designModeActive = false;
+  commentModeActive = false;
+  document.removeEventListener("pointermove", handleMouseMove as EventListener, true);
+  document.removeEventListener("click", handleClick, true);
+  document.removeEventListener("pointerdown", handleMouseDown as EventListener, true);
+  document.removeEventListener("pointerleave", handleMouseLeave, true);
+  document.removeEventListener("touchmove", handleMouseMove as EventListener, true);
+  document.removeEventListener("touchend", handleClick as EventListener, true);
+  hideHoverHighlight();
+  hideCommentCursor();
+  destroyKeyboard();
+  document.body.style.cursor = "";
+  safeSendMessage({ type: "COMMENT_TARGET_SELECTED", payload: info });
+}
+
+function clearCommentTarget() {
+  hideSelectHighlight();
+  destroyOverlays();
+  destroyEditor();
+  selectedElement = null;
+  safeSendMessage({ type: "ELEMENT_DESELECTED" });
+}
+
+function cancelCommentTarget(domPath: string) {
+  clearCommentTarget();
+  safeSendMessage({ type: "COMMENT_CANCELLED", payload: { domPath } });
+}
 
 /** ESC — deactivate current toolbar mode and return to chat panel */
 function exitCurrentMode() {
@@ -78,13 +124,16 @@ function handleClick(e: PointerEvent | MouseEvent | TouchEvent) {
   e.stopPropagation();
 
   if (commentModeActive) {
+    selectedElement = target;
     hideHoverHighlight();
     showSelectHighlight(target);
     const info = inspectElement(target);
+    safeSendMessage({ type: "ELEMENT_SELECTED", payload: info });
     showCommentPopup(target, (comment) => {
-      hideSelectHighlight();
+      clearCommentTarget();
       safeSendMessage({ type: "COMMENT_ADDED", payload: { element: info, comment } });
-    });
+    }, () => cancelCommentTarget(info.domPath));
+    finishCommentTargetSelection(info);
     return;
   }
 
@@ -171,6 +220,7 @@ function disableDesignMode() {
 
   document.body.classList.remove("prism-design-drag-mode");
   document.body.style.cursor = "";
+  hideCommentCursor();
   selectedElement = null;
 
   safeSendMessage({ type: "ELEMENT_DESELECTED" });
@@ -218,11 +268,11 @@ function findElementByPath(domPath: string): HTMLElement | null {
 
 // Only handle downstream messages meant for content script
 const HANDLED_TYPES = new Set([
-  "DESIGN_MODE_ON", "DESIGN_MODE_OFF", "ENABLE_DRAG_MODE", "DISABLE_DRAG_MODE",
+  "DESIGN_MODE_ON", "DESIGN_MODE_OFF", "START_COMMENT_MODE", "STOP_COMMENT_MODE", "ENABLE_DRAG_MODE", "DISABLE_DRAG_MODE",
   "GET_DOM_TREE", "GET_PENDING_CHANGES", "CLEAR_CHANGES",
   "HIGHLIGHT_ELEMENT", "UNHIGHLIGHT_ELEMENT", "SELECT_ELEMENT",
   "APPLY_STYLE_PREVIEW", "CLEAR_STYLE_PREVIEW",
-  "SHOW_TOOLBAR", "HIDE_TOOLBAR", "TOOLBAR_DISABLE", "UPDATE_PENDING_COUNT", "RELOAD_IF_STATIC", "PING",
+  "SHOW_TOOLBAR", "HIDE_TOOLBAR", "TOOLBAR_DISABLE", "RELOAD_IF_STATIC", "PING",
 ]);
 
 chrome.runtime.onMessage.addListener((message: PrismMessage, _sender, sendResponse) => {
@@ -232,6 +282,17 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, _sender, sendRespon
   switch (message.type) {
     case "DESIGN_MODE_ON": enableDesignMode(); sendResponse({ success: true }); break;
     case "DESIGN_MODE_OFF": disableDesignMode(); setActiveMode(null); sendResponse({ success: true }); break;
+    case "START_COMMENT_MODE":
+      disableDesignMode();
+      commentModeActive = true;
+      enableDesignMode();
+      showCommentCursor();
+      sendResponse({ success: true });
+      break;
+    case "STOP_COMMENT_MODE":
+      disableDesignMode();
+      sendResponse({ success: true });
+      break;
     case "ENABLE_DRAG_MODE":
       dragModeActive = true;
       document.body.classList.add("prism-design-drag-mode");
@@ -267,6 +328,21 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, _sender, sendRespon
     case "SELECT_ELEMENT": {
       const el = findElementByPath(message.payload.domPath);
       if (el) {
+        if (commentModeActive) {
+          selectedElement = el;
+          hideHoverHighlight();
+          showSelectHighlight(el);
+          const info = inspectElement(el);
+          safeSendMessage({ type: "ELEMENT_SELECTED", payload: info });
+          showCommentPopup(el, (comment) => {
+            clearCommentTarget();
+            safeSendMessage({ type: "COMMENT_ADDED", payload: { element: info, comment } });
+          }, () => cancelCommentTarget(info.domPath));
+          finishCommentTargetSelection(info);
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+          sendResponse({ success: true });
+          break;
+        }
         selectedElement = el;
         hideHoverHighlight();
         showSelectHighlight(el);
@@ -315,10 +391,6 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, _sender, sendRespon
       }
       sendResponse({ success: true });
       break;
-    case "UPDATE_PENDING_COUNT":
-      updatePendingBadge(message.payload.count);
-      sendResponse({ success: true });
-      break;
     case "RELOAD_IF_STATIC":
       // Static HTML pages (file://) have no dev server / HMR, so reload manually
       if (location.protocol === "file:") {
@@ -359,18 +431,15 @@ function ensureToolbar() {
 
       if (mode === "select") {
         enableDesignMode();
-        safeSendMessage({ type: "OPEN_SIDE_PANEL" });
         safeSendMessage({ type: "OPEN_NAVIGATOR", payload: { mode: "select" } });
       } else if (mode === "drag") {
         dragModeActive = true;
         enableDesignMode();
-        safeSendMessage({ type: "OPEN_SIDE_PANEL" });
         safeSendMessage({ type: "OPEN_NAVIGATOR", payload: { mode: "drag" } });
       } else if (mode === "comment") {
         commentModeActive = true;
         enableDesignMode();
-        safeSendMessage({ type: "OPEN_SIDE_PANEL" });
-        safeSendMessage({ type: "OPEN_PENDING" });
+        safeSendMessage({ type: "OPEN_CHAT" });
       } else {
         // null — exit current mode
         safeSendMessage({ type: "OPEN_CHAT" });

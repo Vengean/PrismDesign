@@ -127,16 +127,18 @@ function inspectElement(el: Element): string {
 
     const fiber = fiberKey ? (el as any)[fiberKey] : null;
     if (fiber) {
+      // Fiber tags to skip: ContextProvider(10), ContextConsumer(9), Suspense(13), Fragment(6)
+      const SKIP_TAGS = new Set([6, 9, 10, 13]);
+
+      // 1. Find nearest user component via return chain
       let comp = null;
-      const chain: any[] = [];
       let f = fiber;
       while (f) {
-        if (typeof f.type === "function") {
+        if (typeof f.type === "function" && !SKIP_TAGS.has(f.tag)) {
           const name = f.type.displayName || f.type.name;
-          if (name) {
+          if (name && name.length > 2) {
             const src = getSourceFromFiber(f);
             const isNM = src?.fileName?.includes("node_modules");
-            // Nearest user-land component
             if (!comp && !isNM) {
               comp = {
                 name,
@@ -145,9 +147,23 @@ function inspectElement(el: Element): string {
                 sourceLine: src?.lineNumber,
                 sourceColumn: src?.columnNumber,
               };
+              break;
             }
-            // Chain: user components + named library components (capitalized)
-            if (!isNM || (name.charCodeAt(0) >= 65 && name.charCodeAt(0) <= 90)) {
+          }
+        }
+        f = f.return;
+      }
+
+      // 2. Build chain via _debugOwner (authoring hierarchy, skips framework wrappers)
+      const chain: any[] = [];
+      let owner = fiber._debugOwner;
+      while (owner) {
+        if (typeof owner.type === "function" && !SKIP_TAGS.has(owner.tag)) {
+          const name = owner.type.displayName || owner.type.name;
+          if (name && name.length > 2) {
+            const src = getSourceFromFiber(owner);
+            const isNM = src?.fileName?.includes("node_modules");
+            if (!isNM) {
               if (chain.length === 0 || chain[chain.length - 1].name !== name) {
                 chain.push({
                   name,
@@ -159,9 +175,20 @@ function inspectElement(el: Element): string {
             }
           }
         }
-        f = f.return;
+        owner = owner._debugOwner;
       }
       chain.reverse();
+
+      // Append the nearest component itself if not already at the end
+      if (comp && (chain.length === 0 || chain[chain.length - 1].name !== comp.name)) {
+        chain.push({
+          name: comp.name,
+          sourceFile: comp.sourceFile,
+          sourceLine: comp.sourceLine,
+          sourceColumn: comp.sourceColumn,
+        });
+      }
+
       return JSON.stringify({ component: comp, chain, vue: null });
     }
 

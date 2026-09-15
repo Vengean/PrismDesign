@@ -1,0 +1,58 @@
+{
+  "name": "next-plugin-prism-design",
+  "version": "0.2.1",
+  "description": "Next.js plugin for PrismDesign — AI-powered visual UI editing in the browser",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js",
+      "require": "./dist/react.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "keywords": [
+    "next",
+    "nextjs",
+    "prism-design",
+    "ai",
+    "design",
+    "visual-editing",
+    "ui",
+    "frontend"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anthropics/prism-design"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch"
+  },
+  "dependencies": {
+    "prism-design-widget": "workspace:*",
+    "prism-design-agent": "workspace:*"
+  },
+  "peerDependencies": {
+    "next": ">=13.0.0",
+    "react": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "next": "^15.0.0",
+    "react": "^19.0.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0"
+  }
+}

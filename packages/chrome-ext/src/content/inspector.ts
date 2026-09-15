@@ -164,19 +164,49 @@ export function getComponentChain(element: HTMLElement): string {
   return detail.map((c) => c.name).join(" > ");
 }
 
-/** Collect visible text from child nodes, separated by spaces */
-function collectText(el: HTMLElement): string {
-  const parts: string[] = [];
-  for (const child of el.childNodes) {
-    if (child.nodeType === Node.TEXT_NODE) {
-      const t = (child.textContent || "").trim();
-      if (t) parts.push(t);
-    } else if (child.nodeType === Node.ELEMENT_NODE) {
-      const t = (child as HTMLElement).innerText?.trim();
-      if (t) parts.push(t);
+/** Build a simplified DOM snapshot: first child per level, text truncated, siblings as "..." */
+function collectDomSnapshot(el: HTMLElement, depth = 0, maxDepth = 4): string {
+  const indent = "  ".repeat(depth);
+  const tag = el.tagName.toLowerCase();
+
+  // Build opening tag with key attributes
+  let attrs = "";
+  if (el.id) attrs += ` id="${el.id}"`;
+  const cls = typeof el.className === "string" ? el.className.trim() : "";
+  if (cls) attrs += ` class="${cls.split(" ").slice(0, 3).join(" ")}${cls.split(" ").length > 3 ? " ..." : ""}"`;
+
+  // Leaf node or max depth: show truncated text
+  const children = el.children;
+  if (children.length === 0 || depth >= maxDepth) {
+    const text = (el.innerText || "").trim().replace(/\s+/g, " ");
+    if (!text) return `${indent}<${tag}${attrs} />`;
+    const truncated = text.length > 30 ? text.slice(0, 30) + "..." : text;
+    return `${indent}<${tag}${attrs}>${truncated}</${tag}>`;
+  }
+
+  // Container: show first child fully, rest as "..."
+  const lines: string[] = [];
+  lines.push(`${indent}<${tag}${attrs}>`);
+
+  // Direct text nodes before first child
+  for (const node of el.childNodes) {
+    if (node === children[0]) break;
+    if (node.nodeType === Node.TEXT_NODE) {
+      const t = (node.textContent || "").trim();
+      if (t) {
+        const truncated = t.length > 30 ? t.slice(0, 30) + "..." : t;
+        lines.push(`${indent}  ${truncated}`);
+      }
     }
   }
-  return parts.join(" ").slice(0, 100);
+
+  lines.push(collectDomSnapshot(children[0] as HTMLElement, depth + 1, maxDepth));
+  if (children.length > 1) {
+    lines.push(`${indent}  ...`);
+  }
+
+  lines.push(`${indent}</${tag}>`);
+  return lines.join("\n");
 }
 
 const TEXT_TAGS = new Set(["span", "p", "h1", "h2", "h3", "h4", "h5", "h6", "a", "label", "strong", "em", "b", "i", "li", "td", "th", "dt", "dd", "figcaption"]);
@@ -200,7 +230,7 @@ export function inspectElement(element: HTMLElement): ElementSelection {
     domPath: getDomPath(element),
     tagName: tag,
     id: element.id || "",
-    textContent: collectText(element),
+    textContent: collectDomSnapshot(element),
     className: typeof element.className === "string" ? element.className : "",
     role: element.getAttribute("role") || "",
     ariaLabel: element.getAttribute("aria-label") || "",

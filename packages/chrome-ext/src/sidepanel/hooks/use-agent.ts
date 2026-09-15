@@ -1,13 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import type { ProjectInfo, PrismMessage } from "../../shared/types.js";
+import type { AgentPermissions, ProjectInfo, PrismMessage } from "../../shared/types.js";
 import { t } from "../../shared/i18n.js";
 
 export function useAgent() {
+  const [permissions, setPermissions] = useState<AgentPermissions>({ alwaysAllowEdits: false, alwaysAllowAutomatedTesting: false });
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [aiWorking, setAiWorking] = useState(false);
+  const [agentToken, setAgentToken] = useState("");
   const [agentUrl, setAgentUrl] = useState(() => {
     // Default to current page's hostname so LAN access works out of the box
     try {
@@ -20,10 +22,34 @@ export function useAgent() {
 
   // Load saved URL (overrides default if exists)
   useEffect(() => {
-    chrome.storage.local.get("agentUrl", (result) => {
+    chrome.storage.local.get(["agentUrl", "agentToken"], (result) => {
       if (result.agentUrl) setAgentUrl(result.agentUrl);
+      if (result.agentToken) setAgentToken(result.agentToken);
     });
   }, []);
+
+  useEffect(() => {
+    if (!connected || !agentUrl) return;
+    const scope = `${agentUrl}|${project?.root || "default"}`;
+    chrome.storage.local.get("agentPermissions", (result) => {
+      const saved = result.agentPermissions?.[scope];
+      const next = {
+        alwaysAllowEdits: saved?.alwaysAllowEdits === true,
+        alwaysAllowAutomatedTesting: saved?.alwaysAllowAutomatedTesting === true,
+      };
+      setPermissions(next);
+      chrome.runtime.sendMessage({ type: "AGENT_SET_PERMISSIONS", payload: next }).catch(() => {});
+    });
+  }, [connected, agentUrl, project?.root]);
+
+  const updatePermission = useCallback(async (key: keyof AgentPermissions, enabled: boolean) => {
+    const next = { ...permissions, [key]: enabled };
+    setPermissions(next);
+    const scope = `${agentUrl}|${project?.root || "default"}`;
+    const result = await chrome.storage.local.get("agentPermissions");
+    await chrome.storage.local.set({ agentPermissions: { ...(result.agentPermissions || {}), [scope]: next } });
+    await chrome.runtime.sendMessage({ type: "AGENT_SET_PERMISSIONS", payload: next });
+  }, [permissions, agentUrl, project?.root]);
 
   // Listen for agent events from background
   const connectingRef = useRef(false);
@@ -60,13 +86,13 @@ export function useAgent() {
     return () => chrome.runtime.onMessage.removeListener(handler);
   }, []);
 
-  const connect = useCallback(async (url: string) => {
+  const connect = useCallback(async (url: string, token: string) => {
     setConnecting(true);
     connectingRef.current = true;
     setError(null);
     setAgentUrl(url);
     try {
-      const result = await chrome.runtime.sendMessage({ type: "AGENT_CONNECT", payload: { url } }) as any;
+      const result = await chrome.runtime.sendMessage({ type: "AGENT_CONNECT", payload: { url, token } }) as any;
       if (!result?.success) {
         setConnecting(false);
         setConnected(false);
@@ -90,7 +116,7 @@ export function useAgent() {
   }, []);
 
   return {
-    connected, connecting, error, project, aiWorking, agentUrl, setAgentUrl,
-    connect, disconnect, rollback,
+    connected, connecting, error, project, aiWorking, agentUrl, setAgentUrl, agentToken, setAgentToken,
+    connect, disconnect, rollback, permissions, updatePermission,
   };
 }

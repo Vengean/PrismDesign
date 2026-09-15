@@ -1,0 +1,11 @@
+interface:
+  display_name: "Demo 测试数据"
+  short_description: "为 Demo 浏览器测试准备并清理受控的 SQLite 数据"
+  default_prompt: "使用 $demo-fixtures 为当前真实浏览器验证准备前置数据并在完成后清理。"
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "demo_fixtures"
+      description: "受控创建、检查和清理 Prism Demo SQLite 测试数据"
+policy:
+  allow_implicit_invocation: true

@@ -3,9 +3,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { scanProject } from "./project-profiler.js";
 import { startServer } from "./server.js";
-import { loadConfig, applyConfigToEnv, type PrismConfig } from "./config.js";
+import { loadConfig, applyConfigToEnv } from "./config.js";
 
 // ── .env loader (lightweight, no dependency) ──
 
@@ -28,27 +27,6 @@ function loadEnvFile(dir: string) {
 }
 
 // ── Helpers ──
-
-function findProjectRoot(): string {
-  let dir = process.cwd();
-  while (dir !== path.dirname(dir)) {
-    if (
-      fs.existsSync(path.join(dir, "pnpm-workspace.yaml")) ||
-      fs.existsSync(path.join(dir, "lerna.json"))
-    ) {
-      return dir;
-    }
-    const pkgPath = path.join(dir, "package.json");
-    if (fs.existsSync(pkgPath)) {
-      try {
-        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
-        if (pkg.workspaces) return dir;
-      } catch {}
-    }
-    dir = path.dirname(dir);
-  }
-  return process.cwd();
-}
 
 function getLocalIP(): string {
   const interfaces = os.networkInterfaces();
@@ -75,94 +53,82 @@ async function main() {
 
   if (command === "--help" || command === "-h") {
     console.log(`
-🎨 PrismDesign Agent
+PrismDesign Agent
 
 Usage:
   prism-design-agent start [options]
 
 Options:
   --port <number>        服务端口 (default: 9527)
-  --project <path>       项目根目录 (default: 自动检测)
-  --api-key <key>        Anthropic API Key
-  --api-base-url <url>   API Base URL (代理)
-  --model <name>         模型名称 (default: claude-opus-4-6)
-
-Config File (prism.config.ts):
-  启动目录下放置 prism.config.ts 可配置所有参数:
-  anthropicApiKey, anthropicModel, anthropicBaseUrl,
-  httpsProxy, httpProxy, options (SDK 选项)
-
-  优先级: CLI 参数 > prism.config > 环境变量 > .env
-
-Examples:
-  npx prism-design-agent start
-  npx prism-design-agent start --port 8080
-  npx prism-design-agent start --model claude-sonnet-4-6
+  --project <path>       项目根目录 (default: 当前目录)
+  --api-key <key>        API Key
+  --api-base-url <url>   API Base URL
+  --model <name>         模型名称
+  --provider <type>      Agent Provider: claude | claude-sub | openai | codex | glm
+  --agent-type <type>    --provider 的兼容别名
+  --no-access-token      关闭 Agent Token 鉴权（默认启用）
 `);
     process.exit(0);
   }
 
   // Determine project root
   const projectArg = getArg(args, "--project");
-  const projectRoot = projectArg ? path.resolve(projectArg) : findProjectRoot();
+  const projectRoot = projectArg ? path.resolve(projectArg) : process.cwd();
 
-  // Load .env files first (lowest priority, only sets if key not in env)
+  // Load .env files (lowest priority)
   loadEnvFile(projectRoot);
-  loadEnvFile(process.cwd());
 
-  // Load prism.config.{ts,js,mjs} (overrides .env)
+  // Load prism.config (overrides .env)
   const config = await loadConfig(projectRoot);
   applyConfigToEnv(config, true);
 
   // CLI args override everything
+  const providerArg = getArg(args, "--provider") || getArg(args, "--agent-type");
+  if (providerArg) process.env.PRISM_AGENT_PROVIDER = providerArg;
+  const agentType = process.env.PRISM_AGENT_PROVIDER || process.env.AGENT_TYPE || "claude";
+
   const apiKey = getArg(args, "--api-key");
-  if (apiKey) process.env.ANTHROPIC_API_KEY = apiKey;
+  if (apiKey && agentType !== "codex") process.env[agentType === "openai" ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY"] = apiKey;
 
   const baseUrl = getArg(args, "--api-base-url");
-  if (baseUrl) process.env.ANTHROPIC_BASE_URL = baseUrl;
+  if (baseUrl) process.env[agentType === "openai" ? "OPENAI_BASE_URL" : "ANTHROPIC_BASE_URL"] = baseUrl;
 
   const model = getArg(args, "--model");
-  if (model) process.env.ANTHROPIC_MODEL = model;
+  if (model) process.env[agentType === "openai" ? "OPENAI_MODEL" : agentType === "codex" ? "CODEX_MODEL" : "ANTHROPIC_MODEL"] = model;
 
   const port = parseInt(getArg(args, "--port") || "9527", 10);
 
-  // Scan project
-  console.log("🔍 扫描项目...");
-  let profile;
-  try {
-    profile = scanProject(projectRoot);
-  } catch (error) {
-    console.error(`❌ 项目扫描失败: ${error instanceof Error ? error.message : error}`);
-    process.exit(1);
-  }
+  // Determine agent type and model display
+  const modelName = agentType === "codex"
+    ? (process.env.CODEX_MODEL || "Codex CLI default")
+    : agentType === "openai"
+    ? (process.env.OPENAI_MODEL || "gpt-5.6")
+    : agentType === "glm"
+    ? (process.env.ANTHROPIC_MODEL || "glm-5.1")
+    : (process.env.ANTHROPIC_MODEL || "claude-opus-4-6");
 
-  const resolvedRoot = profile.resolvedRoot;
-
-  console.log(`   框架:     ${profile.framework}`);
-  console.log(`   语言:     ${profile.language}`);
-  console.log(`   构建工具: ${profile.buildTool}`);
-  console.log(`   源码目录: ${profile.srcDir}`);
-
-  // Attach SDK options from config
-  profile.sdkOptions = config.options;
-
-  // Start server
   const localIP = getLocalIP();
-  const modelName = process.env.ANTHROPIC_MODEL || "claude-opus-4-6";
 
   console.log("\n" + "=".repeat(50));
-  console.log("  🎨 PrismDesign Agent");
+  console.log("  PrismDesign Agent");
   console.log("=".repeat(50));
-  console.log(`\n  服务地址:  http://${localIP}:${port}`);
-  console.log(`  项目目录:  ${resolvedRoot}`);
-  console.log(`  模型:      ${modelName}`);
-  if (process.env.ANTHROPIC_BASE_URL) {
-    console.log(`  API 代理:  ${process.env.ANTHROPIC_BASE_URL}`);
-  }
-  console.log(`\n  👉 在 Chrome 插件中配置服务地址即可开始`);
-  console.log("\n" + "=".repeat(50) + "\n");
 
-  startServer(resolvedRoot, profile, port);
+  const accessTokenRequired = args.includes("--no-access-token") ? false : config.accessTokenRequired !== false;
+  const { port: actualPort } = await startServer(projectRoot, port, { accessTokenRequired });
+
+  // Machine-readable marker for tooling (e.g. vite-plugin) to detect actual port
+  console.log(`__PRISM_AGENT_PORT__=${actualPort}`);
+
+  console.log(`\n  服务地址:  http://${localIP}:${actualPort}`);
+  console.log(`  项目目录:  ${projectRoot}`);
+  console.log(`  Agent:     ${agentType === "codex" ? "Codex SDK (ChatGPT login)" : agentType === "openai" ? "OpenAI Agents SDK" : agentType === "glm" ? "GLM (glm-acp-agent)" : "Claude Agent SDK"}`);
+  console.log(`  模型:      ${modelName}`);
+  console.log(`  Token 鉴权: ${accessTokenRequired ? "启用" : "关闭"}`);
+  const configuredBaseUrl = agentType === "openai" ? process.env.OPENAI_BASE_URL : process.env.ANTHROPIC_BASE_URL;
+  if (configuredBaseUrl) {
+    console.log(`  API 代理:  ${configuredBaseUrl}`);
+  }
+  console.log("\n" + "=".repeat(50) + "\n");
 }
 
 main().catch((error) => {

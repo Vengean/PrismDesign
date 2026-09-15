@@ -4,4 +4,5 @@ export default defineConfig({
   entry: ["src/cli.ts"],
   format: ["esm"],
   external: ["open"],
+  clean: true,
 });

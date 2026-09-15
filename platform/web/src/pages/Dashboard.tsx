@@ -1,0 +1,303 @@
+import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
+import { api, type Workspace } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import BranchSelector from "@/components/BranchSelector";
+import ServicePanel from "@/components/ServicePanel";
+import ShareDialog from "@/components/ShareDialog";
+import {
+  FolderGit2,
+  Plus,
+  Play,
+  Square,
+  Trash2,
+  RefreshCw,
+  Loader2,
+  AlertCircle,
+  GitBranch,
+  Settings,
+  Share2,
+  Eye,
+  Pencil,
+} from "lucide-react";
+
+const STATUS_MAP: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
+  stopped: { label: "已停止", variant: "secondary" },
+  syncing: { label: "同步中", variant: "outline" },
+  starting: { label: "启动中", variant: "outline" },
+  running: { label: "运行中", variant: "default" },
+  error: { label: "错误", variant: "destructive" },
+};
+
+export default function Dashboard() {
+  const navigate = useNavigate();
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState<Workspace | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [shareTarget, setShareTarget] = useState<Workspace | null>(null);
+
+  const loadWorkspaces = useCallback(async () => {
+    try {
+      const data = await api.getWorkspaces();
+      setWorkspaces(data);
+    } catch (err) {
+      console.error("加载工作空间失败:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadWorkspaces();
+    const timer = window.setInterval(loadWorkspaces, 5000);
+    return () => window.clearInterval(timer);
+  }, [loadWorkspaces]);
+
+  async function handleAction(id: string, action: () => Promise<unknown>) {
+    setActionLoading(id);
+    try {
+      await action();
+      await loadWorkspaces();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "操作失败");
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    setActionLoading(deleteTarget.id);
+    try {
+      await api.deleteWorkspace(deleteTarget.id);
+      setDeleteTarget(null);
+      await loadWorkspaces();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "删除失败");
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  return (
+    <div className="p-8">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <FolderGit2 size={24} className="text-primary" />
+          <h1 className="text-2xl font-bold">工作空间</h1>
+        </div>
+        <Button onClick={() => navigate("/workspace/create")}>
+          <Plus size={16} />
+          创建工作空间
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-20 text-muted-foreground">
+          <Loader2 size={20} className="animate-spin mr-2" />
+          加载中...
+        </div>
+      ) : workspaces.length === 0 ? (
+        <Card>
+          <CardContent className="py-16">
+            <div className="text-center text-muted-foreground">
+              <FolderGit2 size={48} className="mx-auto mb-4 opacity-30" />
+              <p className="text-lg mb-2">暂无工作空间</p>
+              <p className="text-sm mb-4">创建一个工作空间来开始使用 AI 修改代码</p>
+              <Button onClick={() => navigate("/workspace/create")}>
+                <Plus size={16} />
+                创建工作空间
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-4">
+          {workspaces.map((ws) => {
+            const status = STATUS_MAP[ws.status] || STATUS_MAP.stopped;
+            const isLoading = actionLoading === ws.id;
+            const access = ws.access_level;
+            const isReadonly = access === "readonly";
+            const isOwnerOrAdmin = access === "owner" || access === "admin";
+            const canWrite = !isReadonly; // owner, admin, edit
+
+            return (
+              <Card key={ws.id} className="hover:shadow-md transition-shadow">
+                <CardContent className="p-5 space-y-3">
+                  {/* Row 1: title + badges + actions */}
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <h3
+                        className="text-base font-semibold truncate cursor-pointer hover:text-primary transition-colors"
+                        onClick={() => navigate(`/workspace/${ws.id}`)}
+                      >
+                        {ws.name}
+                      </h3>
+                      <Badge variant="outline" className="shrink-0">
+                        {ws.agent_type === "glm" ? "GLM" : "Claude"}
+                      </Badge>
+                      <Badge variant={status.variant} className="shrink-0">{status.label}</Badge>
+                      {access === "readonly" && (
+                        <Badge variant="secondary" className="shrink-0 gap-1">
+                          <Eye size={10} />
+                          只读
+                        </Badge>
+                      )}
+                      {access === "edit" && (
+                        <Badge variant="secondary" className="shrink-0 gap-1">
+                          <Pencil size={10} />
+                          共享
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <BranchSelector workspace={ws} onBranchChanged={loadWorkspaces} />
+                      {canWrite && ws.status === "running" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={isLoading}
+                          onClick={async () => {
+                            setActionLoading(ws.id);
+                            try {
+                              const res = await api.syncWorkspace(ws.id);
+                              alert(res.message);
+                              await loadWorkspaces();
+                            } catch (err) {
+                              alert(err instanceof Error ? err.message : "同步失败");
+                            } finally {
+                              setActionLoading(null);
+                            }
+                          }}
+                        >
+                          <RefreshCw size={14} className={ws.sync_status === "syncing" ? "animate-spin" : ""} />
+                          拉取代码
+                        </Button>
+                      )}
+                      {canWrite && (ws.status === "stopped" || ws.status === "error") ? (
+                        <Button
+                          size="sm"
+                          disabled={isLoading}
+                          onClick={() => handleAction(ws.id, () => api.startWorkspace(ws.id))}
+                        >
+                          {isLoading ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                          启动
+                        </Button>
+                      ) : canWrite && ws.status === "running" ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={isLoading}
+                          onClick={() => handleAction(ws.id, () => api.stopWorkspace(ws.id))}
+                        >
+                          <Square size={14} />
+                          停止
+                        </Button>
+                      ) : null}
+                      {isOwnerOrAdmin && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8 text-muted-foreground"
+                          onClick={() => setShareTarget(ws)}
+                          title="分享"
+                        >
+                          <Share2 size={15} />
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 text-muted-foreground"
+                        onClick={() => navigate(`/workspace/${ws.id}/settings`)}
+                        title="设置"
+                      >
+                        <Settings size={15} />
+                      </Button>
+                      {isOwnerOrAdmin && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8 text-muted-foreground hover:text-destructive"
+                          disabled={isLoading || ws.status === "running" || ws.status === "starting"}
+                          onClick={() => setDeleteTarget(ws)}
+                        >
+                          <Trash2 size={15} />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Row 2: meta info */}
+                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <GitBranch size={14} />
+                      {ws.repos.length} 个仓库
+                    </span>
+                    <span>
+                      创建于 {new Date(ws.created_at).toLocaleDateString("zh-CN")}
+                    </span>
+                    {(access === "readonly" || access === "edit") && (
+                      <span className="text-xs">来自 {ws.owner_id}</span>
+                    )}
+                  </div>
+
+                  {/* Row 3: error message (independent row, won't squeeze layout) */}
+                  {ws.error_message && (
+                    <div className="flex items-start gap-1.5 text-sm text-destructive bg-destructive/5 rounded-md px-3 py-2 border border-destructive/10">
+                      <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                      <span className="break-all">{ws.error_message}</span>
+                    </div>
+                  )}
+
+                  <ServicePanel workspace={ws} onRefresh={loadWorkspaces} />
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Delete confirmation */}
+      <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认删除</DialogTitle>
+            <DialogDescription>
+              确定要删除工作空间「{deleteTarget?.name}」吗？此操作将同时删除容器和数据卷，不可恢复。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              取消
+            </Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={!!actionLoading}>
+              {actionLoading ? "删除中..." : "确认删除"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Share dialog */}
+      {shareTarget && (
+        <ShareDialog
+          workspaceId={shareTarget.id}
+          workspaceName={shareTarget.name}
+          open={!!shareTarget}
+          onOpenChange={(open) => !open && setShareTarget(null)}
+        />
+      )}
+    </div>
+  );
+}

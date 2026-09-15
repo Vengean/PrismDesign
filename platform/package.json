@@ -1,0 +1,38 @@
+{
+  "name": "prism-design-platform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"pnpm dev:server\" \"pnpm dev:web\"",
+    "dev:server": "tsx watch src/server.ts",
+    "dev:web": "cd web && npx vite",
+    "build": "pnpm build:server && pnpm build:web",
+    "build:server": "tsup",
+    "build:web": "cd web && npx vite build",
+    "start": "node dist/server.js",
+    "build:image": "bash scripts/build-workspace-image.sh"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.7.0",
+    "cors": "^2.8.5",
+    "dockerode": "^5.0.0",
+    "express": "^4.21.0",
+    "jsonwebtoken": "^9.0.2",
+    "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/cors": "^2.8.17",
+    "@types/dockerode": "^4.0.1",
+    "@types/express": "^5.0.0",
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/ws": "^8.18.1",
+    "concurrently": "^9.1.0",
+    "tsup": "^8.3.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

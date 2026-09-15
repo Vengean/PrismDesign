@@ -1,0 +1,641 @@
+import { ICON_SEND, ICON_COMMENT, ICON_TRASH, ICON_PAPERCLIP, ICON_EDIT, ICON_CLOSE, ICON_TEST } from "./icons.js";
+import { t } from "./i18n.js";
+import { renderMarkdown } from "./markdown.js";
+import type { AgentClient, TestPerformance } from "./agent-client.js";
+import { showCommentMode, type CommentInfo } from "./comment.js";
+import type { PanelAPI } from "./panel.js";
+
+const STORAGE_KEY = "prism-chat-history";
+
+interface ChatMessage {
+  role: "user" | "ai";
+  content: string;
+  timestamp: number;
+  comments?: CommentInfo[];
+  attachments?: Array<{ id: string; name: string; mimeType: string; size: number }>;
+  verification?: { id: string; goal: string; proposedChecks: string[]; status?: string; summary?: string };
+  testPerformance?: TestPerformance;
+}
+
+function formatDuration(milliseconds: number): string {
+  return milliseconds < 1000 ? `${Math.round(milliseconds)} ms` : `${(milliseconds / 1000).toFixed(milliseconds < 10_000 ? 1 : 0)} s`;
+}
+
+function formatVerificationMessage(content: string): string {
+  return content
+    .replace(/^\s*VERIFICATION_RESULT:\s*PASSED\s*$/gim, "测试结论：通过")
+    .replace(/^\s*VERIFICATION_RESULT:\s*FAILED\s*$/gim, "测试结论：未通过")
+    .trim();
+}
+
+export interface ChatAPI {
+  destroy(): void;
+}
+
+export function createChat(
+  container: HTMLElement,
+  agentClient: AgentClient,
+  shadowRoot: ShadowRoot,
+  panel: PanelAPI
+): ChatAPI {
+  let messages: ChatMessage[] = [];
+  let sending = false;
+  const commentTags: CommentInfo[] = [];
+  let pendingAttachments: Array<{ id: string; name: string; mimeType: string; size: number; status: "uploading" | "ready" | "failed"; error?: string }> = [];
+  let tooltip: HTMLElement | null = null;
+  let tooltipHideTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // ── Load history ──
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        messages = parsed.filter(
+          (m: ChatMessage) => !(m.role === "ai" && m.content.startsWith("\u23F3"))
+        ).map((m: ChatMessage) => {
+          // A browser run cannot be assumed to still be active after a page reload.
+          if (m.verification && ["preparing", "running"].includes(m.verification.status || "")) {
+            return { ...m, verification: { ...m.verification, status: "awaiting_confirmation" } };
+          }
+          return m;
+        });
+      }
+    }
+  } catch {}
+
+  function saveHistory() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+    } catch {}
+  }
+
+  // ── DOM: messages ──
+  const messagesEl = document.createElement("div");
+  messagesEl.className = "chat-messages";
+  container.appendChild(messagesEl);
+
+  // ── DOM: clear bar ──
+  const toolbarEl = document.createElement("div");
+  toolbarEl.className = "chat-toolbar";
+  const clearBtn = document.createElement("button");
+  clearBtn.className = "chat-clear-btn";
+  clearBtn.innerHTML = `${ICON_TRASH} ${t("chat.clearHistory")}`;
+  clearBtn.onclick = () => {
+    messages = [];
+    saveHistory();
+    render();
+  };
+  toolbarEl.appendChild(clearBtn);
+  container.appendChild(toolbarEl);
+
+  // ── DOM: input area ──
+  const inputArea = document.createElement("div");
+  inputArea.className = "chat-input-area";
+
+  const tagsRow = document.createElement("div");
+  tagsRow.className = "comment-tags-row";
+  inputArea.appendChild(tagsRow);
+
+  const attachmentsRow = document.createElement("div");
+  attachmentsRow.className = "attachment-tags-row";
+  inputArea.appendChild(attachmentsRow);
+
+  const inputRow = document.createElement("div");
+  inputRow.className = "chat-input-row";
+
+  const commentBtn = document.createElement("button");
+  commentBtn.className = "comment-btn";
+  commentBtn.innerHTML = ICON_COMMENT;
+  commentBtn.title = t("comment.tooltip");
+  commentBtn.onclick = () => startCommentMode();
+  inputRow.appendChild(commentBtn);
+
+  const attachmentInput = document.createElement("input");
+  attachmentInput.type = "file";
+  attachmentInput.multiple = true;
+  attachmentInput.hidden = true;
+  attachmentInput.accept = ".txt,.md,.json,.csv,.html,.css,.js,.jsx,.ts,.tsx,.yaml,.yml,.xml,.sql,.log,.sh,.py,.java,.go,.rs";
+  attachmentInput.onchange = () => uploadFiles(Array.from(attachmentInput.files || []));
+  inputArea.appendChild(attachmentInput);
+
+  const attachBtn = document.createElement("button");
+  attachBtn.className = "comment-btn";
+  attachBtn.innerHTML = ICON_PAPERCLIP;
+  attachBtn.title = "添加文件";
+  attachBtn.onclick = () => attachmentInput.click();
+  inputRow.appendChild(attachBtn);
+
+  const textarea = document.createElement("textarea");
+  textarea.placeholder = t("chat.placeholder");
+  textarea.rows = 1;
+  textarea.onkeydown = (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+      e.preventDefault();
+      sendMessage();
+      return;
+    }
+    if (e.key === "Backspace" && textarea.selectionStart === 0 && textarea.selectionEnd === 0 && commentTags.length > 0) {
+      e.preventDefault();
+      commentTags.pop();
+      renderTags();
+    }
+  };
+  textarea.oninput = () => autoResize();
+  inputRow.appendChild(textarea);
+
+  const sendBtn = document.createElement("button");
+  sendBtn.className = "chat-send-btn";
+  sendBtn.innerHTML = ICON_SEND;
+  sendBtn.onclick = () => sendMessage();
+  inputRow.appendChild(sendBtn);
+
+  inputArea.appendChild(inputRow);
+  container.appendChild(inputArea);
+
+  // ── Comment mode (hide panel, re-show after) ──
+  function startCommentMode() {
+    commentBtn.classList.add("active");
+    panel.hide();
+    showCommentMode(
+      shadowRoot,
+      (info) => {
+        commentTags.push(info);
+        renderTags();
+        commentBtn.classList.remove("active");
+        panel.show();
+        textarea.focus();
+      },
+      () => {
+        // Called when user exits comment mode (Escape / cancel)
+        commentBtn.classList.remove("active");
+        panel.show();
+        textarea.focus();
+      }
+    );
+  }
+
+  // ── Render comment tags ──
+  function renderTags() {
+    tagsRow.innerHTML = "";
+    if (!commentTags.length) return;
+    const tag = createCommentCountTag(commentTags, true);
+    tagsRow.appendChild(tag);
+  }
+
+  async function uploadFiles(files: File[]) {
+    const slots = Math.max(0, 5 - pendingAttachments.length);
+    for (const file of files.slice(0, slots)) {
+      const pending = { id: `pending-${Date.now()}-${Math.random()}`, name: file.name, mimeType: file.type, size: file.size, status: "uploading" as const };
+      pendingAttachments.push(pending);
+      renderAttachments();
+      try {
+        const uploaded = await agentClient.uploadAttachment(file);
+        Object.assign(pending, uploaded, { status: "ready" as const });
+      } catch (error) {
+        Object.assign(pending, { status: "failed" as const, error: error instanceof Error ? error.message : String(error) });
+      }
+      renderAttachments();
+    }
+    attachmentInput.value = "";
+  }
+
+  function renderAttachments() {
+    attachmentsRow.innerHTML = "";
+    pendingAttachments.forEach((attachment, index) => {
+      const tag = document.createElement("span");
+      tag.className = `attachment-tag ${attachment.status}`;
+      tag.textContent = attachment.status === "uploading" ? `⏳ ${attachment.name}` : attachment.status === "failed" ? `⚠ ${attachment.name}` : `📄 ${attachment.name}`;
+      tag.title = attachment.error || attachment.name;
+      if (attachment.status === "failed" && attachment.error) {
+        const error = document.createElement("small");
+        error.textContent = attachment.error;
+        tag.appendChild(error);
+      }
+      const remove = document.createElement("button");
+      remove.type = "button"; remove.textContent = "×"; remove.title = "移除附件";
+      remove.onclick = () => { const [removed] = pendingAttachments.splice(index, 1); if (removed.status === "ready") void agentClient.deleteAttachment(removed.id); renderAttachments(); };
+      tag.appendChild(remove); attachmentsRow.appendChild(tag);
+    });
+    sendBtn.disabled = sending || pendingAttachments.some((attachment) => attachment.status !== "ready");
+  }
+
+  // ── Tooltip ──
+  function commentNodeLabel(comment: CommentInfo) {
+    return comment.component || comment.domStructure?.split("\n")[0]?.trim() || `<${comment.target}>`;
+  }
+
+  function commentNodeDetails(comment: CommentInfo): Array<[string, string]> {
+    const source = comment.sourceFile ? `${comment.sourceFile}${comment.sourceLine ? `:${comment.sourceLine}` : ""}` : "";
+    return [
+      ["节点", `<${comment.target}>`],
+      ["组件", comment.component || ""],
+      ["组件链", comment.componentChain || ""],
+      ["源码", source],
+      ["Props", comment.props ? JSON.stringify(comment.props, null, 2) : ""],
+      ["DOM 结构", comment.domStructure || ""],
+    ].filter((entry): entry is [string, string] => Boolean(entry[1]));
+  }
+
+  function createCommentCountTag(comments: CommentInfo[], editable: boolean) {
+    const tag = document.createElement("button");
+    tag.type = "button";
+    tag.className = "comment-count-tag";
+    tag.innerHTML = `${ICON_COMMENT}<span>${comments.length} 条评论</span>`;
+    tag.onmouseenter = () => {
+      if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) showTooltip(tag, comments, editable);
+    };
+    tag.onmouseleave = () => { if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) scheduleHideTooltip(); };
+    tag.onclick = (event) => {
+      event.stopPropagation();
+      if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) showTooltip(tag, comments, editable);
+      else if (tooltip) hideTooltip(); else showTooltip(tag, comments, editable);
+    };
+    return tag;
+  }
+
+  function showTooltip(anchor: HTMLElement, comments: CommentInfo[], editable: boolean) {
+    hideTooltip();
+    const popover = document.createElement("div");
+    tooltip = popover;
+    popover.className = "comment-popover";
+
+    comments.forEach((comment, index) => {
+      const item = document.createElement("div");
+      item.className = "comment-popover-item";
+      item.innerHTML = `<span class="comment-number">${index + 1}.</span><div class="comment-label">节点信息：</div><div class="comment-node-details"><div class="comment-node"></div></div><div class="comment-label comment-user-label">用户评论：</div><div class="comment-text"></div>`;
+      (item.querySelector(".comment-node") as HTMLElement).textContent = commentNodeLabel(comment);
+      const details = item.querySelector(".comment-node-details") as HTMLElement;
+      commentNodeDetails(comment).forEach(([label, value]) => {
+        const row = document.createElement("div");
+        row.className = "comment-detail-row";
+        const key = document.createElement("span");
+        key.className = "comment-detail-key";
+        key.textContent = label;
+        const content = document.createElement("span");
+        content.className = "comment-detail-value";
+        content.textContent = value;
+        row.append(key, content);
+        details.appendChild(row);
+      });
+      (item.querySelector(".comment-text") as HTMLElement).textContent = comment.text;
+      if (editable) {
+        const actions = document.createElement("div");
+        actions.className = "comment-actions";
+        const edit = document.createElement("button");
+        edit.type = "button"; edit.title = "编辑评论"; edit.innerHTML = ICON_EDIT;
+        edit.onclick = (event) => {
+          event.stopPropagation();
+          const text = item.querySelector(".comment-text") as HTMLElement;
+          const textarea = document.createElement("textarea");
+          textarea.className = "comment-edit-input";
+          textarea.value = comment.text;
+          const finish = () => {
+            const value = textarea.value.trim();
+            if (value) comment.text = value;
+            renderTags();
+            showTooltip(tagsRow.querySelector(".comment-count-tag") as HTMLElement, commentTags, true);
+          };
+          textarea.onblur = finish;
+          textarea.onkeydown = (keyEvent) => { if (keyEvent.key === "Escape" || (keyEvent.key === "Enter" && (keyEvent.ctrlKey || keyEvent.metaKey))) textarea.blur(); };
+          text.replaceWith(textarea);
+          textarea.focus();
+        };
+        const remove = document.createElement("button");
+        remove.type = "button"; remove.title = "删除评论"; remove.innerHTML = ICON_CLOSE;
+        remove.onclick = (event) => {
+          event.stopPropagation();
+          commentTags.splice(index, 1);
+          hideTooltip();
+          renderTags();
+        };
+        actions.append(edit, remove);
+        item.appendChild(actions);
+      }
+      popover.appendChild(item);
+    });
+    popover.onmouseenter = () => { if (tooltipHideTimer) clearTimeout(tooltipHideTimer); };
+    popover.onmouseleave = () => scheduleHideTooltip();
+
+    shadowRoot.appendChild(popover);
+
+    const rect = anchor.getBoundingClientRect();
+    const hostRect = shadowRoot.host.getBoundingClientRect();
+    const width = Math.min(320, hostRect.width - 16);
+    popover.style.width = `${width}px`;
+    popover.style.left = Math.max(8, Math.min(rect.left - hostRect.left, hostRect.width - width - 8)) + "px";
+    popover.style.bottom = (hostRect.bottom - rect.top + 6) + "px";
+  }
+
+  function scheduleHideTooltip() {
+    if (tooltipHideTimer) clearTimeout(tooltipHideTimer);
+    tooltipHideTimer = setTimeout(() => hideTooltip(), 350);
+  }
+
+  function hideTooltip() {
+    if (tooltipHideTimer) clearTimeout(tooltipHideTimer);
+    tooltipHideTimer = null;
+    if (tooltip) {
+      tooltip.remove();
+      tooltip = null;
+    }
+  }
+
+  function autoResize() {
+    textarea.style.height = "auto";
+    textarea.style.height = Math.min(textarea.scrollHeight, 80) + "px";
+  }
+
+  // ── Render messages ──
+  function render() {
+    messagesEl.innerHTML = "";
+    toolbarEl.style.display = messages.length > 0 ? "flex" : "none";
+
+    if (messages.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "chat-empty";
+      empty.textContent = t("chat.empty");
+      messagesEl.appendChild(empty);
+      return;
+    }
+
+    messages.forEach((msg, messageIndex) => {
+      const row = document.createElement("div");
+      row.className = `chat-msg-row ${msg.role}`;
+
+      if (msg.role === "ai") {
+        const avatar = document.createElement("div");
+        avatar.className = "ai-avatar";
+        avatar.textContent = "AI";
+        row.appendChild(avatar);
+      }
+
+      const content = document.createElement("div");
+      content.className = "chat-msg-content";
+
+      if (!msg.content.startsWith("⏳")) {
+        const deleteBtn = document.createElement("button");
+        deleteBtn.className = "chat-msg-delete";
+        deleteBtn.innerHTML = ICON_TRASH;
+        deleteBtn.title = "删除此消息";
+        deleteBtn.setAttribute("aria-label", "删除此消息");
+        deleteBtn.onclick = () => {
+          messages.splice(messageIndex, 1);
+          saveHistory();
+          render();
+        };
+        content.appendChild(deleteBtn);
+      }
+
+      const bubble = document.createElement("div");
+      bubble.className = `chat-msg ${msg.role}${msg.content.startsWith("\u23F3") ? " thinking" : ""}`;
+
+      if (msg.role === "ai" && msg.content.startsWith("\u23F3")) {
+        const progressContent = msg.content.slice(2).trim();
+        bubble.innerHTML = `<div class="progress-text"><span class="prism-spinner"></span><span>${escapeHtml(progressContent)}</span></div>`;
+      } else if (msg.role === "ai") {
+        const renderedContent = ["passed", "failed", "inconclusive"].includes(msg.verification?.status || "")
+          ? msg.content.replace(/^\s*测试(?:通过|未通过|结果不确定)[。！!]?\s*/i, "")
+          : msg.content;
+        bubble.innerHTML = renderMarkdown(formatVerificationMessage(renderedContent));
+      } else {
+        bubble.textContent = msg.content;
+      }
+      if (msg.attachments?.length) {
+        const files = document.createElement("div");
+        files.className = "message-attachments";
+        for (const attachment of msg.attachments) {
+          const file = document.createElement("span");
+          file.textContent = `📄 ${attachment.name}`;
+          files.appendChild(file);
+        }
+        bubble.prepend(files);
+      }
+      content.appendChild(bubble);
+      if (msg.role === "user" && msg.comments?.length) {
+        const tagWrap = document.createElement("div");
+        tagWrap.className = "message-comment-tag";
+        tagWrap.appendChild(createCommentCountTag(msg.comments, false));
+        content.appendChild(tagWrap);
+      }
+      if (msg.role === "ai" && msg.verification && ["passed", "failed", "inconclusive"].includes(msg.verification.status || "")) {
+        const anchor = document.createElement("div");
+        anchor.className = "verification-anchor";
+        const tag = document.createElement("button");
+        tag.type = "button";
+        tag.className = "verification-tag";
+        const isComplete = ["passed", "failed", "inconclusive"].includes(msg.verification.status || "");
+        tag.innerHTML = `${ICON_TEST}<span>${isComplete ? "测试结果" : "测试"}</span>`;
+        const card = document.createElement("div");
+        card.className = "verification-card";
+        const title = document.createElement("div");
+        title.className = "verification-title";
+        title.textContent = ({ passed: "测试通过", failed: "测试未通过", inconclusive: "测试结果不确定" } as Record<string, string>)[msg.verification.status || ""] || "是否开始测试？";
+        card.appendChild(title);
+        if (isComplete && msg.testPerformance) {
+          const metrics = msg.testPerformance;
+          const performanceBox = document.createElement("div");
+          performanceBox.className = "verification-performance";
+          performanceBox.innerHTML = `<strong>性能监测</strong><dl><dt>端到端耗时</dt><dd>${formatDuration(metrics.totalDurationMs)}</dd><dt>Agent 回合</dt><dd>${formatDuration(metrics.agentDurationMs)}</dd><dt>工具调用</dt><dd>${formatDuration(metrics.toolDurationMs)} · ${metrics.toolCallCount} 次</dd><dt>浏览器命令</dt><dd>${formatDuration(metrics.browserDurationMs)} · ${metrics.browserCommandCount} 次</dd><dt>资源清理</dt><dd>${formatDuration(metrics.cleanupDurationMs)}</dd></dl><small>各指标存在包含关系，不应相加。</small>`;
+          card.appendChild(performanceBox);
+        }
+        if (!isComplete && msg.verification.summary) {
+          const summary = document.createElement("div");
+          summary.className = "verification-summary";
+          summary.textContent = msg.verification.summary;
+          card.appendChild(summary);
+        }
+        if (!isComplete) {
+          const checks = document.createElement("ul");
+          for (const check of msg.verification.proposedChecks) {
+            const item = document.createElement("li");
+            item.textContent = check;
+            checks.appendChild(item);
+          }
+          card.appendChild(checks);
+        }
+        let closeTimer: ReturnType<typeof setTimeout> | null = null;
+        const canHover = () => window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+        const open = () => { if (closeTimer) clearTimeout(closeTimer); card.classList.add("open"); };
+        const close = () => { if (closeTimer) clearTimeout(closeTimer); closeTimer = setTimeout(() => card.classList.remove("open"), 350); };
+        tag.onmouseenter = () => { if (canHover()) open(); };
+        tag.onmouseleave = () => { if (canHover()) close(); };
+        card.onmouseenter = open;
+        card.onmouseleave = () => { if (canHover()) close(); };
+        tag.onclick = () => { if (canHover()) open(); else card.classList.toggle("open"); };
+        anchor.append(tag, card);
+        content.appendChild(anchor);
+      }
+      row.appendChild(content);
+      messagesEl.appendChild(row);
+    });
+
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function escapeHtml(text: string): string {
+    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  // ── Send message ──
+  async function sendMessage() {
+    const text = textarea.value.trim();
+    const hasComments = commentTags.length > 0;
+    if (!text && !hasComments && pendingAttachments.length === 0) return;
+    if (sending) return;
+    if (pendingAttachments.some((attachment) => attachment.status !== "ready")) return;
+    const readyAttachments = pendingAttachments.filter((attachment) => attachment.status === "ready");
+    if (!text && !hasComments && readyAttachments.length === 0) return;
+
+    sending = true;
+    sendBtn.disabled = true;
+
+    const pagePath = location.pathname;
+    let agentMessage = "";
+    const savedComments = [...commentTags];
+
+    if (hasComments) {
+      const parts = commentTags.map((c) => {
+        const lines: string[] = [];
+        lines.push(`Element: <${c.target}>`);
+        if (c.componentChain) lines.push(`Component: ${c.componentChain}`);
+        if (c.sourceFile) {
+          let loc = c.sourceFile;
+          if (c.sourceLine) loc += `:${c.sourceLine}`;
+          lines.push(`Source: ${loc}`);
+        }
+        if (c.props && Object.keys(c.props).length > 0) {
+          const propStr = Object.entries(c.props).slice(0, 8)
+            .map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(" ");
+          lines.push(`Props: ${propStr}`);
+        }
+        if (c.domStructure) {
+          lines.push(`DOM Structure:`);
+          lines.push(c.domStructure);
+        }
+        lines.push(`Comment: "${c.text}"`);
+        return lines.join("\n");
+      });
+      agentMessage = parts.join("\n\n");
+      if (text) {
+        agentMessage += `\n\n${text}`;
+      }
+    } else {
+      agentMessage = text;
+    }
+
+    agentMessage += `\n\nPage: ${pagePath}`;
+
+    const displayContent = text;
+
+    const userMsg: ChatMessage = {
+      role: "user",
+      content: displayContent,
+      timestamp: Date.now(),
+      comments: hasComments ? savedComments : undefined,
+      attachments: readyAttachments.map(({ id, name, mimeType, size }) => ({ id, name, mimeType, size })),
+    };
+    messages.push(userMsg);
+
+    const thinkingMsg: ChatMessage = {
+      role: "ai",
+      content: `\u23F3 ${t("chat.thinking")}`,
+      timestamp: Date.now(),
+    };
+    messages.push(thinkingMsg);
+    saveHistory();
+    render();
+
+    textarea.value = "";
+    commentTags.length = 0;
+    pendingAttachments = [];
+    renderTags();
+    renderAttachments();
+    autoResize();
+
+    const thinkingIdx = messages.length - 1;
+    const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    let lastProgressText = "";
+    let streamedText = "";
+    let settleWebSocket: ((result: any) => void) | undefined;
+    const webSocketResult = new Promise<any>((resolve) => { settleWebSocket = resolve; });
+    const ws = agentClient.connectWebSocket((type, data: any) => {
+      if (data?.runId && data.runId !== runId) return;
+      if (type === "agent:progress") {
+        const progressText = data.text || t("chat.thinking");
+        lastProgressText = progressText;
+        messages[thinkingIdx] = {
+          ...messages[thinkingIdx],
+          content: `\u23F3 ${progressText}`,
+        };
+        render();
+      } else if (type === "message.delta") {
+        streamedText += data.delta || "";
+        messages[thinkingIdx] = { ...messages[thinkingIdx], content: streamedText };
+        render();
+      } else if (type === "run.completed") {
+        settleWebSocket?.(data.result);
+      } else if (type === "run.failed") {
+        settleWebSocket?.({ success: false, message: data.error?.message || t("chat.requestFailed") });
+      } else if (type === "run.cancelled") {
+        settleWebSocket?.({ success: false, message: "请求已取消" });
+      }
+    });
+
+    let hasFileChanges = false;
+    try {
+      let result;
+      try {
+        result = await agentClient.chat(agentMessage || "请阅读并分析附件内容。", runId, readyAttachments.map((attachment) => attachment.id));
+      } catch {
+        // The long-lived HTTP request can be interrupted by HMR or a proxy while
+        // the Agent continues running. Wait for the authoritative WS terminal event.
+        result = await Promise.race([
+          webSocketResult,
+          new Promise((resolve) => setTimeout(() => resolve({ success: false, message: t("chat.requestFailed") }), 15 * 60_000)),
+        ]);
+      }
+
+      hasFileChanges = (result.filesModified?.length ?? 0) > 0;
+
+      let responseContent = "";
+      if (result.success) {
+        responseContent = result.message || lastProgressText || t("chat.done");
+      } else {
+        responseContent = `${t("chat.error")}: ${result.message}`;
+      }
+
+      messages[thinkingIdx] = {
+        role: "ai",
+        content: responseContent,
+        timestamp: Date.now(),
+        verification: result.verification,
+      };
+    } catch {
+      messages[thinkingIdx] = {
+        role: "ai",
+        content: t("chat.requestFailed"),
+        timestamp: Date.now(),
+      };
+    } finally {
+      ws.close();
+      sending = false;
+      sendBtn.disabled = false;
+      saveHistory();
+      render();
+
+      if (hasFileChanges) {
+        setTimeout(() => location.reload(), 800);
+      }
+    }
+  }
+
+  render();
+
+  return {
+    destroy() {
+      hideTooltip();
+      container.innerHTML = "";
+    },
+  };
+}

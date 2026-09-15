@@ -1,8 +1,9 @@
 {
   "name": "@prism-design/chrome-ext",
-  "version": "0.3.0",
-  "description": "PrismDesign Chrome extension — visual UI editing for designers",
+  "version": "0.4.0",
+  "description": "Prism Chrome extension for AI-assisted page development, visual editing, and real browser verification",
   "type": "module",
+  "files": ["dist"],
   "scripts": {
     "dev": "vite build --watch",
     "build": "vite build"

@@ -7,12 +7,35 @@ import { pathToFileURL } from "node:url";
  * All fields are optional — CLI args and env vars fill in defaults.
  */
 export interface PrismConfig {
+  /** Require the random startup token for HTTP and WebSocket clients. Defaults to true. */
+  accessTokenRequired?: boolean;
+  /** Agent provider. `agentType` is kept for backwards compatibility. */
+  provider?: "claude" | "claude-sub" | "openai" | "codex" | "glm";
+  agentType?: "claude" | "claude-sub" | "openai" | "codex" | "glm";
   /** Anthropic API Key */
   anthropicApiKey?: string;
   /** Model name */
   anthropicModel?: string;
   /** API Base URL (proxy) */
   anthropicBaseUrl?: string;
+  /** OpenAI API configuration */
+  openaiApiKey?: string;
+  openaiModel?: string;
+  openaiBaseUrl?: string;
+  /** Codex CLI configuration; authentication is managed by `codex login`. */
+  codexModel?: string;
+  codexReasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
+  /** `https` avoids slow WebSocket fallback; set `websocket` when the network supports it. */
+  codexTransport?: "https" | "websocket";
+  /** Run verification Chromium without a visible window. Defaults to false locally. */
+  browserHeadless?: boolean;
+  /** Project-scoped MCP servers exposed to Codex. */
+  mcpServers?: Record<string, {
+    command: string;
+    args?: string[];
+    env?: Record<string, string>;
+    defaultToolsApprovalMode?: "approve" | "prompt" | "deny";
+  }>;
   /** HTTPS proxy */
   httpsProxy?: string;
   /** HTTP proxy */
@@ -112,9 +135,25 @@ export function applyConfigToEnv(config: PrismConfig, force = false) {
     ["anthropicApiKey", "ANTHROPIC_API_KEY"],
     ["anthropicModel", "ANTHROPIC_MODEL"],
     ["anthropicBaseUrl", "ANTHROPIC_BASE_URL"],
+    ["openaiApiKey", "OPENAI_API_KEY"],
+    ["openaiModel", "OPENAI_MODEL"],
+    ["openaiBaseUrl", "OPENAI_BASE_URL"],
+    ["codexModel", "CODEX_MODEL"],
+    ["codexReasoningEffort", "CODEX_REASONING_EFFORT"],
+    ["codexTransport", "CODEX_TRANSPORT"],
+    ["provider", "PRISM_AGENT_PROVIDER"],
+    ["agentType", "PRISM_AGENT_PROVIDER"],
     ["httpsProxy", "HTTPS_PROXY"],
     ["httpProxy", "HTTP_PROXY"],
   ];
+
+  if (typeof config.browserHeadless === "boolean" && (force || !process.env.PRISM_BROWSER_HEADLESS)) {
+    process.env.PRISM_BROWSER_HEADLESS = String(config.browserHeadless);
+  }
+
+  if (config.mcpServers && (force || !process.env.PRISM_MCP_SERVERS)) {
+    process.env.PRISM_MCP_SERVERS = JSON.stringify(config.mcpServers);
+  }
 
   for (const [configKey, envKey] of mapping) {
     const val = config[configKey];
