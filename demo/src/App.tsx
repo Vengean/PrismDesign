@@ -1,5 +1,5 @@
 import { memo, type FormEvent, useEffect, useMemo, useState } from 'react'
-import { ArrowRight, CalendarDays, Check, ChevronRight, Clock3, Eye, EyeOff, History, LoaderCircle, LockKeyhole, LogOut, Mail, Menu, NotebookPen, Pencil, Plus, Search, ShieldCheck, Sparkles, X } from 'lucide-react'
+import { ArrowRight, CalendarDays, Check, ChevronRight, Clock3, Eye, EyeOff, History, LoaderCircle, LockKeyhole, LogOut, Mail, Menu, NotebookPen, Pencil, Plus, Search, ShieldCheck, Sparkles, Star, X } from 'lucide-react'
 import Markdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Button } from './components/ui/button'
@@ -60,6 +60,8 @@ function NotesPage({ user, token, onLogout }: { user: User; token: string; onLog
   const [notes, setNotes] = useState<Note[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [query, setQuery] = useState('')
+  const [favoritesOnly, setFavoritesOnly] = useState(false)
+  const [updatingFavoriteId, setUpdatingFavoriteId] = useState<number | null>(null)
   const [isCreating, setIsCreating] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [mobileListOpen, setMobileListOpen] = useState(false)
@@ -81,8 +83,25 @@ function NotesPage({ user, token, onLogout }: { user: User; token: string; onLog
     }).catch((error: Error) => setNoteError(error.message)).finally(() => setIsLoadingNotes(false))
   }, [token])
 
-  const filteredNotes = useMemo(() => notes.filter((note) => `${note.title}${note.content}${note.category}`.toLowerCase().includes(query.toLowerCase())), [notes, query])
+  const filteredNotes = useMemo(() => notes
+    .filter((note) => !favoritesOnly || Boolean(note.isFavorite))
+    .filter((note) => `${note.title}${note.content}${note.category}`.toLowerCase().includes(query.toLowerCase()))
+    .sort((left, right) => Number(Boolean(right.isFavorite)) - Number(Boolean(left.isFavorite))), [favoritesOnly, notes, query])
   const selectedNote = notes.find((note) => note.id === selectedId) ?? notes[0]
+
+  const toggleFavorite = async (note: Note) => {
+    const nextFavorite = !note.isFavorite
+    setUpdatingFavoriteId(note.id)
+    setNoteError('')
+    try {
+      const { note: updatedNote } = await api.setNoteFavorite(token, note.id, nextFavorite)
+      setNotes((current) => current.map((item) => item.id === note.id ? updatedNote : item))
+    } catch (error) {
+      setNoteError(error instanceof Error ? error.message : '更新收藏状态失败，请重试。')
+    } finally {
+      setUpdatingFavoriteId(null)
+    }
+  }
 
   const openCreateNote = () => {
     setEditingId(null)
@@ -162,17 +181,28 @@ function NotesPage({ user, token, onLogout }: { user: User; token: string; onLog
             <div className="mb-5 flex items-end justify-between"><div><p className="mb-1 text-xs font-medium uppercase tracking-[0.18em] text-[#9a7b43]">Workspace</p><h1 className="text-2xl font-semibold tracking-tight">我的笔记</h1></div><span className="text-xs text-[#99958c]">{notes.length} 篇</span></div>
             <Button onClick={openCreateNote} className="mb-4 h-10 w-full rounded-xl bg-[#24231f] shadow-sm"><Plus className="h-4 w-4" />新建笔记</Button>
             <div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#aaa69d]" /><Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索笔记..." className="h-10 rounded-xl border-[#ddd9cf] bg-white pl-9 shadow-none" /></div>
+            <button type="button" onClick={() => setFavoritesOnly((current) => !current)} className={`mt-3 flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9a7b43]/45 ${favoritesOnly ? 'bg-[#f0ebdf]/70 font-medium text-[#80683e]' : 'text-[#77736b] hover:bg-black/[0.035] hover:text-[#80683e]'}`} aria-pressed={favoritesOnly}>
+              <Star className={`h-4 w-4 ${favoritesOnly ? 'fill-current' : ''}`} />
+              <span className="underline-offset-4 hover:underline">只看收藏</span>
+              <span className={`ml-auto text-xs ${favoritesOnly ? 'text-[#80683e]' : 'text-[#aaa69d]'}`}>{notes.filter((note) => Boolean(note.isFavorite)).length}</span>
+            </button>
+            {noteError && <p role="alert" className="mt-2 text-xs text-red-600">{noteError}</p>}
           </div>
           <div className="flex-1 overflow-y-auto p-3">
             {filteredNotes.map((note) => (
-              <button key={note.id} type="button" onClick={() => { setSelectedId(note.id); setMobileListOpen(false) }} className={`group mb-1 w-full rounded-xl px-4 py-3.5 text-left transition-[background-color,box-shadow,transform] duration-150 ease-out active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9a7b43]/45 focus-visible:ring-offset-2 focus-visible:ring-offset-[#f8f7f3] motion-reduce:transform-none ${selectedId === note.id ? 'bg-white shadow-[0_3px_14px_rgba(42,40,34,0.07)] ring-1 ring-black/5 hover:bg-black/[0.018] active:bg-black/[0.045]' : 'hover:bg-black/[0.035] active:bg-black/[0.065]'}`}>
-                <div className="mb-1.5 flex items-center justify-between gap-2"><span className="truncate text-sm font-semibold">{note.title}</span><ChevronRight className={`h-4 w-4 shrink-0 ${selectedId === note.id ? 'text-[#9a7b43]' : 'text-transparent group-hover:text-[#aaa69d]'}`} /></div>
-                <MarkdownPreview>{note.content}</MarkdownPreview>
-                <div className="mt-2.5 flex items-center gap-2 text-[10px] text-[#aaa69d]"><span className="rounded-md bg-[#eeeae1] px-1.5 py-0.5 text-[#817255]">{note.category}</span><span>{formatUpdatedAt(note.updatedAt)}</span></div>
-              </button>
+              <div key={note.id} className={`group relative mb-1 rounded-xl transition-[background-color,box-shadow,transform] duration-150 ease-out active:scale-[0.985] motion-reduce:transform-none ${selectedId === note.id ? 'bg-white shadow-[0_3px_14px_rgba(42,40,34,0.07)] ring-1 ring-black/5 hover:bg-black/[0.018] active:bg-black/[0.045]' : 'hover:bg-black/[0.035] active:bg-black/[0.065]'}`}>
+                <button type="button" onClick={() => { setSelectedId(note.id); setMobileListOpen(false) }} className="w-full rounded-xl px-4 py-3.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9a7b43]/45 focus-visible:ring-offset-2 focus-visible:ring-offset-[#f8f7f3]">
+                  <div className="mb-1.5 flex items-center justify-between gap-2 pl-10"><span className="truncate text-sm font-semibold">{note.title}</span><ChevronRight className={`h-4 w-4 shrink-0 ${selectedId === note.id ? 'text-[#9a7b43]' : 'text-transparent group-hover:text-[#aaa69d]'}`} /></div>
+                  <MarkdownPreview>{note.content}</MarkdownPreview>
+                  <div className="mt-2.5 flex items-center gap-2 text-[10px] text-[#aaa69d]"><span className="rounded-md bg-[#eeeae1] px-1.5 py-0.5 text-[#817255]">{note.category}</span><span>{formatUpdatedAt(note.updatedAt)}</span></div>
+                </button>
+                <button type="button" onClick={() => void toggleFavorite(note)} disabled={updatingFavoriteId === note.id} className={`absolute left-2 top-0.5 flex h-11 w-11 items-center justify-center rounded-lg transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9a7b43]/45 disabled:cursor-wait disabled:opacity-60 ${note.isFavorite ? 'text-[#80683e] hover:bg-[#f0ebdf]' : 'text-[#aaa69d] hover:bg-black/5 hover:text-[#80683e]'}`} aria-label={note.isFavorite ? `取消收藏：${note.title}` : `收藏：${note.title}`} aria-pressed={Boolean(note.isFavorite)}>
+                  {updatingFavoriteId === note.id ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Star className={`h-4 w-4 ${note.isFavorite ? 'fill-current' : ''}`} />}
+                </button>
+              </div>
             ))}
             {isLoadingNotes && <div className="px-4 py-12 text-center text-sm text-[#99958c]">正在读取笔记...</div>}
-            {!isLoadingNotes && !filteredNotes.length && <div className="px-4 py-12 text-center text-sm text-[#99958c]">没有找到相关笔记</div>}
+            {!isLoadingNotes && !filteredNotes.length && <div className="px-4 py-12 text-center text-sm text-[#99958c]">{favoritesOnly ? '还没有收藏的笔记' : '没有找到相关笔记'}</div>}
           </div>
         </aside>
 

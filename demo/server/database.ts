@@ -52,6 +52,15 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_note_revisions_note_created ON note_revisions(note_id, created_at DESC);
 `)
 
+const noteColumns = db.prepare('PRAGMA table_info(notes)').all() as Array<{ name: string }>
+if (!noteColumns.some((column) => column.name === 'is_favorite')) {
+  db.exec('ALTER TABLE notes ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0 CHECK (is_favorite IN (0, 1))')
+}
+if (!noteColumns.some((column) => column.name === 'favorited_at')) {
+  db.exec('ALTER TABLE notes ADD COLUMN favorited_at TEXT')
+}
+db.exec('CREATE INDEX IF NOT EXISTS idx_notes_user_favorite_updated ON notes(user_id, is_favorite DESC, favorited_at DESC, updated_at DESC)')
+
 const demoEmail = 'demo@prism.cn'
 let demoUser = db.prepare('SELECT id FROM users WHERE email = ?').get(demoEmail) as { id: number } | undefined
 
