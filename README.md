@@ -12,6 +12,22 @@ Prism Studio connects a running web page to its source project and an AI coding 
 - **Vite and Next.js integrations** — start the Agent with the development server and optionally inject the Widget.
 - **UI Studio** — an internal visual workspace for developing and reviewing the shared extension UI and theme.
 
+## Demo
+
+[Watch the complete Prism Studio demo on Bilibili →](https://www.bilibili.com/video/BV1ktew6hEVc/)
+
+### Comment directly on the page
+
+![Add element-level comments with Prism Studio](./docs/assets/comment.gif)
+
+### Update source code with live feedback
+
+![Apply Agent changes through HMR](./docs/assets/hmr.gif)
+
+### Verify changes in a real browser
+
+![Run automated browser tests and inspect evidence](./docs/assets/auto-test.gif)
+
 ## How it works
 
 ```text
@@ -158,4 +174,3 @@ pnpm build:chrome-ext
 - Keep write permissions scoped to the intended project directory.
 - Do not expose the Agent to a LAN or public network without authentication and appropriate CORS controls.
 - Review generated changes before committing, publishing, or deploying them.
-

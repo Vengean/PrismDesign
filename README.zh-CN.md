@@ -12,6 +12,22 @@ Prism Studio 将运行中的 Web 页面、源码工程与 AI 编程 Agent 连接
 - **Vite 与 Next.js 集成**：随开发服务器启动 Agent，并可选择向页面注入 Widget。
 - **UI Studio**：用于开发和评审共享插件 UI、主题与各种交互状态的内部可视化工作区。
 
+## 演示
+
+[在 Bilibili 观看 Prism Studio 完整演示 →](https://www.bilibili.com/video/BV1ktew6hEVc/)
+
+### 直接评论页面元素
+
+![使用 Prism Studio 添加元素级评论](./docs/assets/comment.gif)
+
+### 修改源码并实时更新页面
+
+![Agent 修改源码并通过 HMR 更新页面](./docs/assets/hmr.gif)
+
+### 在真实浏览器中验证结果
+
+![运行自动化浏览器测试并查看证据](./docs/assets/auto-test.gif)
+
 ## 工作方式
 
 ```text
@@ -158,4 +174,3 @@ pnpm build:chrome-ext
 - 将源码写入权限限制在明确的目标项目目录内。
 - 未启用认证和适当 CORS 限制时，不要把 Agent 暴露到局域网或公网。
 - 提交、发布或部署前，始终审查 Agent 生成的代码修改。
-
