@@ -51,7 +51,7 @@ function FloatingPopover({ anchor, align = "left", className = "", children }: {
   useLayoutEffect(() => {
     const update = () => {
       const floating = floatingRef.current;
-      const boundary = anchor?.closest<HTMLElement>("[data-chat-root]")?.querySelector<HTMLElement>("[data-chat-viewport]");
+      const boundary = anchor?.closest<HTMLElement>("[data-chat-root]");
       if (!anchor || !floating || !boundary) return;
       const trigger = anchor.getBoundingClientRect();
       const viewport = boundary.getBoundingClientRect();
@@ -72,7 +72,7 @@ function FloatingPopover({ anchor, align = "left", className = "", children }: {
     window.addEventListener("scroll", update, true);
     return () => { window.removeEventListener("resize", update); window.removeEventListener("scroll", update, true); };
   }, [anchor, align]);
-  const boundary = anchor?.closest<HTMLElement>("[data-chat-root]")?.querySelector<HTMLElement>("[data-chat-viewport]");
+  const boundary = anchor?.closest<HTMLElement>("[data-chat-root]");
   const overlay = boundary?.querySelector<HTMLElement>("[data-chat-overlay]");
   if (!overlay) return null;
   return createPortal(<div ref={floatingRef} style={style} className={`z-[100] overflow-y-auto overscroll-contain ${className}`}>{children}</div>, overlay);
@@ -351,18 +351,31 @@ function ChatView({ agent, chat, selection, comments, onEditComment, onRemoveCom
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<Array<{ id: string; name: string; mimeType: string; size: number; uploading?: boolean; error?: string }>>([]);
   const [contextOrder, setContextOrder] = useState<Array<"comments" | "attachments">>([]);
+  const [scrollbarGutter, setScrollbarGutter] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      setScrollbarGutter(scrollRef.current.offsetWidth - scrollRef.current.clientWidth);
+    }
   }, [messages, comments.length, attachments.length, contextOrder.length]);
+  useEffect(() => {
+    const scrollElement = scrollRef.current;
+    if (!scrollElement) return;
+    const updateScrollbarGutter = () => setScrollbarGutter(scrollElement.offsetWidth - scrollElement.clientWidth);
+    const observer = new ResizeObserver(updateScrollbarGutter);
+    observer.observe(scrollElement);
+    updateScrollbarGutter();
+    return () => observer.disconnect();
+  }, []);
   useEffect(() => {
     setContextOrder((order) => comments.length ? (order.includes("comments") ? order : [...order, "comments"]) : order.filter((item) => item !== "comments"));
   }, [comments.length]);
 
   const handleSend = () => {
-    if (!input.trim() && !comments.length && !attachments.some((item) => !item.uploading && !item.error)) return;
+    if (!input.trim() && !attachments.some((item) => !item.uploading && !item.error)) return;
     let message = input;
     if (selection) {
       message += `\n\n--- Context ---\n${formatSelectionContext(selection)}`;
@@ -400,9 +413,13 @@ function ChatView({ agent, chat, selection, comments, onEditComment, onRemoveCom
   };
 
   return (
-    <div data-chat-root className="flex flex-col h-full">
+    <div data-chat-root className="relative flex h-full flex-col">
       <div data-chat-viewport className="relative flex-1 min-h-0 overflow-hidden">
-      <div ref={scrollRef} className="h-full overflow-x-hidden overflow-y-auto p-3 space-y-3">
+      <div
+        ref={scrollRef}
+        className="h-full overflow-x-hidden overflow-y-auto p-3 space-y-3"
+        style={{ paddingRight: `calc(0.75rem - ${scrollbarGutter}px)` }}
+      >
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-xs gap-2 py-8">
             <MessageSquare className="h-8 w-8 text-primary/30" />
@@ -412,14 +429,11 @@ function ChatView({ agent, chat, selection, comments, onEditComment, onRemoveCom
           <>
           {messages.map((msg, i) => (
             <div key={i} className={`group flex gap-2 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-              {msg.role === "ai" && (
-                <div className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[9px] font-bold shrink-0 mt-0.5">AI</div>
-              )}
-              <div className={`relative min-w-0 max-w-[85%] space-y-2 px-3 pt-2 pb-0.5 rounded-xl text-xs leading-relaxed ${!msg.pending ? "mb-6" : ""} ${msg.verification && (msg.testRun || ["passed", "failed", "inconclusive"].includes(msg.verification.status || "")) ? "mb-7" : ""} ${msg.role === "user" && (msg.comments?.length || msg.attachments?.length) ? "mt-7" : ""} ${msg.role === "user" ? "bg-blue-100 text-gray-900 rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}>
+              <div className={`relative min-w-0 max-w-[85%] px-3 py-2 rounded-xl text-xs leading-relaxed ${!msg.pending ? "mb-6" : ""} ${msg.verification && (msg.testRun || ["passed", "failed", "inconclusive"].includes(msg.verification.status || "")) ? "mb-7" : ""} ${msg.role === "user" && (msg.comments?.length || msg.attachments?.length) ? "mt-7" : ""} ${msg.role === "user" ? "bg-blue-100 text-gray-900 rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}>
                 {msg.role === "user" && (!!msg.comments?.length || !!msg.attachments?.length) && <div className="absolute bottom-full right-0 mb-1 flex max-w-[calc(100vw-32px)] gap-1">{(msg.contextOrder?.length ? msg.contextOrder : ["comments", "attachments"]).map((kind) => kind === "comments" ? <CommentTag key={kind} comments={msg.comments || []} align="right" /> : <AttachmentTag key={kind} files={msg.attachments || []} align="right" />)}</div>}
                 {msg.content.startsWith("⏳") ? (
                   <div className="flex min-w-0 max-w-full items-start gap-1.5 overflow-hidden">
-                    <Loader2 className="h-3 w-3 animate-spin text-primary shrink-0" />
+                    <Loader2 className="mt-[3px] h-3 w-3 animate-spin text-primary shrink-0" />
                     <span className="min-w-0 flex-1 whitespace-pre-wrap break-all text-muted-foreground">{msg.content.slice(2)}</span>
                   </div>
                 ) : (
@@ -447,7 +461,6 @@ function ChatView({ agent, chat, selection, comments, onEditComment, onRemoveCom
           </>
         )}
       </div>
-      <div data-chat-overlay className="pointer-events-none absolute inset-0 z-50 [&>*]:pointer-events-auto" />
       </div>
 
       <div className="border-t p-2 space-y-1.5">
@@ -472,12 +485,13 @@ function ChatView({ agent, chat, selection, comments, onEditComment, onRemoveCom
               {t("chat.clearHistory")}
             </Button>
           )}
-          <Button size="sm" className="h-7 text-xs px-3 gap-1" onClick={handleSend} disabled={sending || attachments.some((item) => item.uploading || item.error) || (!input.trim() && !comments.length && !attachments.some((item) => !item.error))}>
+          <Button size="sm" className="h-7 text-xs px-3 gap-1" onClick={handleSend} disabled={sending || attachments.some((item) => item.uploading || item.error) || (!input.trim() && !attachments.some((item) => !item.error))}>
             <Send className="h-3 w-3" />
             {t("chat.send")}
           </Button>
         </div>
       </div>
+      <div data-chat-overlay className="pointer-events-none absolute inset-0 z-50 [&>*]:pointer-events-auto" />
     </div>
   );
 }

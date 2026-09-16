@@ -181,7 +181,9 @@ async function createSession(clientId: string): Promise<GlmSession> {
   const bypassMode = sessionResult.modes?.availableModes.find(
     (mode) => mode.id === "bypass_permissions",
   );
-  if (bypassMode) {
+  const bypassAllowed = process.env.PRISM_PERMISSION_FILESYSTEM === "workspace-write"
+    && process.env.PRISM_PERMISSION_COMMANDS === "workspace";
+  if (bypassMode && bypassAllowed) {
     try {
       await connection.setSessionMode({
         sessionId,
@@ -192,7 +194,7 @@ async function createSession(clientId: string): Promise<GlmSession> {
       console.warn(`[GLM] 设置 bypass_permissions 失败:`, err);
     }
   } else {
-    console.log(`[GLM] Agent 未提供 bypass_permissions 模式，保持默认模式`);
+    console.log(`[GLM] 保持默认权限模式`);
   }
 
   const session: GlmSession = {

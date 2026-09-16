@@ -1,6 +1,10 @@
-interface PrismDesignProps {
+interface PrismStudioProps {
   /** Override agent URL (skip auto-detection from config.json) */
   agentUrl?: string;
+  /** Access token for a directly configured Agent URL. */
+  agentToken?: string;
+  /** Set false only when the directly configured Agent has authentication disabled. */
+  accessTokenRequired?: boolean;
   /** Widget position (default: "bottom-right") */
   position?: 'bottom-right' | 'bottom-left';
   /** Locale override */
@@ -12,9 +16,11 @@ interface PrismDesignProps {
   basePath?: string;
 }
 
-export function PrismDesign(props: PrismDesignProps) {
-  const initOpts: Record<string, string> = {};
+export function PrismStudio(props: PrismStudioProps) {
+  const initOpts: Record<string, string | boolean> = {};
   if (props.agentUrl) initOpts.agentUrl = props.agentUrl;
+  if (props.agentToken) initOpts.agentToken = props.agentToken;
+  if (props.accessTokenRequired === false) initOpts.accessTokenRequired = false;
   if (props.position) initOpts.position = props.position;
   if (props.locale) initOpts.locale = props.locale;
 
@@ -34,14 +40,14 @@ export function PrismDesign(props: PrismDesignProps) {
       var bp = ${bpExpr};
 
       function doInit() {
-        if (window.PrismDesignWidget && window.PrismDesignWidget.init) {
-          window.PrismDesignWidget.init(${optsJson});
+        if (window.PrismStudioWidget && window.PrismStudioWidget.init) {
+          window.PrismStudioWidget.init(${optsJson});
         }
       }
 
-      if (window.PrismDesignWidget) { doInit(); return; }
+      if (window.PrismStudioWidget) { doInit(); return; }
       var s = document.createElement('script');
-      s.src = bp + '/__prism-design__/widget.js';
+      s.src = bp + '/__prism-studio__/widget.js';
       s.onload = doInit;
       document.head.appendChild(s);
     })();
@@ -51,7 +57,7 @@ export function PrismDesign(props: PrismDesignProps) {
       var bp = ${bpExpr};
 
       function doInit() {
-        fetch(bp + '/__prism-design__/config.json')
+        fetch(bp + '/__prism-studio__/config.json')
           .then(function(r) { return r.ok ? r.json() : null; })
           .then(function(config) {
             var opts = ${optsJson};
@@ -60,20 +66,22 @@ export function PrismDesign(props: PrismDesignProps) {
             } else if (config && config.agentUrl) {
               opts.agentUrl = config.agentUrl;
             }
-            if (window.PrismDesignWidget && window.PrismDesignWidget.init) {
-              window.PrismDesignWidget.init(opts);
+            if (config && config.agentToken) opts.agentToken = config.agentToken;
+            if (config && config.accessTokenRequired === false) opts.accessTokenRequired = false;
+            if (window.PrismStudioWidget && window.PrismStudioWidget.init) {
+              window.PrismStudioWidget.init(opts);
             }
           })
           .catch(function() {
-            if (window.PrismDesignWidget && window.PrismDesignWidget.init) {
-              window.PrismDesignWidget.init(${optsJson});
+            if (window.PrismStudioWidget && window.PrismStudioWidget.init) {
+              window.PrismStudioWidget.init(${optsJson});
             }
           });
       }
 
-      if (window.PrismDesignWidget) { doInit(); return; }
+      if (window.PrismStudioWidget) { doInit(); return; }
       var s = document.createElement('script');
-      s.src = bp + '/__prism-design__/widget.js';
+      s.src = bp + '/__prism-studio__/widget.js';
       s.onload = doInit;
       document.head.appendChild(s);
     })();

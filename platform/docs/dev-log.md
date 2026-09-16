@@ -1,4 +1,4 @@
-# PrismDesign Platform 开发日志
+# Prism Studio Platform 开发日志
 
 ## 2026-06-12
 

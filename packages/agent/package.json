@@ -1,11 +1,11 @@
 {
-  "name": "prism-design-agent",
+  "name": "@prism-studio-ai/agent",
   "version": "0.3.2",
   "description": "AI development agent for Prism — understands projects, modifies source code, and coordinates real browser verification",
   "type": "module",
   "license": "MIT",
   "bin": {
-    "prism-design-agent": "./dist/cli.js"
+    "prism-studio-agent": "./dist/cli.js"
   },
   "exports": {
     "./config": {
@@ -15,7 +15,8 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.zh-CN.md"
   ],
   "scripts": {
     "dev": "tsx watch src/cli.ts start",
@@ -24,7 +25,7 @@
     "start": "node dist/cli.js start"
   },
   "keywords": [
-    "prism-design",
+    "prism-studio",
     "ai",
     "design",
     "visual-editing",
@@ -34,7 +35,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/anthropics/prism-design"
+    "url": "https://github.com/anthropics/prism-studio"
   },
   "engines": {
     "node": ">=18"

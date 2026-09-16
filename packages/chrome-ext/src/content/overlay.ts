@@ -9,14 +9,14 @@ let animFrame: number | null = null;
 
 const SELECT_OUTLINE = "2px solid #6366f1";
 const SELECT_OUTLINE_OFFSET = "-2px";
-const SELECT_CLASS = "prism-design-selected";
+const SELECT_CLASS = "prism-studio-selected";
 
 /** Inject a style rule for the selected-element outline (avoids inline style conflicts) */
 let styleEl: HTMLStyleElement | null = null;
 function ensureStyle() {
   if (styleEl) return;
   styleEl = document.createElement("style");
-  styleEl.id = "prism-design-overlay-style";
+  styleEl.id = "prism-studio-overlay-style";
   styleEl.textContent = `
     .${SELECT_CLASS} {
       outline: ${SELECT_OUTLINE} !important;
@@ -44,7 +44,7 @@ function createOverlay(id: string, borderColor: string): HTMLDivElement {
 
 function createLabel(): HTMLDivElement {
   const el = document.createElement("div");
-  el.id = "prism-design-label";
+  el.id = "prism-studio-label";
   Object.assign(el.style, {
     position: "absolute",
     pointerEvents: "none",
@@ -110,13 +110,13 @@ function stopObserving() {
 // ── public API ──
 
 export function initOverlays() {
-  document.getElementById("prism-design-hover")?.remove();
-  document.getElementById("prism-design-label")?.remove();
+  document.getElementById("prism-studio-hover")?.remove();
+  document.getElementById("prism-studio-label")?.remove();
   styleEl?.remove();
   styleEl = null;
 
   ensureStyle();
-  hoverOverlay = createOverlay("prism-design-hover", "rgba(99, 102, 241, 0.6)");
+  hoverOverlay = createOverlay("prism-studio-hover", "rgba(99, 102, 241, 0.6)");
   labelEl = createLabel();
 }
 

@@ -5,7 +5,7 @@ const SKIP_TAGS = new Set(["script", "style", "link", "meta", "noscript", "svg"]
 function isPrismElement(el: HTMLElement): boolean {
   let node: HTMLElement | null = el;
   while (node) {
-    if (node.id?.startsWith("prism-design-")) return true;
+    if (node.id?.startsWith("prism-studio-")) return true;
     node = node.parentElement;
   }
   return false;
@@ -42,14 +42,14 @@ function getDomPath(el: HTMLElement): string {
   let node: HTMLElement | null = el;
   while (node && node !== document.body) {
     let sel = node.tagName.toLowerCase();
-    if (node.id && !node.id.startsWith("prism-design-")) {
+    if (node.id && !node.id.startsWith("prism-studio-")) {
       sel += `#${node.id}`;
     } else {
       if (node.className && typeof node.className === "string") {
         const cls = node.className
           .trim()
           .split(/\s+/)
-          .filter((c) => !c.startsWith("prism-design-") && !c.startsWith("css-"))
+          .filter((c) => !c.startsWith("prism-studio-") && !c.startsWith("css-"))
           .slice(0, 2)
           .join(".");
         if (cls) sel += `.${cls}`;

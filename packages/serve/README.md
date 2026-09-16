@@ -1,18 +1,18 @@
-# prism-design-serve
+# @prism-studio-ai/serve
 
-Lightweight static file server with built-in PrismDesign AI widget — comment on elements and chat with AI to modify your source code directly, no Chrome extension required.
+Lightweight static file server with built-in Prism Studio AI widget — comment on elements and chat with AI to modify your source code directly, no Chrome extension required.
 
 ## Quick Start
 
 ```bash
-npx prism-design-serve --dir ./dist --open
+npx @prism-studio-ai/serve --dir ./dist --open
 ```
 
 Use the local Codex CLI login without an API key:
 
 ```bash
 codex login status
-npx prism-design-serve --dir ./dist --provider codex --open
+npx @prism-studio-ai/serve --dir ./dist --provider codex --open
 ```
 
 A floating button appears on the page. Click it to open the AI chat panel, describe changes or annotate elements, and the AI modifies your source files automatically.
@@ -20,13 +20,13 @@ A floating button appears on the page. Click it to open the AI chat panel, descr
 ## Installation
 
 ```bash
-npm install -g prism-design-serve
+npm install -g @prism-studio-ai/serve
 ```
 
 Or as a dev dependency:
 
 ```bash
-npm install -D prism-design-serve
+npm install -D @prism-studio-ai/serve
 ```
 
 Add to `package.json`:
@@ -34,7 +34,7 @@ Add to `package.json`:
 ```json
 {
   "scripts": {
-    "design": "prism-design-serve --dir ./dist --open"
+    "design": "prism-studio-serve --dir ./dist --open"
   }
 }
 ```
@@ -42,7 +42,7 @@ Add to `package.json`:
 ## How It Works
 
 1. Serves your static HTML files with an injected AI widget
-2. Launches a `prism-design-agent` subprocess to handle AI code modifications
+2. Launches a `@prism-studio-ai/agent` subprocess to handle AI code modifications
 3. You comment on page elements or describe changes in the chat panel
 4. The AI agent reads your source code, applies modifications, and the page reloads automatically
 
@@ -68,7 +68,7 @@ Codex subscription login:
 
 ```bash
 codex login
-prism-design-serve --dir ./dist --provider codex
+prism-studio-serve --dir ./dist --provider codex
 ```
 
 Claude API key:
@@ -76,20 +76,20 @@ Claude API key:
 ```bash
 # Environment variable
 export ANTHROPIC_API_KEY=sk-ant-xxx
-prism-design-serve --dir ./dist
+prism-studio-serve --dir ./dist
 
 # CLI argument
-prism-design-serve --dir ./dist --api-key sk-ant-xxx
+prism-studio-serve --dir ./dist --api-key sk-ant-xxx
 
 # .env file in project root
 echo "ANTHROPIC_API_KEY=sk-ant-xxx" >> .env
-prism-design-serve --dir ./dist
+prism-studio-serve --dir ./dist
 ```
 
 ### API Proxy
 
 ```bash
-prism-design-serve --dir ./dist --api-base-url https://your-proxy.com/v1
+prism-studio-serve --dir ./dist --api-base-url https://your-proxy.com/v1
 ```
 
 For Codex WebSocket behind a local HTTP/Mixed proxy:
@@ -99,7 +99,7 @@ HTTP_PROXY=http://127.0.0.1:7893 \
 HTTPS_PROXY=http://127.0.0.1:7893 \
 NO_PROXY=127.0.0.1,localhost \
 CODEX_TRANSPORT=websocket \
-prism-design-serve --dir ./dist --provider codex
+prism-studio-serve --dir ./dist --provider codex
 ```
 
 ## Features
@@ -114,13 +114,13 @@ prism-design-serve --dir ./dist --provider codex
 ## Requirements
 
 - Node.js >= 18
-- `prism-design-agent` installed alongside this package or available globally
+- `@prism-studio-ai/agent` installed alongside this package or available globally
 
 ## Release verification
 
 ```bash
-pnpm --filter prism-design-serve build
-prism-design-serve --dir ./dist --provider codex
+pnpm --filter @prism-studio-ai/serve build
+prism-studio-serve --dir ./dist --provider codex
 ```
 
 ## License

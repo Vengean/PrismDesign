@@ -2,22 +2,22 @@ import type { NextConfig } from "next";
 import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import fs from "node:fs";
-import { findWidgetScript, findAgentCli, type PrismDesignOptions } from "./shared.js";
+import { findWidgetScript, findAgentCli, type PrismStudioOptions } from "./shared.js";
 
-export type { PrismDesignOptions };
+export type { PrismStudioOptions };
 
-const PRISM_PUBLIC_DIR = "__prism-design__";
+const PRISM_PUBLIC_DIR = "__prism-studio__";
 
 // Module-level state (shared across config evaluations)
 let agentProcess: ChildProcess | null = null;
 let setupDone = false;
 
 function log(msg: string) {
-  console.log(`[PrismDesign] ${msg}`);
+  console.log(`[Prism Studio] ${msg}`);
 }
 
 function warn(msg: string) {
-  console.warn(`[PrismDesign] ${msg}`);
+  console.warn(`[Prism Studio] ${msg}`);
 }
 
 function ensurePublicDir(projectRoot: string): string {
@@ -34,7 +34,7 @@ function ensurePublicDir(projectRoot: string): string {
 function copyWidget(projectRoot: string): boolean {
   const widgetPath = findWidgetScript();
   if (!widgetPath) {
-    warn("Widget script not found. Install prism-design-widget.");
+    warn("Widget script not found. Install @prism-studio-ai/widget.");
     return false;
   }
   const dir = ensurePublicDir(projectRoot);
@@ -42,7 +42,7 @@ function copyWidget(projectRoot: string): boolean {
   return true;
 }
 
-function writeInitScript(projectRoot: string, options: PrismDesignOptions, basePath = ""): void {
+function writeInitScript(projectRoot: string, options: PrismStudioOptions, basePath = ""): void {
   const dir = ensurePublicDir(projectRoot);
   const initOpts: Record<string, string> = {};
   if (options.position && options.position !== "bottom-right") {
@@ -59,39 +59,36 @@ function writeInitScript(projectRoot: string, options: PrismDesignOptions, baseP
 
   var basePath = '${prefix}';
 
-  function initWidget(agentUrl) {
+  function initWidget(config) {
     var opts = ${JSON.stringify(initOpts)};
-    if (agentUrl) opts.agentUrl = agentUrl;
-    if (window.PrismDesignWidget && window.PrismDesignWidget.init) {
-      window.PrismDesignWidget.init(opts);
+    if (config && config.agentPort) opts.agentUrl = 'http://' + location.hostname + ':' + config.agentPort;
+    if (config && config.agentUrl) opts.agentUrl = config.agentUrl;
+    if (config && config.agentToken) opts.agentToken = config.agentToken;
+    if (config && config.accessTokenRequired === false) opts.accessTokenRequired = false;
+    if (window.PrismStudioWidget && window.PrismStudioWidget.init) {
+      window.PrismStudioWidget.init(opts);
     }
   }
 
   function loadWidgetAndInit() {
     // Fetch agent config
-    fetch(basePath + '/__prism-design__/config.json')
+    fetch(basePath + '/__prism-studio__/config.json')
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(config) {
-        var agentUrl;
-        if (config && config.agentPort) {
-          agentUrl = 'http://' + location.hostname + ':' + config.agentPort;
-        } else if (config && config.agentUrl) {
-          agentUrl = config.agentUrl;
-        }
-        initWidget(agentUrl);
+        initWidget(config);
       })
       .catch(function() {
-        initWidget();
+        initWidget(null);
       });
   }
 
   // Load widget.js via script tag
-  if (window.PrismDesignWidget) {
+  if (window.PrismStudioWidget) {
     loadWidgetAndInit();
     return;
   }
   var script = document.createElement('script');
-  script.src = basePath + '/__prism-design__/widget.js';
+  script.src = basePath + '/__prism-studio__/widget.js';
   script.onload = loadWidgetAndInit;
   document.head.appendChild(script);
 })();
@@ -101,21 +98,12 @@ function writeInitScript(projectRoot: string, options: PrismDesignOptions, baseP
 
 function startAgent(
   projectRoot: string,
-  options: PrismDesignOptions
+  options: PrismStudioOptions
 ): void {
   const {
     agentPort: preferredPort = 9527,
-    agentType = "claude",
     agentAutoStart = true,
     agentUrl: agentUrlOverride,
-    apiKey,
-    baseUrl,
-    model,
-    httpProxy,
-    httpsProxy,
-    noProxy,
-    codexTransport,
-    agentDebug,
   } = options;
 
   // If running inside a workspace container, reuse its agent
@@ -125,7 +113,7 @@ function startAgent(
     const dir = ensurePublicDir(projectRoot);
     fs.writeFileSync(
       path.join(dir, "config.json"),
-      JSON.stringify({ agentUrl: effectiveAgentUrl }) + "\n"
+    JSON.stringify({ agentUrl: effectiveAgentUrl }) + "\n"
     );
     log(`Using existing agent at ${effectiveAgentUrl}`);
     return;
@@ -135,49 +123,35 @@ function startAgent(
 
   const agentCli = findAgentCli();
   if (!agentCli) {
-    warn("Agent CLI not found. Install prism-design-agent or run agent manually.");
+    warn("Agent CLI not found. Install @prism-studio-ai/agent or run agent manually.");
     log("Widget will show connection form for manual URL input.");
     return;
   }
 
   const agentEnv: NodeJS.ProcessEnv = { ...process.env };
-  if (httpProxy !== undefined) agentEnv.HTTP_PROXY = httpProxy;
-  if (httpsProxy !== undefined) agentEnv.HTTPS_PROXY = httpsProxy;
-  if (noProxy !== undefined) agentEnv.NO_PROXY = noProxy;
-  if (codexTransport !== undefined) agentEnv.CODEX_TRANSPORT = codexTransport;
-  if (agentDebug !== undefined) agentEnv.PRISM_AGENT_DEBUG = agentDebug ? "1" : "0";
   if (agentEnv.PRISM_AGENT_DEBUG_EVENTS === undefined) agentEnv.PRISM_AGENT_DEBUG_EVENTS = "1";
-  if (agentType === "openai") {
-    if (apiKey) agentEnv.OPENAI_API_KEY = apiKey;
-    if (baseUrl) agentEnv.OPENAI_BASE_URL = baseUrl;
-    if (model) agentEnv.OPENAI_MODEL = model;
-  } else if (agentType === "codex") {
-    if (model) agentEnv.CODEX_MODEL = model;
-  } else {
-    if (apiKey) agentEnv.ANTHROPIC_API_KEY = apiKey;
-    if (baseUrl) agentEnv.ANTHROPIC_BASE_URL = baseUrl;
-    if (model) agentEnv.ANTHROPIC_MODEL = model;
-  }
-
   const proc = spawn(
     "node",
-    [agentCli, "start", "--port", String(preferredPort), "--project", projectRoot, "--provider", agentType],
+    [agentCli, "start", "--port", String(preferredPort), "--project", projectRoot],
     { stdio: ["ignore", "pipe", "pipe"], env: agentEnv }
   );
   agentProcess = proc;
 
+  let detectedToken = "";
   const timeout = setTimeout(() => {
-    writeAgentConfig(projectRoot, preferredPort);
+    writeAgentConfig(projectRoot, preferredPort, detectedToken);
     log(`Agent port detection timed out, assuming port ${preferredPort}`);
   }, 15000);
 
   proc.stdout?.on("data", (data: Buffer) => {
     const text = data.toString();
     const match = text.match(/__PRISM_AGENT_PORT__=(\d+)/);
+    const tokenMatch = text.match(/__PRISM_AGENT_TOKEN__=([a-f0-9]+)/);
+    if (tokenMatch) detectedToken = tokenMatch[1];
     if (match) {
       clearTimeout(timeout);
       const port = parseInt(match[1], 10);
-      writeAgentConfig(projectRoot, port);
+      writeAgentConfig(projectRoot, port, detectedToken);
       log(`Agent ready on port ${port}`);
     }
     for (const line of text.split("\n")) {
@@ -201,11 +175,11 @@ function startAgent(
   });
 }
 
-function writeAgentConfig(projectRoot: string, port: number) {
+function writeAgentConfig(projectRoot: string, port: number, agentToken = "") {
   const dir = ensurePublicDir(projectRoot);
   fs.writeFileSync(
     path.join(dir, "config.json"),
-    JSON.stringify({ agentPort: port }) + "\n"
+    JSON.stringify({ agentPort: port, agentToken }) + "\n"
   );
 }
 
@@ -226,13 +200,14 @@ function cleanup(projectRoot: string) {
  *
  * 使用 lockfile 防止 Next.js 多次加载配置时重复启动 Agent。
  */
-function setupPrismDesign(projectRoot: string, options: PrismDesignOptions, basePath = "") {
+function setupPrismStudio(projectRoot: string, options: PrismStudioOptions, basePath = "") {
   if (setupDone) return;
   setupDone = true;
+  if (process.env.NODE_ENV === "production") return;
 
   if (options.widget !== false) {
     if (!copyWidget(projectRoot)) return;
-    log("Widget files copied to public/__prism-design__/");
+    log("Widget files copied to public/__prism-studio__/");
     writeInitScript(projectRoot, options, basePath);
   } else {
     ensurePublicDir(projectRoot);
@@ -260,26 +235,26 @@ function setupPrismDesign(projectRoot: string, options: PrismDesignOptions, base
 }
 
 /**
- * Next.js config wrapper that enables PrismDesign in development.
+ * Next.js config wrapper that enables Prism Studio in development.
  *
  * Supports both Webpack and Turbopack:
  * - File setup + Agent startup run at config creation time (always works)
  * - Webpack entry injection is an additional enhancement (Webpack only)
- * - For Turbopack, pair with `<PrismDesign />` component for browser-side loading
+ * - For Turbopack, pair with `<PrismStudio />` component for browser-side loading
  *
  * Usage:
  * ```ts
  * // next.config.ts
- * import { withPrismDesign } from 'next-plugin-prism-design';
- * export default withPrismDesign()({ reactStrictMode: true });
+ * import { withPrismStudio } from '@prism-studio-ai/next-plugin';
+ * export default withPrismStudio()({ reactStrictMode: true });
  * ```
  */
-export function withPrismDesign(options: PrismDesignOptions = {}) {
+export function withPrismStudio(options: PrismStudioOptions = {}) {
   return (nextConfig: NextConfig = {}): NextConfig => {
     const projectRoot = process.cwd();
 
     // 立即执行文件准备和 Agent 启动（Turbopack / Webpack 均可工作）
-    setupPrismDesign(projectRoot, options, nextConfig.basePath as string);
+    setupPrismStudio(projectRoot, options, nextConfig.basePath as string);
 
     return {
       ...nextConfig,
@@ -290,7 +265,7 @@ export function withPrismDesign(options: PrismDesignOptions = {}) {
         }
 
         // Webpack-only: inject init.js into client-side entry for auto-loading
-        // (Turbopack 用户需配合 <PrismDesign /> 组件实现浏览器端加载)
+        // (Turbopack 用户需配合 <PrismStudio /> 组件实现浏览器端加载)
         if (options.widget !== false && !context.isServer && context.dev) {
           const initScriptPath = path.join(projectRoot, "public", PRISM_PUBLIC_DIR, "init.js");
           if (fs.existsSync(initScriptPath)) {

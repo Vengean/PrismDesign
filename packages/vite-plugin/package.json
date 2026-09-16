@@ -1,18 +1,18 @@
 {
-  "name": "vite-plugin-prism-design",
+  "name": "@prism-studio-ai/vite-plugin",
   "version": "0.2.2",
   "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist"],
+  "files": ["dist", "README.zh-CN.md"],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch"
   },
   "dependencies": {
-    "prism-design-widget": "workspace:*",
-    "prism-design-agent": "workspace:*"
+    "@prism-studio-ai/widget": "workspace:*",
+    "@prism-studio-ai/agent": "workspace:*"
   },
   "peerDependencies": {
     "vite": ">=5.0.0"

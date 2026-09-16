@@ -1,5 +1,5 @@
 /**
- * Lightweight i18n for PrismDesign Chrome extension.
+ * Lightweight i18n for the Prism Studio Chrome extension.
  * Detects browser language and returns the correct string.
  */
 
@@ -24,7 +24,7 @@ const zh: Record<string, string> = {
   // ── Connection ──
   "agent.connecting": "正在连接 Agent...",
   "agent.connectTitle": "连接 Agent 服务",
-  "agent.connectDesc": "请输入 Agent 服务地址，连接源码工程后即可开发、调整并验证当前页面。",
+  "agent.connectDesc": "输入 Agent 服务地址，连接源码工程后，即可让 AI 开发、调整并验证当前页面。",
   "agent.connect": "连接",
   "agent.tokenPlaceholder": "Agent 访问 Token（服务启用时必填）",
   "agent.connected": "已连接",
@@ -37,8 +37,8 @@ const zh: Record<string, string> = {
   "agent.connectFailed": "连接失败，请检查 Agent 服务是否已启动",
 
   // ── Chat ──
-  "chat.empty": "描述开发、调整或测试目标，\nAI 会修改源码并协助验证页面。",
-  "chat.placeholder": "描述开发、修改或测试目标... (Ctrl+Enter 发送)",
+  "chat.empty": "描述你想开发、调整或验证的内容，\nAI 会按需修改源码，并协助验证页面。",
+  "chat.placeholder": "描述你想开发、调整或验证的内容…（Ctrl+Enter 发送）",
   "chat.clearHistory": "清空",
   "chat.thinking": "思考中...",
   "chat.done": "已完成。",
@@ -125,7 +125,7 @@ const en: Record<string, string> = {
   // ── Connection ──
   "agent.connecting": "Connecting to Agent...",
   "agent.connectTitle": "Connect Agent Service",
-  "agent.connectDesc": "Enter the Agent service URL to develop, refine, and verify the current source-backed page.",
+  "agent.connectDesc": "Enter the Agent service URL to let AI develop, refine, and verify the current source-backed page.",
   "agent.connect": "Connect",
   "agent.tokenPlaceholder": "Agent access token (if required)",
   "agent.connected": "Connected",
@@ -138,8 +138,8 @@ const en: Record<string, string> = {
   "agent.connectFailed": "Connection failed. Please check if the Agent service is running.",
 
   // ── Chat ──
-  "chat.empty": "Describe a development, refinement, or testing goal.\nAI will update the source and help verify the page.",
-  "chat.placeholder": "Describe a development, change, or test goal... (Ctrl+Enter to send)",
+  "chat.empty": "Describe what you want to build, refine, or verify.\nAI will update the source as needed and help verify the page.",
+  "chat.placeholder": "Describe what you want to build, refine, or verify… (Ctrl+Enter to send)",
   "chat.clearHistory": "Clear",
   "chat.thinking": "Thinking...",
   "chat.done": "Done.",

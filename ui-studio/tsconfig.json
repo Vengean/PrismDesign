@@ -16,7 +16,7 @@
     "types": ["chrome"],
     "typeRoots": ["../packages/chrome-ext/node_modules/@types", "./node_modules/@types"],
     "paths": {
-      "@prism-design/ui": ["../packages/ui/src/index.tsx"],
+      "@prism-studio-ai/ui": ["../packages/ui/src/index.tsx"],
       "@/*": ["../packages/chrome-ext/src/sidepanel/*"]
     }
   },

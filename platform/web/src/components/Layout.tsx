@@ -17,7 +17,7 @@ export default function Layout() {
       {/* Sidebar */}
       <aside className="w-60 border-r bg-card flex flex-col">
         <div className="p-5">
-          <h1 className="text-lg font-bold tracking-tight">PrismDesign</h1>
+          <h1 className="text-lg font-bold tracking-tight">Prism Studio</h1>
           <p className="text-xs text-muted-foreground mt-0.5">管理平台</p>
         </div>
         <Separator />

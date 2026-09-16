@@ -45,7 +45,7 @@ function inspectFibersViaPageWorld(element: HTMLElement): FiberResult | null {
 
     const parsed = JSON.parse(raw) as FiberResult;
     if (parsed.error) {
-      console.warn("[PrismDesign] page-bridge error:", parsed.error);
+      console.warn("[Prism Studio] page-bridge error:", parsed.error);
       return null;
     }
     return parsed;
@@ -131,14 +131,14 @@ function getDomPath(element: HTMLElement): string {
   let el: HTMLElement | null = element;
   while (el && el !== document.body) {
     let selector = el.tagName.toLowerCase();
-    if (el.id && !el.id.startsWith("prism-design-")) {
+    if (el.id && !el.id.startsWith("prism-studio-")) {
       selector += `#${el.id}`;
     } else {
       if (el.className && typeof el.className === "string") {
         const cls = el.className
           .trim()
           .split(/\s+/)
-          .filter((c) => !c.startsWith("prism-design-") && !c.startsWith("css-"))
+          .filter((c) => !c.startsWith("prism-studio-") && !c.startsWith("css-"))
           .slice(0, 2)
           .join(".");
         if (cls) selector += `.${cls}`;

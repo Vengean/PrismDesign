@@ -1,10 +1,10 @@
-# PrismDesign 多仓库支持方案
+# Prism Studio 多仓库支持方案
 
 > 状态：草案，待讨论
 
 ## 背景
 
-当前 PrismDesign agent 只能修改本地前端代码。实际场景中需要同时修改前端和后端（Java Spring Boot，独立 GitLab 仓库），改完代码后 push 触发 CI/CD 构建部署，用户到部署环境看效果。
+当前 Prism Studio agent 只能修改本地前端代码。实际场景中需要同时修改前端和后端（Java Spring Boot，独立 GitLab 仓库），改完代码后 push 触发 CI/CD 构建部署，用户到部署环境看效果。
 
 目标：先内部团队使用，后续做成 SaaS 平台。
 
@@ -13,7 +13,7 @@
 Workspace 模式：创建工作空间，把前后端仓库都 clone 下来，agent 的 cwd 设为 workspace 根目录，直接操作所有仓库代码。agent 自己用 Bash 执行 git 提交推送。
 
 ```
-~/.prism-design/workspaces/<workspace-id>/
+~/.prism-studio/workspaces/<workspace-id>/
 ├── frontend/     ← clone 的前端仓库
 ├── backend/      ← clone 的后端仓库
 └── CLAUDE.md     ← workspace 级说明（描述各仓库关系、技术栈、接口规范等）
@@ -74,10 +74,8 @@ Push 后可轮询 GitLab API 获取 Pipeline 状态，通过 WebSocket 推送给
 扩展 `prism.config.ts`：
 
 ```typescript
-import { defineConfig } from "prism-design-agent/config";
-
-export default defineConfig({
-  anthropicApiKey: "sk-ant-xxx",
+export default {
+  apiKey: "sk-ant-xxx",
   workspace: {
     repos: [
       {
@@ -93,7 +91,7 @@ export default defineConfig({
     ],
     gitAccessToken: process.env.GITLAB_TOKEN,
   }
-});
+};
 ```
 
 `WorkspaceConfig` 接口：
@@ -108,7 +106,7 @@ interface RepoConfig {
 interface WorkspaceConfig {
   repos: RepoConfig[];
   gitAccessToken?: string;    // Git PAT，用于 clone 和 push
-  localPath?: string;         // workspace 根目录，默认 ~/.prism-design/workspaces/<auto-id>
+  localPath?: string;         // workspace 根目录，默认 ~/.prism-studio/workspaces/<auto-id>
 }
 ```
 
@@ -138,10 +136,8 @@ interface WorkspaceConfig {
 
 ```typescript
 // prism.config.ts
-import { defineConfig } from "prism-design-agent/config";
-
-export default defineConfig({
-  anthropicApiKey: "sk-ant-xxx",
+export default {
+  apiKey: "sk-ant-xxx",
   workspace: {
     repos: [
       {
@@ -157,7 +153,7 @@ export default defineConfig({
     ],
     gitAccessToken: process.env.GITLAB_TOKEN,
   }
-});
+};
 ```
 
 ## 风险和应对

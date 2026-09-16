@@ -22,13 +22,13 @@ export function createToolbar(toolbarActions: ToolbarActions) {
   if (toolbar) return;
   actions = toolbarActions;
 
-  document.getElementById("prism-design-toolbar")?.remove();
-  document.getElementById("prism-design-toolbar-style")?.remove();
+  document.getElementById("prism-studio-toolbar")?.remove();
+  document.getElementById("prism-studio-toolbar-style")?.remove();
 
   styleEl = document.createElement("style");
-  styleEl.id = "prism-design-toolbar-style";
+  styleEl.id = "prism-studio-toolbar-style";
   styleEl.textContent = `
-    #prism-design-toolbar {
+    #prism-studio-toolbar {
       position: fixed;
       bottom: 20px;
       left: 50%;
@@ -45,7 +45,7 @@ export function createToolbar(toolbarActions: ToolbarActions) {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       user-select: none;
     }
-    #prism-design-toolbar button {
+    #prism-studio-toolbar button {
       position: relative;
       display: inline-flex;
       align-items: center;
@@ -60,16 +60,16 @@ export function createToolbar(toolbarActions: ToolbarActions) {
       transition: all 0.15s;
       padding: 0;
     }
-    #prism-design-toolbar button:focus { outline: none; }
-    #prism-design-toolbar button:hover { background: #f3f4f6; color: #374151; }
-    #prism-design-toolbar button.pd-active { background: #ede9fe; color: #6366f1; }
-    #prism-design-toolbar button svg { width: 18px; height: 18px; flex-shrink: 0; }
-    #prism-design-toolbar.pd-disabled {
+    #prism-studio-toolbar button:focus { outline: none; }
+    #prism-studio-toolbar button:hover { background: #f3f4f6; color: #374151; }
+    #prism-studio-toolbar button.pd-active { background: #ede9fe; color: #6366f1; }
+    #prism-studio-toolbar button svg { width: 18px; height: 18px; flex-shrink: 0; }
+    #prism-studio-toolbar.pd-disabled {
       pointer-events: none;
       opacity: 0;
     }
     /* Tooltip */
-    #prism-design-toolbar button .pd-tooltip {
+    #prism-studio-toolbar button .pd-tooltip {
       position: absolute;
       bottom: calc(100% + 8px);
       left: 50%;
@@ -85,25 +85,25 @@ export function createToolbar(toolbarActions: ToolbarActions) {
       opacity: 0;
       transition: opacity 0.15s;
     }
-    #prism-design-toolbar button .pd-tooltip .pd-shortcut {
+    #prism-studio-toolbar button .pd-tooltip .pd-shortcut {
       color: #9ca3af;
       margin-left: 4px;
       font-size: 10px;
     }
     @media (hover: hover) {
-      #prism-design-toolbar button:hover .pd-tooltip {
+      #prism-studio-toolbar button:hover .pd-tooltip {
         opacity: 1;
       }
     }
-    #prism-design-toolbar.pd-disabled button:hover .pd-tooltip,
-    #prism-design-toolbar button.pd-active .pd-tooltip {
+    #prism-studio-toolbar.pd-disabled button:hover .pd-tooltip,
+    #prism-studio-toolbar button.pd-active .pd-tooltip {
       opacity: 0;
     }
   `;
   document.head.appendChild(styleEl);
 
   toolbar = document.createElement("div");
-  toolbar.id = "prism-design-toolbar";
+  toolbar.id = "prism-studio-toolbar";
   toolbar.innerHTML = `
     <button id="pd-tb-select">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/><path d="M13 13l6 6"/></svg>
@@ -166,7 +166,7 @@ export function isToolbarDisabled(): boolean {
 }
 
 export function isToolbarElement(el: HTMLElement): boolean {
-  return !!el.closest("#prism-design-toolbar");
+  return !!el.closest("#prism-studio-toolbar");
 }
 
 /** Trigger mode switch from keyboard shortcut */

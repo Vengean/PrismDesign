@@ -352,12 +352,12 @@ export function createChat(
       }
     });
 
-    console.log("[PrismDesign] 发送给 Agent 的消息:", agentMessage);
+    console.log("[Prism Studio] 发送给 Agent 的消息:", agentMessage);
 
     let hasFileChanges = false;
     try {
       const result = await agentClient.chat(agentMessage);
-      console.log("[PrismDesign] Agent 返回结果:", result);
+      console.log("[Prism Studio] Agent 返回结果:", result);
 
       hasFileChanges = (result.filesModified?.length ?? 0) > 0;
 

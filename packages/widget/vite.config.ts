@@ -6,8 +6,8 @@ export default defineConfig({
     lib: {
       entry: path.resolve(__dirname, "src/index.ts"),
       formats: ["iife", "es"],
-      name: "PrismDesignWidget",
-      fileName: (format) => `prism-design-widget.${format === "iife" ? "iife" : "es"}.js`,
+      name: "PrismStudioWidget",
+      fileName: (format) => `prism-studio-widget.${format === "iife" ? "iife" : "es"}.js`,
     },
     outDir: "dist",
     minify: true,

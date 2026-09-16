@@ -1,5 +1,5 @@
 {
-  "name": "@prism-design/chrome-ext",
+  "name": "@prism-studio-ai/chrome-ext",
   "version": "0.4.0",
   "description": "Prism Chrome extension for AI-assisted page development, visual editing, and real browser verification",
   "type": "module",

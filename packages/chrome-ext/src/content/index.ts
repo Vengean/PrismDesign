@@ -19,7 +19,7 @@ let designModeActive = false;
 let dragModeActive = false;
 let commentModeActive = false;
 let selectedElement: HTMLElement | null = null;
-const COMMENT_CURSOR_STYLE_ID = "prism-design-comment-cursor";
+const COMMENT_CURSOR_STYLE_ID = "prism-studio-comment-cursor";
 
 function showCommentCursor() {
   const cursorSvg = btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="#6366f1" stroke="white" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`);
@@ -30,7 +30,7 @@ function showCommentCursor() {
     style.id = COMMENT_CURSOR_STYLE_ID;
     document.head.appendChild(style);
   }
-  style.textContent = `*, *::before, *::after { cursor: ${cursor} !important; } #prism-design-comment-popup *, #prism-design-comment-popup textarea { cursor: auto !important; }`;
+  style.textContent = `*, *::before, *::after { cursor: ${cursor} !important; } #prism-studio-comment-popup *, #prism-studio-comment-popup textarea { cursor: auto !important; }`;
 }
 
 function hideCommentCursor() {
@@ -84,7 +84,7 @@ function isOurElement(element: HTMLElement): boolean {
   if (isCommentPopupElement(element)) return true;
   let el: HTMLElement | null = element;
   while (el) {
-    if (el.id?.startsWith("prism-design-")) return true;
+    if (el.id?.startsWith("prism-studio-")) return true;
     el = el.parentElement;
   }
   return false;
@@ -172,7 +172,7 @@ function enableDesignMode() {
       safeSendMessage({ type: "DRAG_MOVE", payload: { element: info, from, to } });
     });
   } catch (err) {
-    console.error("[PrismDesign] Init error:", err);
+    console.error("[Prism Studio] Init error:", err);
   }
 
   document.addEventListener("pointermove", handleMouseMove as EventListener, true);
@@ -192,10 +192,10 @@ function enableDesignMode() {
     },
   });
 
-  if (dragModeActive) document.body.classList.add("prism-design-drag-mode");
+  if (dragModeActive) document.body.classList.add("prism-studio-drag-mode");
   // Keep default arrow cursor in select / comment mode
   if (!dragModeActive) document.body.style.cursor = "default";
-  console.log("[PrismDesign] Design mode enabled");
+  console.log("[Prism Studio] Design mode enabled");
 }
 
 function disableDesignMode() {
@@ -218,13 +218,13 @@ function disableDesignMode() {
   destroyEditor();
   destroyKeyboard();
 
-  document.body.classList.remove("prism-design-drag-mode");
+  document.body.classList.remove("prism-studio-drag-mode");
   document.body.style.cursor = "";
   hideCommentCursor();
   selectedElement = null;
 
   safeSendMessage({ type: "ELEMENT_DESELECTED" });
-  console.log("[PrismDesign] Design mode disabled");
+  console.log("[Prism Studio] Design mode disabled");
 }
 
 // ---- Find element by DOM path ----
@@ -295,12 +295,12 @@ chrome.runtime.onMessage.addListener((message: PrismMessage, _sender, sendRespon
       break;
     case "ENABLE_DRAG_MODE":
       dragModeActive = true;
-      document.body.classList.add("prism-design-drag-mode");
+      document.body.classList.add("prism-studio-drag-mode");
       sendResponse({ success: true });
       break;
     case "DISABLE_DRAG_MODE":
       dragModeActive = false;
-      document.body.classList.remove("prism-design-drag-mode");
+      document.body.classList.remove("prism-studio-drag-mode");
       sendResponse({ success: true });
       break;
     case "GET_DOM_TREE": {
@@ -455,4 +455,4 @@ function removeToolbar() {
 
 // Send ready after a short delay so it doesn't interfere with page load
 setTimeout(() => safeSendMessage({ type: "CONTENT_READY" }), 100);
-console.log("[PrismDesign] Content script loaded");
+console.log("[Prism Studio] Content script loaded");

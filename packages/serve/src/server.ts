@@ -18,7 +18,7 @@ export function startServer(opts: { dir: string; port: number; agentUrl: string 
   try {
     widgetContent = fs.readFileSync(widgetPath, "utf-8");
   } catch {
-    widgetContent = "console.warn('[PrismDesign] widget.js not found — run pnpm build:widget first');";
+    widgetContent = "console.warn('[Prism Studio] widget.js not found — run pnpm build:widget first');";
   }
 
   app.get("/__prism__/widget.js", (_req, res) => {
@@ -32,7 +32,7 @@ export function startServer(opts: { dir: string; port: number; agentUrl: string 
   const agentUrlObj = new URL(agentUrl);
   const agentPort = agentUrlObj.port;
   const injectionSnippet =
-    `<script>window.__PRISM_DESIGN__={agentUrl:"http://"+location.hostname+":${agentPort}"}</script>\n` +
+    `<script>window.__PRISM_STUDIO__={agentUrl:"http://"+location.hostname+":${agentPort}"}</script>\n` +
     `<script src="/__prism__/widget.js"></script>\n`;
 
   // ── Helper: inject into HTML ──

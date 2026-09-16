@@ -49,13 +49,13 @@ npm run dev
 
 ```bash
 # 使用本机 Codex/ChatGPT 登录态
-prism-design-agent start --provider codex
+prism-studio-agent start --provider codex
 
 # 或 OpenAI Agents SDK
-OPENAI_API_KEY=sk-xxx prism-design-agent start --provider openai
+OPENAI_API_KEY=sk-xxx prism-studio-agent start --provider openai
 ```
 
-1. 点击 Chrome 工具栏中的 PrismDesign 图标，打开侧边栏
+1. 点击 Chrome 工具栏中的 Prism Studio 图标，打开侧边栏
 2. 输入 Agent 服务地址（如 `http://192.168.1.100:9527`）
 3. 点击「连接」，状态显示「已连接」即可
 
@@ -171,7 +171,7 @@ OPENAI_API_KEY=sk-xxx prism-design-agent start --provider openai
 **Q: 点击元素没有反应？**
 - 确认已点击「开启设计模式」
 - 刷新目标页面（安装/更新插件后需要刷新）
-- 打开 DevTools Console 检查是否有 `[PrismDesign] Content script loaded` 日志
+- 打开 DevTools Console 检查是否有 `[Prism Studio] Content script loaded` 日志
 
 **Q: 修改保存后页面没更新？**
 - 确认 Agent 服务正在运行且目标项目的 dev server 支持 HMR
@@ -185,7 +185,7 @@ OPENAI_API_KEY=sk-xxx prism-design-agent start --provider openai
 ## 发布检查
 
 ```bash
-pnpm --filter @prism-design/chrome-ext build
+pnpm --filter @prism-studio-ai/chrome-ext build
 ```
 
 在 `chrome://extensions` 重新加载 `packages/chrome-ext/dist`，至少验证工作空间连接、AI 对话改码、元素选择、源码同步、真实浏览器测试和断线重连。

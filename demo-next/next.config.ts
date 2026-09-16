@@ -1,5 +1,5 @@
-import { withPrismDesign } from "next-plugin-prism-design";
+import { withPrismStudio } from "@prism-studio-ai/next-plugin";
 
-export default withPrismDesign()({
+export default withPrismStudio()({
   allowedDevOrigins: ["10.65.202.68"],
 });

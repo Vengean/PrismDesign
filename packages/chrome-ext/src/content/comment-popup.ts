@@ -12,9 +12,9 @@ let outsideListener: ((event: PointerEvent) => void) | null = null;
 export function initCommentPopup() {
   if (styleEl) return;
   styleEl = document.createElement("style");
-  styleEl.id = "prism-design-comment-style";
+  styleEl.id = "prism-studio-comment-style";
   styleEl.textContent = `
-    #prism-design-comment-popup {
+    #prism-studio-comment-popup {
       position: absolute;
       z-index: 2147483647;
       background: #fff;
@@ -26,7 +26,7 @@ export function initCommentPopup() {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       display: none;
     }
-    #prism-design-comment-popup textarea {
+    #prism-studio-comment-popup textarea {
       width: 100%;
       min-height: 60px;
       border: 1px solid #e5e7eb;
@@ -39,16 +39,16 @@ export function initCommentPopup() {
       transition: border-color 0.15s;
       box-sizing: border-box;
     }
-    #prism-design-comment-popup textarea:focus {
+    #prism-studio-comment-popup textarea:focus {
       border-color: #6366f1;
     }
-    #prism-design-comment-popup .pd-comment-actions {
+    #prism-studio-comment-popup .pd-comment-actions {
       display: flex;
       justify-content: flex-end;
       gap: 6px;
       margin-top: 8px;
     }
-    #prism-design-comment-popup button {
+    #prism-studio-comment-popup button {
       padding: 4px 12px;
       border-radius: 6px;
       font-size: 12px;
@@ -59,18 +59,18 @@ export function initCommentPopup() {
       transition: all 0.15s;
       font-family: inherit;
     }
-    #prism-design-comment-popup button:hover {
+    #prism-studio-comment-popup button:hover {
       background: #f3f4f6;
     }
-    #prism-design-comment-popup .pd-comment-confirm {
+    #prism-studio-comment-popup .pd-comment-confirm {
       background: #6366f1;
       color: #fff;
       border-color: #6366f1;
     }
-    #prism-design-comment-popup .pd-comment-confirm:hover {
+    #prism-studio-comment-popup .pd-comment-confirm:hover {
       background: #4f46e5;
     }
-    #prism-design-comment-popup .pd-comment-confirm:disabled {
+    #prism-studio-comment-popup .pd-comment-confirm:disabled {
       opacity: 0.5;
       cursor: default;
     }
@@ -84,7 +84,7 @@ export function showCommentPopup(target: HTMLElement, callback: CommentCallback,
   onDismiss = dismiss || null;
 
   popup = document.createElement("div");
-  popup.id = "prism-design-comment-popup";
+  popup.id = "prism-studio-comment-popup";
   popup.innerHTML = `
     <textarea placeholder="${t("comment.placeholder")}" autofocus></textarea>
     <div class="pd-comment-actions">
@@ -169,5 +169,5 @@ export function destroyCommentPopup() {
 }
 
 export function isCommentPopupElement(el: HTMLElement): boolean {
-  return !!el.closest("#prism-design-comment-popup");
+  return !!el.closest("#prism-studio-comment-popup");
 }

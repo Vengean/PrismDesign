@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate PrismDesign PPT v2 — 3 pages, white theme."""
+"""Generate Prism Studio PPT v2 — 3 pages, white theme."""
 
 from pptx import Presentation
 from pptx.util import Inches, Pt
@@ -415,6 +415,6 @@ text_box(s3, ax2 + Inches(0.1), (gap_top + gap_bot) / 2 - Inches(0.12),
 
 
 # ── Save ──
-out = "/Users/vengeanliu/Documents/ai-workspace/PrismDesign/docs/PrismDesign-介绍.pptx"
+out = "/Users/vengeanliu/Documents/ai-workspace/PrismDesign/docs/PrismStudio-介绍.pptx"
 prs.save(out)
 print(f"Saved: {out}")

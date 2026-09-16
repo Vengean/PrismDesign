@@ -137,7 +137,10 @@ export class OpenAIProvider implements AgentProvider {
         }),
       }),
     ];
-    if (!this.toolRegistry) return workspaceTools;
+    const permittedWorkspaceTools = process.env.PRISM_PERMISSION_FILESYSTEM === "read-only"
+      ? workspaceTools.slice(0, 3)
+      : workspaceTools;
+    if (!this.toolRegistry) return permittedWorkspaceTools;
     const browserActionSchema = z.object({
       sessionId: z.string(),
       action: z.discriminatedUnion("type", [
@@ -146,7 +149,7 @@ export class OpenAIProvider implements AgentProvider {
         z.object({ type: z.literal("press"), target: z.record(z.string(), z.unknown()), key: z.string() }),
       ]),
     });
-    return [...workspaceTools,
+    return [...permittedWorkspaceTools,
       tool({ name: "browser_start", description: "Start an isolated real browser session for the application.", parameters: z.object({ baseUrl: z.string().url(), verificationId: z.string().optional() }), execute: (input) => execute("browser.start", "启动真实浏览器", () => this.toolRegistry!.execute("browser.start", input, { clientId, runId })) }),
       tool({ name: "browser_navigate", description: "Navigate the browser to a URL.", parameters: z.object({ sessionId: z.string(), url: z.string() }), execute: (input) => execute("browser.navigate", `打开 ${input.url}`, () => this.toolRegistry!.execute("browser.navigate", input, { clientId, runId })) }),
       tool({ name: "browser_observe", description: "Observe interactive page elements and receive short-lived refs.", parameters: z.object({ sessionId: z.string() }), execute: (input) => execute("browser.observe", "观察页面", () => this.toolRegistry!.execute("browser.observe", input, { clientId, runId })) }),
@@ -160,7 +163,7 @@ export class OpenAIProvider implements AgentProvider {
     if (!process.env.OPENAI_API_KEY) throw new Error("OPENAI_API_KEY 未配置");
     const filesModified = new Set<string>();
     const agent = new Agent({
-      name: "PrismDesign OpenAI Agent",
+      name: "Prism Studio OpenAI Agent",
       model: this.model,
       instructions: [
         "You are a coding agent editing the current frontend project.",

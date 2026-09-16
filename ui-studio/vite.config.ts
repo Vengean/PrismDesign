@@ -8,7 +8,7 @@ export default defineConfig({
   root: new URL(".", import.meta.url).pathname,
   plugins: [react(), tailwindcss()],
   resolve: { alias: {
-    "@prism-design/ui": new URL("../packages/ui/src/index.tsx", import.meta.url).pathname,
+    "@prism-studio-ai/ui": new URL("../packages/ui/src/index.tsx", import.meta.url).pathname,
     "@": new URL("../packages/chrome-ext/src/sidepanel", import.meta.url).pathname,
   } },
 });

@@ -17,9 +17,9 @@ export interface CommentInfo {
 }
 
 // ── Global overlay & popup IDs ──
-const OVERLAY_ID = "prism-design-comment-overlay";
-const POPUP_ID = "prism-design-comment-popup";
-const STYLE_ID = "prism-design-comment-styles";
+const OVERLAY_ID = "prism-studio-comment-overlay";
+const POPUP_ID = "prism-studio-comment-popup";
+const STYLE_ID = "prism-studio-comment-styles";
 
 function ensureGlobalStyles() {
   if (document.getElementById(STYLE_ID)) return;
@@ -260,7 +260,7 @@ function buildCommentInfo(el: Element, commentText: string): CommentInfo {
 function isCommentUI(el: Element): boolean {
   const id = el.id || "";
   if (id === OVERLAY_ID || id === POPUP_ID) return true;
-  if (el.closest(`#${POPUP_ID}`) || el.closest("#prism-design-widget")) return true;
+  if (el.closest(`#${POPUP_ID}`) || el.closest("#prism-studio-widget")) return true;
   return false;
 }
 
