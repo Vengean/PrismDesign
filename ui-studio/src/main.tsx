@@ -10,7 +10,7 @@ import type { ChatMessage, CommentAnnotation, ElementSelection, TestRunInfo } fr
 import "./styles.css";
 
 const DEFAULT_THEME = {
-  background: "#f9f9fc", card: "#ffffff", primary: "#6658d5", muted: "#f2f1f7",
+  background: "#f9f9fc", card: "#ffffff", primary: "#252525", muted: "#f2f1f7",
   foreground: "#292537", border: "#dedce8", destructive: "#d93d54", radius: 10, fontSize: 13,
 };
 type Theme = typeof DEFAULT_THEME;
@@ -169,21 +169,12 @@ function ProcessStatePanel() {
 }
 
 function App() {
-  const [theme, setTheme] = useState<Theme>(() => {
-    try {
-      const stored = JSON.parse(localStorage.getItem("prism-ui-theme") || "{}") as Partial<Theme>;
-      // Migrate the accidentally persisted light foreground value that made
-      // the extension text nearly invisible after shared tokens were enabled.
-      if (stored.foreground?.toLowerCase() === "#dad7e5") stored.foreground = DEFAULT_THEME.foreground;
-      return { ...DEFAULT_THEME, ...stored };
-    } catch { return DEFAULT_THEME; }
-  });
+  const [theme, setTheme] = useState<Theme>(DEFAULT_THEME);
   const [viewport, setViewport] = useState({ x: 470, y: 70, scale: 1 });
   const drag = useRef<{ x: number; y: number; originX: number; originY: number } | null>(null);
   useEffect(() => {
     const root = document.documentElement.style;
     Object.entries(theme).forEach(([key, value]) => root.setProperty(key === "fontSize" ? "--font-size-base" : `--${key}`, typeof value === "number" ? `${value}px` : value));
-    localStorage.setItem("prism-ui-theme", JSON.stringify(theme));
   }, [theme]);
   const startPan = (event: ReactPointerEvent<HTMLElement>) => {
     if ((event.target as HTMLElement).closest("button,input,textarea,label,.studio-artboard")) return;
