@@ -63,7 +63,7 @@ export function ChangesPanel() {
   if (changes.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-xs gap-2 py-8">
-        <ListChecks className="h-8 w-8 text-primary/30" />
+        <ListChecks className="h-8 w-8 text-primary" />
         <p>{t("changes.empty")}</p>
       </div>
     );
@@ -79,25 +79,25 @@ export function ChangesPanel() {
             <div className="text-xs font-semibold text-primary mb-1">
               {group.label}
               {group.source && (
-                <span className="text-muted-foreground font-normal font-mono text-[10px] ml-1.5">
+                <span className="text-muted-foreground font-normal font-mono text-xs ml-1.5">
                   {group.source}
                 </span>
               )}
             </div>
             <div className="space-y-1 pl-2">
               {group.items.map((c, ci) => (
-                <div key={ci} className="text-[11px]">
+                <div key={ci} className="text-xs">
                   {c.property === "comment" ? (
                     <span>
                       <span className="text-muted-foreground">{t("changes.commentLabel")}: </span>
-                      <span className="text-green-600">{c.newValue}</span>
+                      <span className="text-tx2">{c.newValue}</span>
                     </span>
                   ) : (
                     <span>
                       <span className="text-muted-foreground">{c.property}: </span>
                       <span className="text-muted-foreground line-through">{c.oldValue || t("changes.emptyValue")}</span>
                       <span className="text-muted-foreground mx-1">→</span>
-                      <span className="text-green-600 font-medium">{c.newValue}</span>
+                      <span className="text-tx2 font-medium">{c.newValue}</span>
                     </span>
                   )}
                 </div>
@@ -118,7 +118,7 @@ export function ChangesPanel() {
           <Send className="h-3.5 w-3.5 mr-1.5" />
           {syncing ? t("changes.syncingBtn") : `${t("changes.syncBtn")} (${changes.length})`}
           {changes.length > 0 && (
-            <Badge variant="secondary" className="ml-1.5 h-4 px-1 text-[9px]">
+            <Badge variant="secondary" className="ml-1.5 h-4 px-1 text-xs">
               {changes.length}
             </Badge>
           )}

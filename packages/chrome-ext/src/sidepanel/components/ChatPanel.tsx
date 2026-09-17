@@ -101,7 +101,7 @@ function ConnectionForm({ agent }: { agent: AgentState }) {
   return (
     <div className="flex flex-col items-center justify-center h-full px-6 gap-4">
       <div className="text-center space-y-2">
-        <Plug className="h-10 w-10 text-primary/30 mx-auto" />
+        <Plug className="h-10 w-10 text-primary mx-auto" />
         <p className="text-sm font-medium">{t("agent.connectTitle")}</p>
         <p className="text-xs text-muted-foreground leading-relaxed">
           {t("agent.connectDesc")}
@@ -127,7 +127,7 @@ function ConnectionForm({ agent }: { agent: AgentState }) {
         </Button>
         {agent.error && (
           <div className="flex items-start gap-1.5 p-2 rounded-md bg-destructive/10 text-destructive text-xs leading-relaxed">
-            <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+            <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-destructive" />
             <span>{agent.error}</span>
           </div>
         )}
@@ -227,21 +227,21 @@ function CommentTag({ comments, editable = false, align = "left", onEdit, onRemo
     onMouseEnter={() => { if (supportsHover()) { cancelClose(); setOpen(true); } }}
     onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}
   >
-    <button type="button" className="inline-flex h-6 max-w-full items-center gap-1 overflow-hidden text-ellipsis whitespace-nowrap rounded-full border bg-background px-2 text-[11px] text-foreground shadow-sm hover:bg-muted" onClick={(event) => { event.stopPropagation(); setOpen((value) => supportsHover() ? true : !value); }} aria-expanded={open}>
-      <MessageSquareText className="h-3 w-3 text-muted-foreground" />{comments.length} 条评论
+    <button type="button" className="inline-flex h-6 max-w-full items-center gap-1 overflow-hidden text-ellipsis whitespace-nowrap rounded-full border bg-background px-2 text-xs text-foreground shadow-sm hover:bg-muted" onClick={(event) => { event.stopPropagation(); setOpen((value) => supportsHover() ? true : !value); }} aria-expanded={open}>
+      <MessageSquareText className="h-3 w-3 text-primary" />{comments.length} 条评论
     </button>
     {open && <FloatingPopover anchor={anchorRef.current} align={align} className="comment-popover w-[min(320px,calc(100vw-16px))] overflow-x-hidden rounded-xl border bg-popover text-popover-foreground shadow-lg" ><div onMouseEnter={cancelClose} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
       {comments.map((item, index) => <div key={`${item.element.domPath}-${index}`} className="group/comment relative border-b px-3 py-2.5 last:border-0">
-        <div className="pr-12 text-[10px] text-muted-foreground">{index + 1}.</div>
-        <div className="mt-0.5 text-[10px] text-muted-foreground">节点信息：</div>
+        <div className="pr-12 text-xs text-muted-foreground">{index + 1}.</div>
+        <div className="mt-0.5 text-xs text-muted-foreground">节点信息：</div>
         <div className="mt-1 space-y-1 rounded-md bg-muted/50 p-2">
           <div className="text-xs font-semibold" title={commentNodeLabel(item)}>{commentNodeLabel(item)}</div>
-          {commentNodeDetails(item).map(([label, value]) => <div key={label} className="grid grid-cols-[58px_minmax(0,1fr)] gap-1 text-[10px] leading-4">
+          {commentNodeDetails(item).map(([label, value]) => <div key={label} className="grid grid-cols-[58px_minmax(0,1fr)] gap-1 text-xs leading-4">
             <span className="text-muted-foreground">{label}</span>
             <span className="whitespace-pre-wrap break-all font-mono text-foreground">{value}</span>
           </div>)}
         </div>
-        <div className="mt-1.5 text-[10px] text-muted-foreground">用户评论：</div>
+        <div className="mt-1.5 text-xs text-muted-foreground">用户评论：</div>
         {editing === index ? <textarea autoFocus className="mt-0.5 min-h-14 w-full resize-none rounded-md border bg-background p-1.5 text-xs outline-none focus:ring-1 focus:ring-ring" value={item.comment} onChange={(event) => onEdit?.(index, event.target.value)} onBlur={() => setEditing(null)} onKeyDown={(event) => { if (event.key === "Escape" || (event.key === "Enter" && (event.metaKey || event.ctrlKey))) setEditing(null); }} /> : <div className="whitespace-pre-wrap break-words text-xs">{item.comment}</div>}
         {editable && editing !== index && <div className="absolute right-2 top-2 flex gap-0.5 opacity-70 group-hover/comment:opacity-100">
           <button type="button" className="rounded p-1 hover:bg-muted" title="编辑评论" onClick={() => setEditing(index)}><Pencil className="h-3 w-3" /></button>
@@ -263,11 +263,11 @@ function AttachmentTag({ files, editable = false, align = "left", onRemove }: { 
   useEffect(() => () => cancelClose(), []);
   if (!files.length) return null;
   return <div ref={anchorRef} className="relative inline-flex" onMouseEnter={() => { if (supportsHover()) { cancelClose(); setOpen(true); } }} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
-    <button type="button" className="inline-flex h-6 max-w-full items-center gap-1 whitespace-nowrap rounded-full border bg-background px-2 text-[11px] text-foreground shadow-sm hover:bg-muted" onClick={() => setOpen((value) => supportsHover() ? true : !value)} aria-expanded={open}><Paperclip className="h-3 w-3 text-muted-foreground" />{files.length} 个附件</button>
+    <button type="button" className="inline-flex h-6 max-w-full items-center gap-1 whitespace-nowrap rounded-full border bg-background px-2 text-xs text-foreground shadow-sm hover:bg-muted" onClick={() => setOpen((value) => supportsHover() ? true : !value)} aria-expanded={open}><Paperclip className="h-3 w-3 text-primary" />{files.length} 个附件</button>
     {open && <FloatingPopover anchor={anchorRef.current} align={align} className="w-[min(300px,calc(100vw-16px))] rounded-xl border bg-popover p-2 text-popover-foreground shadow-lg"><div className="space-y-1" onMouseEnter={cancelClose} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
       {files.map((file) => <div key={file.id} className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-xs ${file.error ? "bg-destructive/5 text-destructive" : "bg-muted/60"}`}>
-        {file.uploading ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" /> : <Paperclip className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
-        <div className="min-w-0 flex-1"><div className="truncate">{file.name}</div><div className="text-[10px] text-muted-foreground">{file.uploading ? "上传中…" : file.error || `${Math.max(1, Math.round(file.size / 1024))} KB`}</div></div>
+        {file.uploading ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" /> : <Paperclip className="h-3.5 w-3.5 shrink-0 text-primary" />}
+        <div className="min-w-0 flex-1"><div className="truncate">{file.name}</div><div className="text-xs text-muted-foreground">{file.uploading ? "上传中…" : file.error || `${Math.max(1, Math.round(file.size / 1024))} KB`}</div></div>
         {editable && <button type="button" className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title="删除附件" onClick={() => onRemove?.(file.id)}><X className="h-3 w-3" /></button>}
       </div>)}
     </div></FloatingPopover>}
@@ -282,15 +282,15 @@ function TestPromptTag({ verification, onStart, onAlways }: { verification: NonN
   const cancelClose = () => { if (closeTimerRef.current) clearTimeout(closeTimerRef.current); closeTimerRef.current = null; };
   const scheduleClose = () => { cancelClose(); closeTimerRef.current = setTimeout(() => setOpen(false), 350); };
   useEffect(() => () => cancelClose(), []);
-  return <div ref={anchorRef} className="absolute left-0 top-full mt-1 inline-flex" onMouseEnter={() => { if (supportsHover()) { cancelClose(); setOpen(true); } }} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
-    <button type="button" className="inline-flex h-6 w-max shrink-0 items-center gap-1 whitespace-nowrap rounded-full border bg-background px-2 text-[11px] text-foreground shadow-sm hover:bg-muted" onClick={() => setOpen((value) => supportsHover() ? true : !value)} aria-expanded={open}>
-      <FlaskConical className="h-3 w-3 text-muted-foreground" />测试
+  return <div ref={anchorRef} className="relative inline-flex" onMouseEnter={() => { if (supportsHover()) { cancelClose(); setOpen(true); } }} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
+    <button type="button" className="inline-flex h-6 w-max shrink-0 items-center gap-1 whitespace-nowrap rounded-full border bg-background px-2 text-xs text-foreground shadow-sm hover:bg-muted" onClick={() => setOpen((value) => supportsHover() ? true : !value)} aria-expanded={open}>
+      <FlaskConical className="h-3 w-3 text-primary" />测试
     </button>
     {open && <FloatingPopover anchor={anchorRef.current} className="w-[min(300px,calc(100vw-16px))] rounded-xl border bg-popover p-3 text-popover-foreground shadow-lg"><div onMouseEnter={cancelClose} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
       <div className="text-xs font-medium">是否开始测试？</div>
       {!!verification.proposedChecks.length && <div className="mt-2">
-        <div className="text-[10px] text-muted-foreground">建议测试案例</div>
-        <ul className="mt-1 list-disc space-y-1 pl-4 text-[11px] text-foreground">{verification.proposedChecks.map((check) => <li key={check}>{check}</li>)}</ul>
+        <div className="text-xs text-muted-foreground">建议测试案例</div>
+        <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-foreground">{verification.proposedChecks.map((check) => <li key={check}>{check}</li>)}</ul>
       </div>}
       <div className="mt-3 flex justify-start gap-1.5">
         <Button size="sm" className="h-7 px-3 text-xs" onClick={onStart}>开始</Button>
@@ -310,8 +310,8 @@ function TestResultTag({ verification, run, onRetest }: { verification: NonNulla
   useEffect(() => () => cancelClose(), []);
   const statusTitle = { passed: "测试通过", failed: "测试未通过", inconclusive: "测试结果不确定" }[verification.status || ""] || "测试结果";
   return <div ref={anchorRef} className="relative inline-flex" onMouseEnter={() => { if (supportsHover()) { cancelClose(); setOpen(true); } }} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
-    <button type="button" className="inline-flex h-6 w-max shrink-0 items-center gap-1 whitespace-nowrap rounded-full border bg-background px-2 text-[11px] text-foreground shadow-sm hover:bg-muted" onClick={() => setOpen((value) => supportsHover() ? true : !value)} aria-expanded={open}>
-      <FlaskConical className="h-3 w-3 text-muted-foreground" />测试结果
+    <button type="button" className="inline-flex h-6 w-max shrink-0 items-center gap-1 whitespace-nowrap rounded-full border bg-background px-2 text-xs text-foreground shadow-sm hover:bg-muted" onClick={() => setOpen((value) => supportsHover() ? true : !value)} aria-expanded={open}>
+      <FlaskConical className="h-3 w-3 text-primary" />测试结果
     </button>
     {open && <FloatingPopover anchor={anchorRef.current} className="flex w-[min(320px,calc(100vw-16px))] flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-lg"><div className="flex min-h-0 flex-col" onMouseEnter={cancelClose} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
       <div className="shrink-0 border-b px-3 py-2.5 text-xs font-medium">{statusTitle}</div>
@@ -333,8 +333,8 @@ function EditPromptTag({ onEdit, onAlways }: { onEdit: () => void; onAlways: () 
   const scheduleClose = () => { cancelClose(); closeTimerRef.current = setTimeout(() => setOpen(false), 350); };
   useEffect(() => () => cancelClose(), []);
   return <div ref={anchorRef} className="relative inline-flex" onMouseEnter={() => { if (supportsHover()) { cancelClose(); setOpen(true); } }} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
-    <button type="button" className="inline-flex h-6 w-max shrink-0 items-center gap-1 whitespace-nowrap rounded-full border bg-background px-2 text-[11px] text-foreground shadow-sm hover:bg-muted" onClick={() => setOpen((value) => supportsHover() ? true : !value)} aria-expanded={open}>
-      <Pencil className="h-3 w-3 text-muted-foreground" />修改
+    <button type="button" className="inline-flex h-6 w-max shrink-0 items-center gap-1 whitespace-nowrap rounded-full border bg-background px-2 text-xs text-foreground shadow-sm hover:bg-muted" onClick={() => setOpen((value) => supportsHover() ? true : !value)} aria-expanded={open}>
+      <Pencil className="h-3 w-3 text-primary" />修改
     </button>
     {open && <FloatingPopover anchor={anchorRef.current} className="w-[min(280px,calc(100vw-16px))] rounded-xl border bg-popover p-3 text-popover-foreground shadow-lg"><div onMouseEnter={cancelClose} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
       <div className="text-xs font-medium">是否允许修改代码？</div>
@@ -347,7 +347,7 @@ function EditPromptTag({ onEdit, onAlways }: { onEdit: () => void; onAlways: () 
 }
 
 function ChatView({ agent, chat, selection, comments, onEditComment, onRemoveComment, onCommentsSent, commentMode, onToggleCommentMode, onRestoreMessage }: ChatPanelProps) {
-  const { messages, sending, sendMessage, startVerification, cancelCurrent, clearHistory, deleteMessage } = chat;
+  const { messages, sending, sendMessage, startVerification, cancelCurrent, clearHistory } = chat;
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<Array<{ id: string; name: string; mimeType: string; size: number; uploading?: boolean; error?: string }>>([]);
   const [contextOrder, setContextOrder] = useState<Array<"comments" | "attachments">>([]);
@@ -375,7 +375,7 @@ function ChatView({ agent, chat, selection, comments, onEditComment, onRemoveCom
   }, [comments.length]);
 
   const handleSend = () => {
-    if (!input.trim() && !attachments.some((item) => !item.uploading && !item.error)) return;
+    if (!input.trim() && !comments.length && !attachments.some((item) => !item.uploading && !item.error)) return;
     let message = input;
     if (selection) {
       message += `\n\n--- Context ---\n${formatSelectionContext(selection)}`;
@@ -422,18 +422,23 @@ function ChatView({ agent, chat, selection, comments, onEditComment, onRemoveCom
       >
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-xs gap-2 py-8">
-            <MessageSquare className="h-8 w-8 text-primary/30" />
+            <MessageSquare className="h-8 w-8 text-primary" />
             <p className="text-center leading-relaxed">{t("chat.empty").split("\n").map((line, i) => <span key={i}>{line}<br /></span>)}</p>
           </div>
         ) : (
           <>
-          {messages.map((msg, i) => (
+          {messages.map((msg, i) => {
+            const hasContent = Boolean(msg.content.trim());
+            const hasContext = msg.role === "user" && Boolean(msg.comments?.length || msg.attachments?.length);
+            return (
             <div key={i} className={`group flex gap-2 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div className={`relative min-w-0 max-w-[85%] px-3 py-2 rounded-xl text-xs leading-relaxed ${!msg.pending ? "mb-6" : ""} ${msg.verification && (msg.testRun || ["passed", "failed", "inconclusive"].includes(msg.verification.status || "")) ? "mb-7" : ""} ${msg.role === "user" && (msg.comments?.length || msg.attachments?.length) ? "mt-7" : ""} ${msg.role === "user" ? "bg-blue-100 text-gray-900 rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}>
-                {msg.role === "user" && (!!msg.comments?.length || !!msg.attachments?.length) && <div className="absolute bottom-full right-0 mb-1 flex max-w-[calc(100vw-32px)] gap-1">{(msg.contextOrder?.length ? msg.contextOrder : ["comments", "attachments"]).map((kind) => kind === "comments" ? <CommentTag key={kind} comments={msg.comments || []} align="right" /> : <AttachmentTag key={kind} files={msg.attachments || []} align="right" />)}</div>}
-                {msg.content.startsWith("⏳") ? (
+              <div className={`relative min-w-0 max-w-[85%] text-sm font-normal leading-relaxed ${hasContent && msg.role === "user" ? "px-3 py-2 rounded-xl" : ""} ${!msg.pending ? "mb-6" : ""} ${msg.verification && (msg.testRun || ["passed", "failed", "inconclusive"].includes(msg.verification.status || "")) ? "mb-7" : ""} ${hasContent && hasContext ? "mt-7" : ""} ${hasContent && msg.role === "user" ? "bg-[#dbeafe] text-[#2563eb] rounded-br-sm" : hasContent ? "text-foreground" : ""}`}>
+                {hasContext && <div className={`${hasContent ? "absolute bottom-full right-0 mb-1" : ""} flex max-w-[calc(100vw-32px)] gap-1`}>{(msg.contextOrder?.length ? msg.contextOrder : ["comments", "attachments"]).map((kind) => kind === "comments" ? <CommentTag key={kind} comments={msg.comments || []} align="right" /> : <AttachmentTag key={kind} files={msg.attachments || []} align="right" />)}</div>}
+                {hasContent && (msg.content.startsWith("⏳") ? (
                   <div className="flex min-w-0 max-w-full items-start gap-1.5 overflow-hidden">
-                    <Loader2 className="mt-[3px] h-3 w-3 animate-spin text-primary shrink-0" />
+                    <span className="flex h-[1.625em] shrink-0 items-center" aria-hidden="true">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                    </span>
                     <span className="min-w-0 flex-1 whitespace-pre-wrap break-all text-muted-foreground">{msg.content.slice(2)}</span>
                   </div>
                 ) : (
@@ -442,28 +447,26 @@ function ChatView({ agent, chat, selection, comments, onEditComment, onRemoveCom
                       ? msg.content.replace(/^\s*测试(?:通过|未通过|结果不确定)[。！!]?\s*/i, "")
                       : msg.content}</Markdown>
                   </div>
-                )}
-                {msg.verification && !msg.testRun && !["passed", "failed", "inconclusive"].includes(msg.verification.status || "") && (
-                  <TestPromptTag verification={msg.verification} onStart={() => startVerification(msg.verification!)} onAlways={async () => { await agent.updatePermission("alwaysAllowAutomatedTesting", true); startVerification(msg.verification!); }} />
-                )}
-                {msg.verification && (msg.testRun || ["passed", "failed", "inconclusive"].includes(msg.verification.status || "")) && <div className="absolute left-0 top-full mt-1 flex gap-1.5">
-                  <TestResultTag verification={msg.verification} run={msg.testRun} onRetest={() => startVerification(msg.verification!)} />
-                  {msg.verification.status === "failed" && msg.testRun && <EditPromptTag onEdit={() => chat.fixVerification(msg.verification!, msg.testRun)} onAlways={async () => { await agent.updatePermission("alwaysAllowEdits", true); chat.fixVerification(msg.verification!, msg.testRun); }} />}
+                ))}
+                {msg.role !== "user" && !msg.pending && <div className="absolute left-0 top-full mt-1 flex items-center gap-1.5">
+                  {msg.verification && !msg.testRun && !["passed", "failed", "inconclusive"].includes(msg.verification.status || "") && <TestPromptTag verification={msg.verification} onStart={() => startVerification(msg.verification!)} onAlways={async () => { await agent.updatePermission("alwaysAllowAutomatedTesting", true); startVerification(msg.verification!); }} />}
+                  {msg.verification && (msg.testRun || ["passed", "failed", "inconclusive"].includes(msg.verification.status || "")) && <TestResultTag verification={msg.verification} run={msg.testRun} onRetest={() => startVerification(msg.verification!)} />}
+                  {msg.verification?.status === "failed" && msg.testRun && <EditPromptTag onEdit={() => chat.fixVerification(msg.verification!, msg.testRun)} onAlways={async () => { await agent.updatePermission("alwaysAllowEdits", true); chat.fixVerification(msg.verification!, msg.testRun); }} />}
+                  <button type="button" className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus:opacity-100" title="复制正文" aria-label="复制正文" onClick={() => void navigator.clipboard.writeText(msg.content).catch(() => {})}><Copy className="h-3 w-3" /></button>
                 </div>}
-                {!msg.pending && <div className="absolute right-0 top-full mt-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                  <button type="button" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-destructive" title="删除" aria-label="删除" onClick={() => deleteMessage(i)}><Trash2 className="h-3 w-3" /></button>
-                  <button type="button" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground" title="编辑" aria-label="编辑" onClick={() => { editMessage(msg); deleteMessage(i); }}><Pencil className="h-3 w-3" /></button>
+                {msg.role === "user" && !msg.pending && <div className="absolute right-0 top-full mt-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                   <button type="button" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground" title="复制正文" aria-label="复制正文" onClick={() => void navigator.clipboard.writeText(msg.content).catch(() => {})}><Copy className="h-3 w-3" /></button>
+                  <button type="button" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground" title="编辑" aria-label="编辑" onClick={() => editMessage(msg)}><Pencil className="h-3 w-3" /></button>
                 </div>}
               </div>
             </div>
-          ))}
+          );})}
           </>
         )}
       </div>
       </div>
 
-      <div className="border-t p-2 space-y-1.5">
+      <div className="p-2 space-y-1.5">
         {(comments.length > 0 || attachments.length > 0) && <div className="flex flex-wrap gap-1">{contextOrder.map((kind) => kind === "comments" ? <CommentTag key={kind} comments={comments} editable onEdit={onEditComment} onRemove={onRemoveComment} /> : <AttachmentTag key={kind} files={attachments} editable onRemove={(id) => { const file = attachments.find((item) => item.id === id); setAttachments((items) => { const next = items.filter((item) => item.id !== id); if (!next.length) setContextOrder((order) => order.filter((item) => item !== "attachments")); return next; }); if (file && !file.uploading && !file.error) chrome.runtime.sendMessage({ type: "AGENT_DELETE_ATTACHMENT", payload: { id } }); }} />)}</div>}
         <input ref={fileInputRef} type="file" multiple hidden accept=".txt,.md,.json,.csv,.html,.css,.js,.jsx,.ts,.tsx,.yaml,.yml,.xml,.sql,.log,.sh,.py,.java,.go,.rs" onChange={(event) => addFiles(event.target.files)} />
         <textarea
@@ -485,7 +488,7 @@ function ChatView({ agent, chat, selection, comments, onEditComment, onRemoveCom
               {t("chat.clearHistory")}
             </Button>
           )}
-          <Button size="sm" className="h-7 text-xs px-3 gap-1" onClick={handleSend} disabled={sending || attachments.some((item) => item.uploading || item.error) || (!input.trim() && !attachments.some((item) => !item.error))}>
+          <Button size="sm" className="h-7 text-xs px-3 gap-1" onClick={handleSend} disabled={sending || attachments.some((item) => item.uploading || item.error) || (!input.trim() && !comments.length && !attachments.some((item) => !item.error))}>
             <Send className="h-3 w-3" />
             {t("chat.send")}
           </Button>
@@ -519,17 +522,17 @@ function TestRunDetails({ run, onRetest }: { run: TestRunInfo; onRetest: () => v
     <div className="space-y-2">
       {metrics && <div className="rounded-md border bg-background/70 p-2">
         <div className="mb-1.5 font-medium">性能监测</div>
-        <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
           <span className="text-muted-foreground">端到端耗时</span><span className="text-right">{millisecondsLabel(metrics.totalDurationMs)}</span>
           <span className="text-muted-foreground">Agent 回合</span><span className="text-right">{millisecondsLabel(metrics.agentDurationMs)}</span>
           <span className="text-muted-foreground">工具调用</span><span className="text-right">{millisecondsLabel(metrics.toolDurationMs)} · {metrics.toolCallCount} 次</span>
           <span className="text-muted-foreground">浏览器命令</span><span className="text-right">{millisecondsLabel(metrics.browserDurationMs)} · {metrics.browserCommandCount} 次</span>
           <span className="text-muted-foreground">资源清理</span><span className="text-right">{millisecondsLabel(metrics.cleanupDurationMs)}</span>
         </div>
-        {Object.keys(metrics.browserCommands).length > 0 && <div className="mt-2 border-t pt-1.5 text-[10px] text-muted-foreground">
+        {Object.keys(metrics.browserCommands).length > 0 && <div className="mt-2 border-t pt-1.5 text-xs text-muted-foreground">
           {Object.entries(metrics.browserCommands).sort(([, a], [, b]) => b.durationMs - a.durationMs).map(([action, metric]) => <div key={action} className="flex justify-between gap-2"><span className="break-all">{action} × {metric.count}</span><span className="shrink-0">累计 {millisecondsLabel(metric.durationMs)} · 最慢 {millisecondsLabel(metric.maxDurationMs)}</span></div>)}
         </div>}
-        <div className="mt-1.5 text-[10px] text-muted-foreground">各指标存在包含关系，不应相加。</div>
+        <div className="mt-1.5 text-xs text-muted-foreground">各指标存在包含关系，不应相加。</div>
       </div>}
       {cases.length > 0 && <div className="space-y-1.5">
         <div className="font-medium">业务测试用例</div>
@@ -547,7 +550,7 @@ function TestRunDetails({ run, onRetest }: { run: TestRunInfo; onRetest: () => v
             <div className="min-w-0 flex-1">
               <div className="flex items-start justify-between gap-2">
                 <span className="break-words font-medium">{testCase.title}</span>
-                <span className="shrink-0 text-[10px] text-muted-foreground">{statusLabel}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">{statusLabel}</span>
               </div>
               {testCase.assertion !== testCase.title && <div className="mt-0.5 text-muted-foreground">{testCase.assertion}</div>}
               {testCase.evidenceSummary && <div className="mt-0.5 text-muted-foreground">证据：{testCase.evidenceSummary}</div>}
@@ -558,7 +561,7 @@ function TestRunDetails({ run, onRetest }: { run: TestRunInfo; onRetest: () => v
       </div>}
       {evidence.length > 0 && <div className="space-y-1.5">
         <button type="button" className="inline-flex items-center text-xs text-primary hover:underline" onClick={() => setEvidenceExpanded((value) => !value)}>
-          <ChevronDown className={`mr-1 h-3.5 w-3.5 transition-transform ${evidenceExpanded ? "rotate-180" : ""}`} />
+          <ChevronDown className={`mr-1 h-3.5 w-3.5 text-primary transition-transform ${evidenceExpanded ? "rotate-180" : ""}`} />
           {evidenceExpanded ? "收起运行证据" : `查看运行证据（${evidence.length}）`}
         </button>
         {evidenceExpanded && <div className="space-y-1.5 border-t pt-2">
@@ -569,27 +572,27 @@ function TestRunDetails({ run, onRetest }: { run: TestRunInfo; onRetest: () => v
                 ? <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
                 : <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />}
             <div className="min-w-0 flex-1">
-              <div className="text-[10px] uppercase text-muted-foreground">{{ network: "Network", console: "Console", page_error: "Page Error" }[item.type]}</div>
+              <div className="text-xs uppercase text-muted-foreground">{{ network: "Network", console: "Console", page_error: "Page Error" }[item.type]}</div>
               {item.type === "network"
                 ? <div className="break-all"><span className="mr-1 font-medium">{item.method || "REQUEST"}</span><span className={item.status === undefined || item.status === 0 || item.status >= 400 ? "text-destructive" : "text-emerald-600"}>{item.status || "FAILED"}</span> {item.url}</div>
                 : <div className="break-words">{item.message}</div>}
               {item.message && item.type === "network" && <div className="mt-0.5 text-destructive">{item.message}</div>}
               {item.responsePreview !== undefined && <div className="mt-1.5 rounded border bg-background/80 p-1.5">
-                <div className="text-[10px] text-muted-foreground">响应摘要 · 原因：{item.responseBodyReadReason}</div>
-                <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all text-[10px]">{JSON.stringify(item.responsePreview, null, 2)}</pre>
-                <div className="mt-1 text-[10px] text-muted-foreground">
+                <div className="text-xs text-muted-foreground">响应摘要 · 原因：{item.responseBodyReadReason}</div>
+                <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all text-xs">{JSON.stringify(item.responsePreview, null, 2)}</pre>
+                <div className="mt-1 text-xs text-muted-foreground">
                   {item.responseOriginalSize !== undefined && `${item.responseOriginalSize} bytes`}
                   {item.responseTruncated && " · 已裁剪"}
                   {!!item.responseRedactedPaths?.length && ` · 已脱敏 ${item.responseRedactedPaths.length} 个字段`}
                 </div>
               </div>}
-              {item.caseIds.length > 0 && <div className="mt-0.5 text-[10px] text-muted-foreground">关联用例：{item.caseIds.join(", ")}</div>}
+              {item.caseIds.length > 0 && <div className="mt-0.5 text-xs text-muted-foreground">关联用例：{item.caseIds.join(", ")}</div>}
             </div>
           </div>)}
         </div>}
       </div>}
       {run.steps.length > 0 && <button type="button" className="inline-flex items-center text-xs text-primary hover:underline" onClick={() => setExpanded((value) => !value)}>
-        <ChevronDown className={`mr-1 h-3.5 w-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} />
+        <ChevronDown className={`mr-1 h-3.5 w-3.5 text-primary transition-transform ${expanded ? "rotate-180" : ""}`} />
         {expanded ? "收起执行步骤" : `查看执行步骤（${run.steps.length}）`}
       </button>}
       {expanded && <div className="space-y-1.5 border-t pt-2">
@@ -601,14 +604,14 @@ function TestRunDetails({ run, onRetest }: { run: TestRunInfo; onRetest: () => v
               <div className="break-words">{step.label}</div>
               {step.error && <div className="mt-0.5 text-destructive">{step.error}</div>}
             </div>
-            {step.durationMs !== undefined && <span className="shrink-0 text-[10px] text-muted-foreground">{durationLabel(step.startedAt, step.finishedAt)}</span>}
+            {step.durationMs !== undefined && <span className="shrink-0 text-xs text-muted-foreground">{durationLabel(step.startedAt, step.finishedAt)}</span>}
           </div>;
         })}
       </div>}
       <div className="flex flex-wrap gap-1.5">
         {terminal
           ? <Button size="sm" variant="outline" className="h-7 text-xs" onClick={onRetest}>重新测试</Button>
-          : <div className="inline-flex items-center text-xs text-muted-foreground"><Loader2 className="mr-1 h-3 w-3 animate-spin" />测试运行中…</div>}
+          : <div className="inline-flex items-center text-xs text-muted-foreground"><Loader2 className="mr-1 h-3 w-3 animate-spin text-primary" />测试运行中…</div>}
       </div>
     </div>
   );

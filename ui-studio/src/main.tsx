@@ -1,8 +1,8 @@
 import { createRoot } from "react-dom/client";
 import { useEffect, useRef, useState } from "react";
 import type { ComponentProps, PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from "react";
-import { Check, Copy, Minus, Plus, RotateCcw } from "lucide-react";
-import { Button } from "@prism-studio-ai/ui";
+import { Bell, Check, Copy, Minus, Plus, RotateCcw, Send } from "lucide-react";
+import { Badge, Button, Dialog, DialogContent, DialogTitle, DialogTrigger, Input, MessageComposer, Separator, SidePanelHeader as UISidePanelHeader } from "@prism-studio-ai/ui";
 import { App as ChromeExtensionApp } from "../../packages/chrome-ext/src/sidepanel/App";
 import { ChatPanel as ChromeChatPanel } from "../../packages/chrome-ext/src/sidepanel/components/ChatPanel";
 import { SidePanelHeader } from "../../packages/chrome-ext/src/sidepanel/components/SidePanelHeader";
@@ -10,10 +10,22 @@ import type { ChatMessage, CommentAnnotation, ElementSelection, TestRunInfo } fr
 import "./styles.css";
 
 const DEFAULT_THEME = {
-  background: "#f9f9fc", card: "#ffffff", primary: "#252525", muted: "#f2f1f7",
-  foreground: "#292537", border: "#dedce8", destructive: "#d93d54", radius: 10, fontSize: 13,
+  grey100: "#f7f8fa", grey200: "#f0f1f3", grey300: "#e5e6eb", grey400: "#c9cdd4",
+  grey500: "#86909c", grey600: "#667085", grey700: "#4e5969", grey800: "#252525",
+  destructive: "#d93d54", radius: 8, fontSize: 14,
 };
 type Theme = typeof DEFAULT_THEME;
+
+const THEME_TOKEN_GROUPS: Array<{ key: keyof Theme; level: string; label: string; tokens: string[] }> = [
+  { key: "grey100", level: "100", label: "基础背景", tokens: ["background", "bg"] },
+  { key: "grey200", level: "200", label: "次级背景", tokens: ["muted", "secondary", "bg2"] },
+  { key: "grey300", level: "300", label: "边框与输入框", tokens: ["border", "input", "bg3"] },
+  { key: "grey400", level: "400", label: "分割线与 Idle", tokens: ["divider", "idle"] },
+  { key: "grey500", level: "500", label: "图标与装饰", tokens: ["hue-grey", "tx-deco"] },
+  { key: "grey600", level: "600", label: "辅助文字", tokens: ["tx3", "txm", "muted-foreground"] },
+  { key: "grey700", level: "700", label: "次级文字", tokens: ["tx2", "hue-grey-text"] },
+  { key: "grey800", level: "800", label: "正文与主色", tokens: ["foreground", "primary", "tx"] },
+];
 
 type MessageListener = (message: unknown, sender: Record<string, never>) => void;
 const messageListeners = new Set<MessageListener>();
@@ -93,18 +105,19 @@ function ThemeDesigner({ theme, onChange }: { theme: Theme; onChange: (value: Th
   const [copied, setCopied] = useState(false);
   const set = <K extends keyof Theme>(key: K, value: Theme[K]) => onChange({ ...theme, [key]: value });
   const copyTheme = async () => {
-    const configuration = `请将以下主题配置应用到 Prism Studio 的共享 UI 源码（packages/ui/src/tokens.css），并同步检查 Chrome 插件效果：\n\n\`\`\`css\n:root {\n  --background: ${theme.background};\n  --foreground: ${theme.foreground};\n  --card: ${theme.card};\n  --primary: ${theme.primary};\n  --muted: ${theme.muted};\n  --border: ${theme.border};\n  --destructive: ${theme.destructive};\n  --radius: ${theme.radius}px;\n  --font-size-base: ${theme.fontSize}px;\n}\n\`\`\``;
+    const greys = THEME_TOKEN_GROUPS.map(({ key, level, tokens }) => `  --grey-${level}: ${theme[key]};\n${tokens.map((token) => `  --${token}: var(--grey-${level});`).join("\n")}`).join("\n");
+    const configuration = `请将以下主题配置应用到 Prism Studio 的共享 UI 源码（packages/ui/src/tokens.css），并同步检查 Chrome 插件效果：\n\n\`\`\`css\n:root {\n${greys}\n  --destructive: ${theme.destructive};\n  --radius: ${theme.radius}px;\n  --font-size-base: ${theme.fontSize}px;\n}\n\`\`\``;
     await navigator.clipboard.writeText(configuration);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1500);
   };
-  const colors: Array<[keyof Theme, string]> = [["primary", "品牌色"], ["background", "背景"], ["card", "卡片"], ["muted", "弱化"], ["foreground", "文字"], ["border", "边框"], ["destructive", "危险色"]];
   return <aside className="studio-theme-panel">
     <div className="studio-theme-title"><div><span>APPEARANCE</span><h1>主题设计器</h1></div><button onClick={() => onChange(DEFAULT_THEME)} title="恢复默认"><RotateCcw size={15} /></button></div>
     <p>调整预览后复制主题配置，发送给 Agent 修改共享 UI 源码。</p>
-    <div className="studio-color-grid">{colors.map(([key, label]) => <label key={key}><small>{label}</small><div><input aria-label={label} type="color" value={theme[key] as string} onChange={(e) => set(key, e.target.value)} /><input value={theme[key] as string} onChange={(e) => set(key, e.target.value)} /></div></label>)}</div>
+    <div className="studio-color-grid">{THEME_TOKEN_GROUPS.map(({ key, level, label, tokens }) => <label key={key} title={tokens.map((token) => `--${token}`).join(" / ")}><small><b>{level}</b>{label}</small><div><input aria-label={`${level} ${label}`} type="color" value={theme[key] as string} onChange={(e) => set(key, e.target.value)} /><input aria-label={`${level} 色值`} value={theme[key] as string} onChange={(e) => set(key, e.target.value)} /></div></label>)}</div>
+    <label className="studio-color-single"><small>危险色</small><div><input aria-label="危险色" type="color" value={theme.destructive} onChange={(e) => set("destructive", e.target.value)} /><input value={theme.destructive} onChange={(e) => set("destructive", e.target.value)} /></div></label>
     <label className="studio-range-row">圆角 <output>{theme.radius}px</output><input type="range" min="0" max="20" value={theme.radius} onChange={(e) => set("radius", Number(e.target.value))} /></label>
-    <label className="studio-range-row">基础字号 <output>{theme.fontSize}px</output><input type="range" min="11" max="16" value={theme.fontSize} onChange={(e) => set("fontSize", Number(e.target.value))} /></label>
+    <label className="studio-range-row">基础字号 <output>{theme.fontSize}px</output><input type="range" min="12" max="24" step="2" value={theme.fontSize} onChange={(e) => set("fontSize", Number(e.target.value))} /></label>
     <Button className="studio-apply-button" size="sm" onClick={() => void copyTheme()}>{copied ? <Check size={14} /> : <Copy size={14} />}{copied ? "已复制主题配置" : "复制主题配置"}</Button>
   </aside>;
 }
@@ -155,7 +168,7 @@ function MockConversationPanel() {
   const [menuOpen, setMenuOpen] = useState(false);
   const agent = { connected: true, connecting: false, error: null, agentUrl: "http://127.0.0.1:19527", agentToken: "", setAgentUrl: () => {}, setAgentToken: () => {}, connect: async () => {}, permissions: { alwaysAllowEdits: false, alwaysAllowAutomatedTesting: false }, updatePermission: async () => {} };
   const chat = { messages: mockMessages, sending: false, sendMessage: () => {}, startVerification: () => {}, fixVerification: () => {}, cancelCurrent: () => {}, clearHistory: () => {}, deleteMessage: () => {} };
-  return <div className="flex h-screen flex-col"><SidePanelHeader className="relative"><span className="font-semibold text-xs">对话</span><button type="button" className="ml-auto flex h-6 w-6 items-center justify-center rounded hover:bg-muted" onClick={() => setMenuOpen((open) => !open)}><span className="h-2 w-2 rounded-full bg-green-500" /></button>{menuOpen && <div className="absolute right-2 top-8 z-50 w-56 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"><div className="truncate px-2 py-1.5 text-[10px] text-muted-foreground">http://127.0.0.1:19527</div><div className="px-2 pb-1 pt-1.5 text-[10px] font-medium text-muted-foreground">权限</div><label className="flex items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-xs hover:bg-muted"><span>始终允许编辑</span><input type="checkbox" className="h-3.5 w-3.5 accent-primary" /></label><label className="flex items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-xs hover:bg-muted"><span>始终允许自动测试</span><input type="checkbox" className="h-3.5 w-3.5 accent-primary" /></label><div className="my-1 border-t" /><button className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs text-destructive hover:bg-muted">断开连接</button></div>}</SidePanelHeader><div className="min-h-0 flex-1"><ChatPanel agent={agent} chat={chat} selection={null} comments={comments} onEditComment={(i, comment) => setComments((items) => items.map((item, index) => index === i ? { ...item, comment } : item))} onRemoveComment={(i) => setComments((items) => items.filter((_, index) => index !== i))} onCommentsSent={() => setComments([])} commentMode={false} onToggleCommentMode={() => {}} onRestoreMessage={() => {}} initialInput="请继续调整顶部导航，并保留现有的响应式行为。" /></div></div>;
+  return <div className="flex h-screen flex-col"><SidePanelHeader className="relative"><span className="font-semibold text-xs">对话</span><button type="button" className="ml-auto flex h-6 w-6 items-center justify-center rounded hover:bg-muted" onClick={() => setMenuOpen((open) => !open)}><span className="h-2 w-2 rounded-full bg-primary" /></button>{menuOpen && <div className="absolute right-2 top-8 z-50 w-56 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"><div className="truncate px-2 py-1.5 text-xs text-muted-foreground">http://127.0.0.1:19527</div><div className="px-2 pb-1 pt-1.5 text-xs font-medium text-muted-foreground">权限</div><label className="flex items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-xs hover:bg-muted"><span>始终允许编辑</span><input type="checkbox" className="h-3.5 w-3.5 accent-primary" /></label><label className="flex items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-xs hover:bg-muted"><span>始终允许自动测试</span><input type="checkbox" className="h-3.5 w-3.5 accent-primary" /></label><div className="my-1 border-t" /><button className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs text-destructive hover:bg-muted">断开连接</button></div>}</SidePanelHeader><div className="min-h-0 flex-1"><ChatPanel agent={agent} chat={chat} selection={null} comments={comments} onEditComment={(i, comment) => setComments((items) => items.map((item, index) => index === i ? { ...item, comment } : item))} onRemoveComment={(i) => setComments((items) => items.filter((_, index) => index !== i))} onCommentsSent={() => setComments([])} commentMode={false} onToggleCommentMode={() => {}} onRestoreMessage={() => {}} initialInput="请继续调整顶部导航，并保留现有的响应式行为。" /></div></div>;
 }
 
 function ProcessStatePanel() {
@@ -165,7 +178,36 @@ function ProcessStatePanel() {
     { role: "ai", content: "⏳ Agent 正在处理…", timestamp: 2, pending: true },
   ];
   const chat = { messages, sending: true, sendMessage: () => {}, startVerification: () => {}, fixVerification: () => {}, cancelCurrent: () => {}, clearHistory: () => {}, deleteMessage: () => {} };
-  return <div className="flex h-screen flex-col"><SidePanelHeader><span className="font-semibold text-xs">对话</span><span className="ml-auto flex h-6 w-6 items-center justify-center"><span className="h-2 w-2 rounded-full bg-green-500" /></span></SidePanelHeader><div className="min-h-0 flex-1"><ChatPanel agent={agent} chat={chat} selection={null} comments={[]} onEditComment={() => {}} onRemoveComment={() => {}} onCommentsSent={() => {}} commentMode={false} onToggleCommentMode={() => {}} onRestoreMessage={() => {}} /></div></div>;
+  return <div className="flex h-screen flex-col"><SidePanelHeader><span className="font-semibold text-xs">对话</span><span className="ml-auto flex h-6 w-6 items-center justify-center"><span className="h-2 w-2 rounded-full bg-primary" /></span></SidePanelHeader><div className="min-h-0 flex-1"><ChatPanel agent={agent} chat={chat} selection={null} comments={[]} onEditComment={() => {}} onRemoveComment={() => {}} onCommentsSent={() => {}} commentMode={false} onToggleCommentMode={() => {}} onRestoreMessage={() => {}} /></div></div>;
+}
+
+function ComponentGallery() {
+  return <div className="component-gallery">
+    <UISidePanelHeader title="组件总览" leading={<Bell size={14} />} trailing={<Badge variant="secondary">UI</Badge>} />
+    <div className="component-gallery-body">
+      <section><h2>Button</h2><div className="component-row"><Button>Primary</Button><Button variant="secondary">Secondary</Button><Button variant="outline">Outline</Button><Button variant="ghost">Ghost</Button><Button variant="destructive">Danger</Button><Button disabled>Disabled</Button><Button size="icon" aria-label="通知"><Bell /></Button></div></section>
+      <Separator />
+      <section><h2>Input</h2><div className="component-stack"><Input placeholder="请输入内容" /><Input value="已填写的内容" readOnly /><Input placeholder="不可用" disabled /></div></section>
+      <Separator />
+      <section><h2>Badge</h2><div className="component-row"><Badge>Default</Badge><Badge variant="secondary">Secondary</Badge><Badge variant="outline">Outline</Badge><Badge variant="destructive">Danger</Badge></div></section>
+      <Separator />
+      <section><h2>Message Composer</h2><MessageComposer placeholder="输入消息…" beforeInput={<Badge variant="outline">上下文附件</Badge>} actions={<><Button size="sm" variant="outline" className="w-20">取消</Button><Button size="sm" className="w-20"><Send />发送</Button></>} /></section>
+      <Separator />
+      <section><h2>Dialog</h2><Dialog><DialogTrigger asChild><Button variant="outline">打开 Dialog</Button></DialogTrigger><DialogContent><DialogTitle className="text-sm font-semibold">确认操作</DialogTitle><p className="mt-2 text-xs text-muted-foreground">这是共享 UI 包的 Dialog 组件。</p></DialogContent></Dialog></section>
+    </div>
+  </div>;
+}
+
+function TokenGallery({ theme }: { theme: Theme }) {
+  return <div className="token-gallery">
+    <header><span>DESIGN TOKENS</span><h2>变量与灰阶</h2><p>左侧主题设计器修改后，此处实时同步。</p></header>
+    <div className="token-list">{THEME_TOKEN_GROUPS.map(({ key, level, label, tokens }) => <section key={key}>
+      <div className="token-swatch" style={{ background: theme[key] as string }} />
+      <div className="token-details"><div><b>{level}</b><strong>{label}</strong><code>{theme[key]}</code></div><p>{tokens.map((token) => `--${token}`).join(" · ")}</p></div>
+    </section>)}</div>
+    <Separator />
+    <div className="token-meta"><div><span>危险色</span><code>{theme.destructive}</code></div><div><span>全局圆角</span><code>{theme.radius}px</code></div><div><span>基础字号</span><code>{theme.fontSize}px</code></div></div>
+  </div>;
 }
 
 function App() {
@@ -174,7 +216,21 @@ function App() {
   const drag = useRef<{ x: number; y: number; originX: number; originY: number } | null>(null);
   useEffect(() => {
     const root = document.documentElement.style;
-    Object.entries(theme).forEach(([key, value]) => root.setProperty(key === "fontSize" ? "--font-size-base" : `--${key}`, typeof value === "number" ? `${value}px` : value));
+    THEME_TOKEN_GROUPS.forEach(({ key, level, tokens }) => {
+      root.setProperty(`--grey-${level}`, theme[key] as string);
+      tokens.forEach((token) => root.setProperty(`--${token}`, `var(--grey-${level})`));
+    });
+    root.setProperty("--card", "var(--grey-100)");
+    root.setProperty("--card-foreground", "var(--grey-800)");
+    root.setProperty("--popover", "var(--grey-100)");
+    root.setProperty("--popover-foreground", "var(--grey-800)");
+    root.setProperty("--secondary-foreground", "var(--grey-700)");
+    root.setProperty("--accent", "var(--grey-200)");
+    root.setProperty("--accent-foreground", "var(--grey-800)");
+    root.setProperty("--ring", theme.grey800);
+    root.setProperty("--destructive", theme.destructive);
+    root.setProperty("--radius", `${theme.radius}px`);
+    root.setProperty("--font-size-base", `${theme.fontSize}px`);
   }, [theme]);
   const startPan = (event: ReactPointerEvent<HTMLElement>) => {
     if ((event.target as HTMLElement).closest("button,input,textarea,label,.studio-artboard")) return;
@@ -205,6 +261,8 @@ function App() {
       <section className="studio-artboard-wrap"><div className="studio-artboard-label"><span>PRISM DESIGN · CHROME SIDE PANEL</span><span>对话 PANEL</span></div><div className="studio-artboard"><ChromeExtensionApp /></div></section>
       <section className="studio-artboard-wrap"><div className="studio-artboard-label"><span>PRISM DESIGN · CHROME SIDE PANEL</span><span>完整对话 MOCK</span></div><div className="studio-artboard"><MockConversationPanel /></div></section>
       <section className="studio-artboard-wrap"><div className="studio-artboard-label"><span>PRISM DESIGN · CHROME SIDE PANEL</span><span>AGENT 处理过程</span></div><div className="studio-artboard"><ProcessStatePanel /></div></section>
+      <section className="studio-artboard-wrap"><div className="studio-artboard-label"><span>PRISM DESIGN · SHARED UI</span><span>全部组件</span></div><div className="studio-artboard"><ComponentGallery /></div></section>
+      <section className="studio-artboard-wrap"><div className="studio-artboard-label"><span>PRISM DESIGN · TOKENS</span><span>全部变量</span></div><div className="studio-artboard"><TokenGallery theme={theme} /></div></section>
     </div>
     <div className="studio-canvas-hint">拖动画布浏览 · 滚轮缩放</div>
     <div className="studio-zoom"><button onClick={() => setViewport((v) => ({ ...v, scale: Math.max(.55, v.scale - .1) }))}><Minus size={14} /></button><output>{Math.round(viewport.scale * 100)}%</output><button onClick={() => setViewport({ x: 470, y: 70, scale: 1 })}><RotateCcw size={14} /></button><button onClick={() => setViewport((v) => ({ ...v, scale: Math.min(1.5, v.scale + .1) }))}><Plus size={14} /></button></div>

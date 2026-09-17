@@ -140,13 +140,13 @@ export function App() {
                   aria-label={t("agent.connected")}
                   aria-expanded={connectionMenuOpen}
                   onClick={() => setConnectionMenuOpen((open) => !open)}
-                ><span className="h-2 w-2 rounded-full bg-green-500" /></button>
+                ><span className="h-2 w-2 rounded-full bg-primary" /></button>
               : agent.connecting
                 ? <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" title={t("agent.connecting_short")} />
                 : <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30" title={t("agent.disconnected")} />}
             {agent.connected && connectionMenuOpen && <div className="absolute right-0 top-7 z-50 w-56 rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
-              <div className="truncate px-2 py-1.5 text-[10px] text-muted-foreground" title={agent.agentUrl}>{agent.agentUrl}</div>
-              <div className="px-2 pb-1 pt-1.5 text-[10px] font-medium text-muted-foreground">{t("agent.permissions")}</div>
+              <div className="truncate px-2 py-1.5 text-xs text-muted-foreground" title={agent.agentUrl}>{agent.agentUrl}</div>
+              <div className="px-2 pb-1 pt-1.5 text-xs font-medium text-muted-foreground">{t("agent.permissions")}</div>
               {([['alwaysAllowEdits', 'agent.alwaysAllowEdits'], ['alwaysAllowAutomatedTesting', 'agent.alwaysAllowAutomatedTesting']] as const).map(([key, label]) => {
                 const labelId = `${key}-label`;
                 return <div key={key} className="flex items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-xs hover:bg-muted">

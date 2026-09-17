@@ -173,8 +173,7 @@ export function useChat() {
   }, [applyAgentWorking, applyTestRun]);
 
   const sendMessage = useCallback(async (text: string, attachments: ChatMessage["attachments"] = [], comments: CommentAnnotation[] = [], agentText?: string, contextOrder?: ChatMessage["contextOrder"]) => {
-    // Comments provide context for a message, but are not a standalone message.
-    if ((!text.trim() && !attachments.length) || sending) return;
+    if ((!text.trim() && !attachments.length && !comments.length) || sending) return;
 
     const userMsg: ChatMessage = { role: "user", content: text, timestamp: Date.now(), attachments, comments: comments.length ? comments : undefined, contextOrder };
     const thinkingMsg: ChatMessage = { role: "ai", content: `⏳ ${t("chat.thinking")}`, timestamp: Date.now(), pending: true };

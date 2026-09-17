@@ -18,6 +18,24 @@ let actions: ToolbarActions | null = null;
 const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
 const modLabel = isMac ? "\u2318\u21E7" : "Ctrl+Shift+";
 
+type LucideNode = readonly [tag: "path", attributes: Readonly<Record<string, string>>];
+
+const LUCIDE_ICONS = {
+  select: [["path", { d: "M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" }]],
+  drag: [
+    ["path", { d: "M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2" }],
+    ["path", { d: "M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2" }],
+    ["path", { d: "M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8" }],
+    ["path", { d: "M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" }],
+  ],
+  comment: [["path", { d: "M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z" }]],
+} as const satisfies Record<string, readonly LucideNode[]>;
+
+function lucideIcon(nodes: readonly LucideNode[]) {
+  const children = nodes.map(([tag, attributes]) => `<${tag} ${Object.entries(attributes).map(([key, value]) => `${key}="${value}"`).join(" ")}/>`).join("");
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${children}</svg>`;
+}
+
 export function createToolbar(toolbarActions: ToolbarActions) {
   if (toolbar) return;
   actions = toolbarActions;
@@ -55,14 +73,14 @@ export function createToolbar(toolbarActions: ToolbarActions) {
       border: none;
       border-radius: 8px;
       background: transparent;
-      color: #6b7280;
+      color: #86909c;
       cursor: pointer;
       transition: all 0.15s;
       padding: 0;
     }
     #prism-studio-toolbar button:focus { outline: none; }
-    #prism-studio-toolbar button:hover { background: #f3f4f6; color: #374151; }
-    #prism-studio-toolbar button.pd-active { background: #ede9fe; color: #6366f1; }
+    #prism-studio-toolbar button:hover { background: #f0f1f3; color: #4e5969; }
+    #prism-studio-toolbar button.pd-active { background: #f0f1f3; color: #4e5969; }
     #prism-studio-toolbar button svg { width: 18px; height: 18px; flex-shrink: 0; }
     #prism-studio-toolbar.pd-disabled {
       pointer-events: none;
@@ -106,15 +124,15 @@ export function createToolbar(toolbarActions: ToolbarActions) {
   toolbar.id = "prism-studio-toolbar";
   toolbar.innerHTML = `
     <button id="pd-tb-select">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/><path d="M13 13l6 6"/></svg>
+      ${lucideIcon(LUCIDE_ICONS.select)}
       <span class="pd-tooltip">${_t("toolbar.select")}<span class="pd-shortcut">${modLabel}E</span></span>
     </button>
     <button id="pd-tb-drag">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 16"/></svg>
+      ${lucideIcon(LUCIDE_ICONS.drag)}
       <span class="pd-tooltip">${_t("toolbar.drag")}<span class="pd-shortcut">${modLabel}D</span></span>
     </button>
     <button id="pd-tb-comment">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+      ${lucideIcon(LUCIDE_ICONS.comment)}
       <span class="pd-tooltip">${_t("toolbar.comment")}<span class="pd-shortcut">${modLabel}C</span></span>
     </button>
   `;
