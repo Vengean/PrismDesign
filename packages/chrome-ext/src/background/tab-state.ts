@@ -7,6 +7,9 @@ export interface TabState {
   connected: boolean;
   project: ProjectInfo | null;
   ws: WebSocket | null;
+  connectionAttempt: number;
+  reconnectTimer: ReturnType<typeof setTimeout> | null;
+  autoReconnect: boolean;
   designMode: boolean;
   currentTestRun: TestRunInfo | null;
   agentWorking: boolean;
@@ -25,6 +28,9 @@ export function getTabState(tabId: number): TabState {
       connected: false,
       project: null,
       ws: null,
+      connectionAttempt: 0,
+      reconnectTimer: null,
+      autoReconnect: true,
       designMode: false,
       currentTestRun: null,
       agentWorking: false,
@@ -37,6 +43,8 @@ export function getTabState(tabId: number): TabState {
 
 export function removeTab(tabId: number) {
   const state = tabs.get(tabId);
+  if (state) state.autoReconnect = false;
+  if (state?.reconnectTimer) clearTimeout(state.reconnectTimer);
   if (state?.ws) {
     try { state.ws.close(); } catch {}
   }

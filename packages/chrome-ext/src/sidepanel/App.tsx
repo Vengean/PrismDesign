@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { LogOut } from "lucide-react";
+import { AlertTriangle, LogOut } from "lucide-react";
 import { t } from "../shared/i18n.js";
 import type { PrismMessage } from "../shared/types.js";
 import { useAgent } from "./hooks/use-agent";
@@ -30,12 +30,18 @@ export function App() {
   useEffect(() => {
     let port: chrome.runtime.Port | null = null;
     let unmounted = false;
+    let heartbeat: ReturnType<typeof setInterval> | null = null;
 
     function connectPort() {
       if (unmounted) return;
       try {
         port = chrome.runtime.connect({ name: "prism-sidepanel" });
+        heartbeat = setInterval(() => {
+          try { port?.postMessage({ type: "heartbeat" }); } catch {}
+        }, 20_000);
         port.onDisconnect.addListener(() => {
+          if (heartbeat) clearInterval(heartbeat);
+          heartbeat = null;
           port = null;
           if (!unmounted) setTimeout(connectPort, 500);
         });
@@ -47,6 +53,7 @@ export function App() {
 
     return () => {
       unmounted = true;
+      if (heartbeat) clearInterval(heartbeat);
       port?.disconnect();
     };
   }, []);
@@ -126,7 +133,7 @@ export function App() {
   }, []);
 
   return (
-    <div className="flex flex-col h-screen">
+    <div className="relative flex flex-col h-screen">
       {/* Header */}
       <SidePanelHeader>
         <span className="font-semibold text-xs">{t(VIEW_TITLE_KEYS[view])}</span>
@@ -162,6 +169,11 @@ export function App() {
           </div>
         )}
       </SidePanelHeader>
+
+      {agent.connectionWarning && <div className="pointer-events-none absolute left-2 right-2 top-10 z-[60] flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-50/95 px-2.5 py-2 text-xs text-amber-900 shadow-md backdrop-blur dark:bg-amber-950/95 dark:text-amber-100">
+        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        <span>{agent.connectionWarning}</span>
+      </div>}
 
       {/* Content */}
       <div className="flex-1 min-h-0">

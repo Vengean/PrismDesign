@@ -67,11 +67,13 @@ app.post('/api/auth/logout', requireAuth, (req: AuthRequest, res) => {
   res.status(204).end()
 })
 
+const noteFields = 'id, title, content, category, is_favorite AS isFavorite, is_published AS isPublished, published_at AS publishedAt, created_at AS createdAt, updated_at AS updatedAt'
+
 app.get('/api/notes', requireAuth, (req: AuthRequest, res) => {
   const query = String(req.query.q || '').trim()
   const notes = query
-    ? db.prepare(`SELECT id, title, content, category, is_favorite AS isFavorite, created_at AS createdAt, updated_at AS updatedAt FROM notes WHERE user_id = ? AND (title LIKE ? OR content LIKE ? OR category LIKE ?) ORDER BY is_favorite DESC, favorited_at DESC, updated_at DESC`).all(req.user!.id, `%${query}%`, `%${query}%`, `%${query}%`)
-    : db.prepare('SELECT id, title, content, category, is_favorite AS isFavorite, created_at AS createdAt, updated_at AS updatedAt FROM notes WHERE user_id = ? ORDER BY is_favorite DESC, favorited_at DESC, updated_at DESC').all(req.user!.id)
+    ? db.prepare(`SELECT ${noteFields} FROM notes WHERE user_id = ? AND (title LIKE ? OR content LIKE ? OR category LIKE ?) ORDER BY is_favorite DESC, favorited_at DESC, updated_at DESC`).all(req.user!.id, `%${query}%`, `%${query}%`, `%${query}%`)
+    : db.prepare(`SELECT ${noteFields} FROM notes WHERE user_id = ? ORDER BY is_favorite DESC, favorited_at DESC, updated_at DESC`).all(req.user!.id)
   res.json({ notes })
 })
 
@@ -82,7 +84,7 @@ app.post('/api/notes', requireAuth, (req: AuthRequest, res) => {
   if (!title || !content) return res.status(400).json({ message: '标题和内容不能为空。' })
   const now = new Date().toISOString()
   const result = db.prepare('INSERT INTO notes (user_id, title, content, category, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)').run(req.user!.id, title, content, category, now, now)
-  const note = db.prepare('SELECT id, title, content, category, is_favorite AS isFavorite, created_at AS createdAt, updated_at AS updatedAt FROM notes WHERE id = ? AND user_id = ?').get(result.lastInsertRowid, req.user!.id)
+  const note = db.prepare(`SELECT ${noteFields} FROM notes WHERE id = ? AND user_id = ?`).get(result.lastInsertRowid, req.user!.id)
   res.status(201).json({ note })
 })
 
@@ -94,7 +96,7 @@ app.put('/api/notes/:id', requireAuth, (req: AuthRequest, res) => {
   const existing = db.prepare('SELECT title, content FROM notes WHERE id = ? AND user_id = ?').get(id, req.user!.id) as { title: string; content: string } | undefined
   if (!existing) return res.status(404).json({ message: '笔记不存在。' })
   if (existing.title === title && existing.content === content) {
-    const note = db.prepare('SELECT id, title, content, category, is_favorite AS isFavorite, created_at AS createdAt, updated_at AS updatedAt FROM notes WHERE id = ? AND user_id = ?').get(id, req.user!.id)
+    const note = db.prepare(`SELECT ${noteFields} FROM notes WHERE id = ? AND user_id = ?`).get(id, req.user!.id)
     return res.json({ note })
   }
   const now = new Date().toISOString()
@@ -105,7 +107,7 @@ app.put('/api/notes/:id', requireAuth, (req: AuthRequest, res) => {
   })
   const result = update()
   if (!result.changes) return res.status(404).json({ message: '笔记不存在。' })
-  const note = db.prepare('SELECT id, title, content, category, is_favorite AS isFavorite, created_at AS createdAt, updated_at AS updatedAt FROM notes WHERE id = ? AND user_id = ?').get(id, req.user!.id)
+  const note = db.prepare(`SELECT ${noteFields} FROM notes WHERE id = ? AND user_id = ?`).get(id, req.user!.id)
   res.json({ note })
 })
 
@@ -116,8 +118,32 @@ app.patch('/api/notes/:id/favorite', requireAuth, (req: AuthRequest, res) => {
   const result = db.prepare('UPDATE notes SET is_favorite = ?, favorited_at = ? WHERE id = ? AND user_id = ?')
     .run(isFavorite ? 1 : 0, isFavorite ? new Date().toISOString() : null, id, req.user!.id)
   if (!result.changes) return res.status(404).json({ message: '笔记不存在。' })
-  const note = db.prepare('SELECT id, title, content, category, is_favorite AS isFavorite, created_at AS createdAt, updated_at AS updatedAt FROM notes WHERE id = ? AND user_id = ?').get(id, req.user!.id)
+  const note = db.prepare(`SELECT ${noteFields} FROM notes WHERE id = ? AND user_id = ?`).get(id, req.user!.id)
   res.json({ note })
+})
+
+app.patch('/api/notes/:id/publish', requireAuth, (req: AuthRequest, res) => {
+  const id = Number(req.params.id)
+  const isPublished = req.body?.isPublished
+  if (!Number.isInteger(id) || typeof isPublished !== 'boolean') return res.status(400).json({ message: '发布参数无效。' })
+  const result = db.prepare('UPDATE notes SET is_published = ?, published_at = ? WHERE id = ? AND user_id = ?')
+    .run(isPublished ? 1 : 0, isPublished ? new Date().toISOString() : null, id, req.user!.id)
+  if (!result.changes) return res.status(404).json({ message: '笔记不存在。' })
+  const note = db.prepare(`SELECT ${noteFields} FROM notes WHERE id = ? AND user_id = ?`).get(id, req.user!.id)
+  res.json({ note })
+})
+
+app.get('/api/published-notes', requireAuth, (_req, res) => {
+  const notes = db.prepare(`
+    SELECT notes.id, notes.title, notes.content, notes.category,
+      notes.is_published AS isPublished, notes.published_at AS publishedAt,
+      notes.created_at AS createdAt, notes.updated_at AS updatedAt,
+      users.id AS authorId, users.name AS authorName
+    FROM notes JOIN users ON users.id = notes.user_id
+    WHERE notes.is_published = 1
+    ORDER BY notes.published_at DESC, notes.id DESC
+  `).all() as Array<Record<string, unknown> & { authorId: number; authorName: string }>
+  res.json({ notes: notes.map(({ authorId, authorName, ...note }) => ({ ...note, author: { id: authorId, name: authorName } })) })
 })
 
 app.get('/api/notes/:id/history', requireAuth, (req: AuthRequest, res) => {

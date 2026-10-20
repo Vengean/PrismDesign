@@ -226,7 +226,7 @@ export type AgentMessage =
 
 // Agent events: Background -> Side Panel
 export type AgentEventMessage =
-  | { type: "AGENT_STATUS"; payload: { connected: boolean; connecting?: boolean; agentUrl?: string; error?: string; project?: ProjectInfo; provider?: string; model?: string; capabilities?: AgentCapabilities } }
+  | { type: "AGENT_STATUS"; payload: { connected: boolean; connecting?: boolean; reconnecting?: boolean; agentUrl?: string; error?: string; project?: ProjectInfo; provider?: string; model?: string; capabilities?: AgentCapabilities } }
   | { type: "AGENT_WORKING"; payload: { working: boolean } }
   | { type: "AGENT_PROGRESS"; payload: { text: string } }
   | { type: "AGENT_TEXT_DELTA"; payload: { runId: string; delta: string; messageId?: string } }

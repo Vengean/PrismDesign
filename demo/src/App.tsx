@@ -1,5 +1,5 @@
 import { memo, type FormEvent, useEffect, useMemo, useState } from 'react'
-import { ArrowRight, CalendarDays, Check, ChevronRight, Clock3, Eye, EyeOff, History, LoaderCircle, LockKeyhole, LogOut, Mail, Menu, NotebookPen, Pencil, Plus, Search, ShieldCheck, Sparkles, Star, X } from 'lucide-react'
+import { ArrowRight, BookOpen, CalendarDays, Check, ChevronRight, Clock3, Eye, EyeOff, Globe2, History, LoaderCircle, LockKeyhole, LogOut, Mail, Menu, NotebookPen, Pencil, Plus, Search, Send, ShieldCheck, Sparkles, Star, X } from 'lucide-react'
 import Markdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Button } from './components/ui/button'
@@ -7,7 +7,7 @@ import { Checkbox } from './components/ui/checkbox'
 import { Input } from './components/ui/input'
 import { Label } from './components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
-import { api, SESSION_EXPIRED_EVENT, type Note, type NoteRevision, type User } from './api'
+import { api, SESSION_EXPIRED_EVENT, type Note, type NoteRevision, type PublishedNote, type User } from './api'
 
 const SESSION_KEY = 'prism-demo-session'
 const markdownPlugins = [remarkGfm]
@@ -57,7 +57,9 @@ const MarkdownPreview = memo(function MarkdownPreview({ children }: { children: 
 })
 
 function NotesPage({ user, token, onLogout }: { user: User; token: string; onLogout: () => void }) {
+  const [view, setView] = useState<'mine' | 'square'>('mine')
   const [notes, setNotes] = useState<Note[]>([])
+  const [publishedNotes, setPublishedNotes] = useState<PublishedNote[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [query, setQuery] = useState('')
   const [favoritesOnly, setFavoritesOnly] = useState(false)
@@ -69,6 +71,9 @@ function NotesPage({ user, token, onLogout }: { user: User; token: string; onLog
   const [draftContent, setDraftContent] = useState('')
   const [editorMode, setEditorMode] = useState<'edit' | 'preview'>('edit')
   const [isLoadingNotes, setIsLoadingNotes] = useState(true)
+  const [isLoadingPublished, setIsLoadingPublished] = useState(false)
+  const [publishedLoaded, setPublishedLoaded] = useState(false)
+  const [publishingId, setPublishingId] = useState<number | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [noteError, setNoteError] = useState('')
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -88,6 +93,42 @@ function NotesPage({ user, token, onLogout }: { user: User; token: string; onLog
     .filter((note) => `${note.title}${note.content}${note.category}`.toLowerCase().includes(query.toLowerCase()))
     .sort((left, right) => Number(Boolean(right.isFavorite)) - Number(Boolean(left.isFavorite))), [favoritesOnly, notes, query])
   const selectedNote = notes.find((note) => note.id === selectedId) ?? notes[0]
+
+  const openSquare = async () => {
+    setView('square')
+    setMobileListOpen(false)
+    if (publishedLoaded) return
+    setIsLoadingPublished(true)
+    setNoteError('')
+    try {
+      const result = await api.publishedNotes(token)
+      setPublishedNotes(result.notes)
+      setPublishedLoaded(true)
+    } catch (error) {
+      setNoteError(error instanceof Error ? error.message : '读取笔记广场失败，请重试。')
+    } finally {
+      setIsLoadingPublished(false)
+    }
+  }
+
+  const togglePublished = async (note: Note) => {
+    const nextPublished = !note.isPublished
+    setPublishingId(note.id)
+    setNoteError('')
+    try {
+      const { note: updatedNote } = await api.setNotePublished(token, note.id, nextPublished)
+      setNotes((current) => current.map((item) => item.id === note.id ? updatedNote : item))
+      if (nextPublished) {
+        setPublishedNotes((current) => [{ ...updatedNote, author: { id: user.id, name: user.name } }, ...current.filter((item) => item.id !== note.id)])
+      } else {
+        setPublishedNotes((current) => current.filter((item) => item.id !== note.id))
+      }
+    } catch (error) {
+      setNoteError(error instanceof Error ? error.message : '更新发布状态失败，请重试。')
+    } finally {
+      setPublishingId(null)
+    }
+  }
 
   const toggleFavorite = async (note: Note) => {
     const nextFavorite = !note.isFavorite
@@ -163,6 +204,10 @@ function NotesPage({ user, token, onLogout }: { user: User; token: string; onLog
   return (
     <main className="min-h-screen bg-[#f4f3ef] text-[#24231f]">
       <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-[#dedbd2] bg-[#f8f7f3]/95 px-4 backdrop-blur sm:px-6">
+        <nav className="absolute left-1/2 hidden -translate-x-1/2 items-center rounded-xl bg-[#eeece6] p-1 sm:flex" aria-label="主要导航">
+          <button type="button" onClick={() => setView('mine')} className={`flex h-9 items-center gap-2 rounded-lg px-4 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9a7b43]/45 ${view === 'mine' ? 'bg-[#fffefa] font-medium shadow-sm' : 'text-[#77736b] hover:text-[#24231f]'}`}><BookOpen className="h-4 w-4" />我的笔记</button>
+          <button type="button" onClick={() => void openSquare()} className={`flex h-9 items-center gap-2 rounded-lg px-4 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9a7b43]/45 ${view === 'square' ? 'bg-[#fffefa] font-medium shadow-sm' : 'text-[#77736b] hover:text-[#24231f]'}`}><Globe2 className="h-4 w-4" />笔记广场</button>
+        </nav>
         <div className="flex items-center gap-3">
           <button type="button" onClick={() => setMobileListOpen((v) => !v)} className="rounded-lg p-2 hover:bg-black/5 md:hidden" aria-label="打开笔记列表"><Menu className="h-5 w-5" /></button>
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#20201e] text-white"><Sparkles className="h-4 w-4 text-[#efd49c]" /></span>
@@ -175,7 +220,12 @@ function NotesPage({ user, token, onLogout }: { user: User; token: string; onLog
         </div>
       </header>
 
-      <div className="flex min-h-[calc(100vh-4rem)] w-full">
+      <nav className="grid grid-cols-2 border-b border-[#dedbd2] bg-[#f8f7f3] p-2 sm:hidden" aria-label="主要导航">
+        <button type="button" onClick={() => setView('mine')} className={`flex min-h-11 items-center justify-center gap-2 rounded-xl text-sm ${view === 'mine' ? 'bg-white font-medium shadow-sm' : 'text-[#77736b]'}`}><BookOpen className="h-4 w-4" />我的笔记</button>
+        <button type="button" onClick={() => void openSquare()} className={`flex min-h-11 items-center justify-center gap-2 rounded-xl text-sm ${view === 'square' ? 'bg-white font-medium shadow-sm' : 'text-[#77736b]'}`}><Globe2 className="h-4 w-4" />笔记广场</button>
+      </nav>
+
+      {view === 'mine' ? <div className="flex min-h-[calc(100vh-4rem)] w-full">
         <aside className={`${mobileListOpen ? 'fixed inset-x-0 bottom-0 top-16 z-20 flex' : 'hidden'} w-full flex-col border-r border-[#dedbd2] bg-[#f8f7f3] md:flex md:w-[350px] md:shrink-0 xl:w-[380px]`}>
           <div className="border-b border-[#e5e2da] p-5">
             <div className="mb-5 flex items-end justify-between"><div><p className="mb-1 text-xs font-medium uppercase tracking-[0.18em] text-[#9a7b43]">Workspace</p><h1 className="text-2xl font-semibold tracking-tight">我的笔记</h1></div><span className="text-xs text-[#99958c]">{notes.length} 篇</span></div>
@@ -208,13 +258,19 @@ function NotesPage({ user, token, onLogout }: { user: User; token: string; onLog
 
         <section className="relative flex min-w-0 flex-1 justify-center bg-[#eeece6] px-5 py-8 sm:px-8 sm:py-10 lg:px-10 xl:px-12 2xl:px-16">
           {selectedNote && <article className="animate-login-in w-full max-w-[1080px] rounded-2xl border border-black/[0.055] bg-[#fffefa] px-6 py-8 shadow-[0_18px_60px_rgba(48,44,35,0.08)] sm:px-12 sm:py-11 lg:px-14">
-            <div className="mb-9 flex flex-wrap items-center justify-between gap-3 border-b border-[#ece8de] pb-6"><span className="rounded-full bg-[#f0ebdf] px-3 py-1 text-xs font-medium text-[#80683e]">{selectedNote.category}</span><div className="flex flex-wrap items-center justify-end gap-2"><div className="flex items-center gap-1.5 text-xs text-[#a09b91]"><Clock3 className="h-3.5 w-3.5" />更新于 {formatUpdatedAt(selectedNote.updatedAt)}</div><button type="button" onClick={() => openHistory(selectedNote)} className="flex min-h-11 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-[#80683e] transition hover:bg-[#f0ebdf]" aria-label={`查看修改历史：${selectedNote.title}`}><History className="h-3.5 w-3.5" />历史</button><button type="button" onClick={() => openEditNote(selectedNote)} className="flex min-h-11 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-[#80683e] transition hover:bg-[#f0ebdf]" aria-label={`编辑笔记：${selectedNote.title}`}><Pencil className="h-3.5 w-3.5" />编辑</button></div></div>
+            <div className="mb-9 flex flex-wrap items-center justify-between gap-3 border-b border-[#ece8de] pb-6"><div className="flex items-center gap-2"><span className="rounded-full bg-[#f0ebdf] px-3 py-1 text-xs font-medium text-[#80683e]">{selectedNote.category}</span>{Boolean(selectedNote.isPublished) && <span className="flex items-center gap-1 text-xs text-[#77736b]"><Globe2 className="h-3.5 w-3.5" />已发布</span>}</div><div className="flex flex-wrap items-center justify-end gap-2"><div className="flex items-center gap-1.5 text-xs text-[#a09b91]"><Clock3 className="h-3.5 w-3.5" />更新于 {formatUpdatedAt(selectedNote.updatedAt)}</div><button type="button" onClick={() => void togglePublished(selectedNote)} disabled={publishingId === selectedNote.id} className={`flex min-h-11 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9a7b43]/45 disabled:cursor-wait disabled:opacity-60 ${selectedNote.isPublished ? 'text-[#77736b] hover:bg-black/5' : 'text-[#80683e] hover:bg-[#f0ebdf]'}`} aria-label={selectedNote.isPublished ? `取消发布：${selectedNote.title}` : `发布笔记：${selectedNote.title}`}>{publishingId === selectedNote.id ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}{publishingId === selectedNote.id ? '处理中...' : selectedNote.isPublished ? '取消发布' : '发布'}</button><button type="button" onClick={() => openHistory(selectedNote)} className="flex min-h-11 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-[#80683e] transition hover:bg-[#f0ebdf]" aria-label={`查看修改历史：${selectedNote.title}`}><History className="h-3.5 w-3.5" />历史</button><button type="button" onClick={() => openEditNote(selectedNote)} className="flex min-h-11 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-[#80683e] transition hover:bg-[#f0ebdf]" aria-label={`编辑笔记：${selectedNote.title}`}><Pencil className="h-3.5 w-3.5" />编辑</button></div></div>
             <h2 className="text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">{selectedNote.title}</h2>
             <div className="mt-4 flex items-center gap-2 text-xs text-[#a09b91]"><CalendarDays className="h-3.5 w-3.5" />{formatDate(selectedNote.createdAt)}</div>
             <MarkdownContent className="mt-9 text-[15px] text-[#4e4b44] sm:text-base">{selectedNote.content}</MarkdownContent>
           </article>}
         </section>
-      </div>
+      </div> : <section className="min-h-[calc(100vh-4rem)] bg-[#eeece6] px-5 py-8 sm:px-8 sm:py-12 lg:px-12">
+        <div className="mx-auto max-w-[1080px]">
+          <div className="mb-8 flex flex-wrap items-end justify-between gap-4"><div><p className="mb-2 text-xs font-medium uppercase tracking-[0.18em] text-[#9a7b43]">Community</p><h1 className="text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">笔记广场</h1><p className="mt-3 text-sm text-[#77736b]">发现所有人公开分享的想法与记录。</p></div><span className="text-xs text-[#99958c]">{publishedNotes.length} 篇公开笔记</span></div>
+          {noteError && <div role="alert" className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{noteError}</div>}
+          {isLoadingPublished ? <div className="flex min-h-64 items-center justify-center gap-2 text-sm text-[#77736b]"><LoaderCircle className="h-4 w-4 animate-spin" />正在读取公开笔记...</div> : publishedNotes.length ? <div className="grid gap-5 md:grid-cols-2">{publishedNotes.map((note) => <article key={note.id} className="rounded-2xl border border-black/[0.055] bg-[#fffefa] p-6 shadow-[0_12px_36px_rgba(48,44,35,0.06)] sm:p-8"><div className="flex items-center justify-between gap-3"><span className="rounded-full bg-[#f0ebdf] px-3 py-1 text-xs font-medium text-[#80683e]">{note.category}</span><span className="text-[10px] text-[#99958c]">发布于 {formatUpdatedAt(note.publishedAt || note.updatedAt)}</span></div><h2 className="mt-5 text-xl font-semibold tracking-[-0.02em]">{note.title}</h2><MarkdownContent className="mt-4 line-clamp-6 text-sm text-[#5d5951]">{note.content}</MarkdownContent><div className="mt-6 flex items-center gap-3 border-t border-[#ece8de] pt-4"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#daceb6] text-xs font-semibold text-[#5c4b2f]">{getNameInitials(note.author.name)}</span><div><p className="text-xs font-medium">{note.author.name}</p><p className="text-[10px] text-[#99958c]">作者</p></div></div></article>)}</div> : <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-[#d7d2c7] bg-[#f8f7f3] px-6 text-center"><Globe2 className="mb-4 h-8 w-8 text-[#9a7b43]" /><h2 className="text-base font-semibold">广场还没有公开笔记</h2><p className="mt-2 text-sm text-[#77736b]">发布你的第一篇笔记，让其他人看到它。</p><Button type="button" onClick={() => setView('mine')} className="mt-5 rounded-xl">返回我的笔记</Button></div>}
+        </div>
+      </section>}
 
       {isCreating && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/35 p-0 backdrop-blur-[2px] sm:items-center sm:p-6" onMouseDown={(e) => { if (e.target === e.currentTarget) closeNoteEditor() }}>
         <form onSubmit={saveNote} className="animate-login-in flex h-[calc(100dvh-16px)] w-full max-w-3xl flex-col overflow-hidden rounded-t-3xl bg-[#fffefa] p-6 shadow-2xl sm:h-[min(760px,calc(100dvh-48px))] sm:rounded-3xl sm:p-8">

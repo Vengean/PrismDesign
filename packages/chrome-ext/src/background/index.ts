@@ -73,6 +73,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
 // restart) before concluding the side panel is truly closed.
 
 let sidePanelOpen = false;
+let sidePanelCloseTimer: ReturnType<typeof setTimeout> | null = null;
 let boundAgentTabId: number | undefined;
 const BOUND_AGENT_TAB_KEY = "boundAgentTab";
 
@@ -140,12 +141,20 @@ chrome.action.onClicked.addListener((tab) => {
 
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name === "prism-sidepanel") {
+    // Receiving a message on a long-lived port resets the MV3 service worker
+    // idle timer; opening a port by itself is not sufficient in current Chrome.
+    port.onMessage.addListener(() => {});
+    if (sidePanelCloseTimer) clearTimeout(sidePanelCloseTimer);
+    sidePanelCloseTimer = null;
     sidePanelOpen = true;
     handleSidePanelOpen();
 
     port.onDisconnect.addListener(() => {
       sidePanelOpen = false;
-      handleSidePanelClose();
+      sidePanelCloseTimer = setTimeout(() => {
+        sidePanelCloseTimer = null;
+        if (!sidePanelOpen) void handleSidePanelClose();
+      }, 1500);
     });
   }
 });
@@ -182,14 +191,14 @@ async function handleSidePanelOpen() {
     // Notify side panel that auto-connect is starting
     broadcastToSidePanel({
       type: "AGENT_STATUS",
-      payload: { connected: false, connecting: true, agentUrl: url },
+      payload: { connected: false, connecting: true, reconnecting: true, agentUrl: url },
     });
     const connectResult = await handleAgentConnect(url, result.agentToken || "");
     if (!connectResult.success) {
       // Broadcast failure so side panel shows the error immediately
       broadcastToSidePanel({
         type: "AGENT_STATUS",
-        payload: { connected: false, connecting: false, error: connectResult.error },
+        payload: { connected: false, connecting: false, reconnecting: true, error: connectResult.error },
       });
     }
   } else {
@@ -404,7 +413,7 @@ async function handleAgentConnect(url: string, token: string, requestedTabId?: n
         state.agentProgress = "";
         broadcastToSidePanel({ type: "AGENT_ERROR", payload: { message: (data as any)?.message || String(data) } });
       } else if (eventType === "connection_lost") {
-        broadcastToSidePanel({ type: "AGENT_STATUS", payload: { connected: false } });
+        broadcastToSidePanel({ type: "AGENT_STATUS", payload: { connected: true, reconnecting: true } });
       } else if (eventType === "connection_restored") {
         broadcastToSidePanel({ type: "AGENT_STATUS", payload: { connected: true, project: (data as any)?.project } });
         void getAgentRuntimeState(state).then((runtime) => {
@@ -416,6 +425,8 @@ async function handleAgentConnect(url: string, token: string, requestedTabId?: n
             broadcastToSidePanel({ type: "AGENT_PROGRESS", payload: { text: activeAgent.progress } });
           }
         });
+      } else if (eventType === "connection_reconnect_failed") {
+        broadcastToSidePanel({ type: "AGENT_STATUS", payload: { connected: true, reconnecting: true, error: (data as any)?.error || "Agent 连接已中断" } });
       } else if (eventType === "test-run.updated") {
         state.currentTestRun = data as any;
         broadcastToSidePanel({ type: "TEST_RUN_UPDATE", payload: data as any });

@@ -10,6 +10,7 @@ export function useAgent() {
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [aiWorking, setAiWorking] = useState(false);
   const [agentToken, setAgentToken] = useState("");
+  const [connectionWarning, setConnectionWarning] = useState<string | null>(null);
   const [agentUrl, setAgentUrl] = useState(() => {
     // Default to current page's hostname so LAN access works out of the box
     try {
@@ -53,10 +54,16 @@ export function useAgent() {
 
   // Listen for agent events from background
   const connectingRef = useRef(false);
+  const connectedRef = useRef(false);
   useEffect(() => {
     const handler = (message: PrismMessage) => {
       switch (message.type) {
         case "AGENT_STATUS":
+          if (message.payload.reconnecting && connectedRef.current) {
+            setConnecting(false);
+            setConnectionWarning(message.payload.error || t("agent.networkUnstable"));
+            break;
+          }
           // Auto-connect "connecting" broadcast
           if (message.payload.connecting) {
             setConnecting(true);
@@ -68,10 +75,15 @@ export function useAgent() {
           // Ignore "disconnected" broadcasts while we're actively connecting
           // (e.g. from tab activation race) — unless it carries an error
           if (!message.payload.connected && connectingRef.current && !message.payload.error) break;
+          connectedRef.current = message.payload.connected;
           setConnected(message.payload.connected);
           setConnecting(false);
           connectingRef.current = false;
           if (message.payload.error) setError(message.payload.error);
+          if (message.payload.connected) {
+            setError(null);
+            setConnectionWarning(null);
+          }
           if (message.payload.project) setProject(message.payload.project as ProjectInfo);
           break;
         case "AGENT_WORKING":
@@ -91,14 +103,17 @@ export function useAgent() {
     connectingRef.current = true;
     setError(null);
     setAgentUrl(url);
+    setConnectionWarning(null);
     try {
       const result = await chrome.runtime.sendMessage({ type: "AGENT_CONNECT", payload: { url, token } }) as any;
       if (!result?.success) {
+        connectedRef.current = false;
         setConnecting(false);
         setConnected(false);
         setError(result?.error || t("agent.connectFailed"));
       }
     } catch {
+      connectedRef.current = false;
       setConnecting(false);
       setConnected(false);
       setError(t("agent.connectFailed"));
@@ -107,6 +122,8 @@ export function useAgent() {
 
   const disconnect = useCallback(async () => {
     await chrome.runtime.sendMessage({ type: "AGENT_DISCONNECT" });
+    connectedRef.current = false;
+    setConnectionWarning(null);
     setConnected(false);
     setProject(null);
   }, []);
@@ -117,6 +134,6 @@ export function useAgent() {
 
   return {
     connected, connecting, error, project, aiWorking, agentUrl, setAgentUrl, agentToken, setAgentToken,
-    connect, disconnect, rollback, permissions, updatePermission,
+    connect, disconnect, rollback, permissions, updatePermission, connectionWarning,
   };
 }

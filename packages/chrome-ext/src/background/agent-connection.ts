@@ -1,6 +1,35 @@
 import type { TabState } from "./tab-state.js";
 import type { TestRunInfo } from "../shared/types.js";
 
+function scheduleReconnect(
+  state: TabState,
+  url: string,
+  token: string,
+  onEvent: (type: string, data: unknown) => void,
+  onBrowserCommand?: (data: any) => Promise<unknown>,
+  pageUrl?: string,
+  delay = 3000,
+) {
+  if (!state.autoReconnect) return;
+  if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
+  const expectedAttempt = state.connectionAttempt;
+  state.reconnectTimer = setTimeout(() => {
+    state.reconnectTimer = null;
+    if (!state.autoReconnect || state.connectionAttempt !== expectedAttempt) return;
+    connectAgent(state, url, token, onEvent, onBrowserCommand, pageUrl)
+      .then((project) => onEvent("connection_restored", { project }))
+      .catch((error) => {
+        if (!state.autoReconnect) return;
+        // A failed fetch clears the active endpoint. Preserve the intended
+        // endpoint while retrying so a later network recovery can reconnect.
+        state.agentUrl = url;
+        state.agentToken = token;
+        onEvent("connection_reconnect_failed", { error: error instanceof Error ? error.message : String(error) });
+        scheduleReconnect(state, url, token, onEvent, onBrowserCommand, pageUrl, 5000);
+      });
+  }, delay);
+}
+
 /**
  * Connect to agent server for a specific tab.
  * Returns project info on success, throws on failure.
@@ -13,6 +42,12 @@ export async function connectAgent(
   onBrowserCommand?: (data: any) => Promise<unknown>,
   pageUrl?: string,
 ): Promise<{ framework: string; styling: string[]; componentLib: string[] }> {
+  state.autoReconnect = true;
+  const connectionAttempt = ++state.connectionAttempt;
+  if (state.reconnectTimer) {
+    clearTimeout(state.reconnectTimer);
+    state.reconnectTimer = null;
+  }
   // Close existing connection — remove handlers to prevent stale callbacks
   if (state.ws) {
     state.ws.onclose = null;
@@ -73,19 +108,13 @@ export async function connectAgent(
   };
 
   ws.onclose = () => {
+    if (state.connectionAttempt !== connectionAttempt) return;
     if (!opened) rejectOpen?.(new Error("浏览器连接在注册前已断开"));
     state.ws = null;
     state.connected = false;
     // Notify side panel
     onEvent("connection_lost", {});
-    // Auto-reconnect after 3s
-    setTimeout(() => {
-      if (state.agentUrl === url) {
-        connectAgent(state, url, token, onEvent, onBrowserCommand, pageUrl)
-          .then((project) => onEvent("connection_restored", { project }))
-          .catch(() => {});
-      }
-    }, 3000);
+    scheduleReconnect(state, url, token, onEvent, onBrowserCommand, pageUrl);
   };
 
   ws.onerror = () => {
@@ -119,6 +148,12 @@ export function updateBrowserRegistration(state: TabState, pageUrl: string) {
  * Disconnect from agent server.
  */
 export function disconnectAgent(state: TabState) {
+  state.autoReconnect = false;
+  state.connectionAttempt += 1;
+  if (state.reconnectTimer) {
+    clearTimeout(state.reconnectTimer);
+    state.reconnectTimer = null;
+  }
   if (state.ws) {
     // Remove handlers BEFORE closing to prevent stale onclose from
     // broadcasting "connection_lost" after an intentional disconnect.
