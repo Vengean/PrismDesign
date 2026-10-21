@@ -1,5 +1,6 @@
 export type User = { id: number; email: string; name: string }
-export type Note = { id: number; title: string; content: string; category: string; isFavorite: number; createdAt: string; updatedAt: string }
+export type Note = { id: number; title: string; content: string; category: string; isFavorite: number; isPublished: number; publishedAt: string | null; createdAt: string; updatedAt: string }
+export type PublishedNote = Omit<Note, 'isFavorite'> & { author: { id: number; name: string } }
 export type NoteRevision = { id: number | string; title: string; content: string; createdAt: string; isCurrent?: boolean }
 
 export const SESSION_EXPIRED_EVENT = 'prism:session-expired'
@@ -38,8 +39,10 @@ export const api = {
   session: (token: string) => getOnce<{ user: User }>('/api/auth/session', token),
   logout: (token: string) => request<void>('/api/auth/logout', { method: 'POST' }, token),
   notes: (token: string) => getOnce<{ notes: Note[] }>('/api/notes', token),
+  publishedNotes: (token: string) => request<{ notes: PublishedNote[] }>('/api/published-notes', {}, token),
   createNote: (token: string, input: { title: string; content: string }) => request<{ note: Note }>('/api/notes', { method: 'POST', body: JSON.stringify(input) }, token),
   updateNote: (token: string, id: number, input: { title: string; content: string }) => request<{ note: Note }>(`/api/notes/${id}`, { method: 'PUT', body: JSON.stringify(input) }, token),
   setNoteFavorite: (token: string, id: number, isFavorite: boolean) => request<{ note: Note }>(`/api/notes/${id}/favorite`, { method: 'PATCH', body: JSON.stringify({ isFavorite }) }, token),
+  setNotePublished: (token: string, id: number, isPublished: boolean) => request<{ note: Note }>(`/api/notes/${id}/publish`, { method: 'PATCH', body: JSON.stringify({ isPublished }) }, token),
   noteHistory: (token: string, id: number) => request<{ revisions: NoteRevision[] }>(`/api/notes/${id}/history`, {}, token),
 }

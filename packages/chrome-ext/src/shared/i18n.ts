@@ -35,6 +35,7 @@ const zh: Record<string, string> = {
   "agent.connecting_short": "连接中",
   "agent.disconnected": "未连接",
   "agent.connectFailed": "连接失败，请检查 Agent 服务是否已启动",
+  "agent.networkUnstable": "网络不稳定，正在尝试重新连接 Agent…",
 
   // ── Chat ──
   "chat.empty": "描述你想开发、调整或验证的内容，\nAI 会按需修改源码，并协助验证页面。",
@@ -136,6 +137,7 @@ const en: Record<string, string> = {
   "agent.connecting_short": "Connecting",
   "agent.disconnected": "Disconnected",
   "agent.connectFailed": "Connection failed. Please check if the Agent service is running.",
+  "agent.networkUnstable": "The network is unstable. Reconnecting to Agent…",
 
   // ── Chat ──
   "chat.empty": "Describe what you want to build, refine, or verify.\nAI will update the source as needed and help verify the page.",

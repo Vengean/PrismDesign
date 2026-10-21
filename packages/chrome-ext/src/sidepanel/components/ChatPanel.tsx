@@ -19,6 +19,7 @@ interface AgentState {
   connect: (url: string, token: string) => Promise<void>;
   permissions: AgentPermissions;
   updatePermission: (key: keyof AgentPermissions, enabled: boolean) => Promise<void>;
+  connectionWarning?: string | null;
 }
 
 interface ChatState {
@@ -432,7 +433,7 @@ function ChatView({ agent, chat, selection, comments, onEditComment, onRemoveCom
             const hasContext = msg.role === "user" && Boolean(msg.comments?.length || msg.attachments?.length);
             return (
             <div key={i} className={`group flex gap-2 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div className={`relative min-w-0 max-w-[85%] text-sm font-normal leading-relaxed ${hasContent && msg.role === "user" ? "px-3 py-2 rounded-xl" : ""} ${!msg.pending ? "mb-6" : ""} ${msg.verification && (msg.testRun || ["passed", "failed", "inconclusive"].includes(msg.verification.status || "")) ? "mb-7" : ""} ${hasContent && hasContext ? "mt-7" : ""} ${hasContent && msg.role === "user" ? "bg-[#dbeafe] text-[#2563eb] rounded-br-sm" : hasContent ? "text-foreground" : ""}`}>
+              <div className={`relative min-w-0 max-w-[85%] text-sm font-normal leading-relaxed ${hasContent && msg.role === "user" ? "px-3 py-2 rounded-xl" : ""} ${!msg.pending ? "mb-6" : ""} ${msg.verification && (msg.testRun || ["passed", "failed", "inconclusive"].includes(msg.verification.status || "")) ? "mb-7" : ""} ${hasContent && hasContext ? "mt-7" : ""} ${hasContent && msg.role === "user" ? "bg-[#dbeafe] text-[#1e40af] rounded-br-sm" : hasContent ? "text-foreground" : ""}`}>
                 {hasContext && <div className={`${hasContent ? "absolute bottom-full right-0 mb-1" : ""} flex max-w-[calc(100vw-32px)] gap-1`}>{(msg.contextOrder?.length ? msg.contextOrder : ["comments", "attachments"]).map((kind) => kind === "comments" ? <CommentTag key={kind} comments={msg.comments || []} align="right" /> : <AttachmentTag key={kind} files={msg.attachments || []} align="right" />)}</div>}
                 {hasContent && (msg.content.startsWith("⏳") ? (
                   <div className="flex min-w-0 max-w-full items-start gap-1.5 overflow-hidden">
@@ -470,7 +471,7 @@ function ChatView({ agent, chat, selection, comments, onEditComment, onRemoveCom
         {(comments.length > 0 || attachments.length > 0) && <div className="flex flex-wrap gap-1">{contextOrder.map((kind) => kind === "comments" ? <CommentTag key={kind} comments={comments} editable onEdit={onEditComment} onRemove={onRemoveComment} /> : <AttachmentTag key={kind} files={attachments} editable onRemove={(id) => { const file = attachments.find((item) => item.id === id); setAttachments((items) => { const next = items.filter((item) => item.id !== id); if (!next.length) setContextOrder((order) => order.filter((item) => item !== "attachments")); return next; }); if (file && !file.uploading && !file.error) chrome.runtime.sendMessage({ type: "AGENT_DELETE_ATTACHMENT", payload: { id } }); }} />)}</div>}
         <input ref={fileInputRef} type="file" multiple hidden accept=".txt,.md,.json,.csv,.html,.css,.js,.jsx,.ts,.tsx,.yaml,.yml,.xml,.sql,.log,.sh,.py,.java,.go,.rs" onChange={(event) => addFiles(event.target.files)} />
         <textarea
-          className="w-full min-h-[60px] max-h-[120px] px-2.5 py-2 text-xs border rounded-md resize-none bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+          className="w-full min-h-[60px] max-h-[120px] px-2.5 py-2 text-sm border rounded-md resize-none bg-background focus:outline-none focus:ring-1 focus:ring-ring"
           placeholder={t("chat.placeholder")}
           value={input}
           onChange={(e) => setInput(e.target.value)}
