@@ -5,13 +5,14 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.platform
-    ports:
-      - "3000:3000"
+    # Linux deployment: gateway listeners and loopback-only container ports share the host network.
+    network_mode: host
     volumes:
       - ${CONTAINER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
       - platform-data:/data
     environment:
       - PRISM_DATA_DIR=/data
+      - PRISM_PREVIEW_HOST=${PRISM_PREVIEW_HOST:-}
       - CONTAINER_SOCKET=/var/run/docker.sock
       - PRISM_WORKSPACE_IMAGE=${PRISM_WORKSPACE_IMAGE:-prism-workspace:latest}
       - ADMIN_USER=${ADMIN_USER:-admin}

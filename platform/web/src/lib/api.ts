@@ -33,6 +33,43 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  getEnvironment(projectId:string,requirementId:string) {
+    return request<{status:string;error:string;branch:string;ports:number[]}>(`/projects/${projectId}/requirements/${requirementId}/environment`);
+  },
+  environmentAction(projectId:string,requirementId:string,action:"start"|"stop") {
+    return request(`/projects/${projectId}/requirements/${requirementId}/environment/${action}`,{method:"POST"});
+  },
+  getEnvironmentLogs(projectId:string,requirementId:string) {
+    return request<{logs:string}>(`/projects/${projectId}/requirements/${requirementId}/environment/logs`);
+  },
+  openEnvironment(projectId:string,requirementId:string,kind:"preview"|"ide",port?:number) {
+    return request<{url:string}>(`/projects/${projectId}/requirements/${requirementId}/environment/open-${kind}`,{method:"POST",body:JSON.stringify({port})});
+  },
+  getProjects(options: {q?:string;cursor?:string;limit?:number} = {}, signal?:AbortSignal) {
+    const params = new URLSearchParams({limit:String(options.limit || 12)});
+    if(options.q)params.set("q",options.q);
+    if(options.cursor)params.set("cursor",options.cursor);
+    return request<{items:Project[];nextCursor:string|null}>(`/projects?${params}`,{signal});
+  },
+  getProject(id: string) { return request<ProjectDetail>(`/projects/${encodeURIComponent(id)}`); },
+  createProject(data: { name: string; description: string; members: { userId: string; role: ProjectRole }[]; config: ProjectConfig }) {
+    return request<{ id: string }>("/projects", { method: "POST", body: JSON.stringify(data) });
+  },
+  saveProjectConfig(id: string, config: ProjectConfig) {
+    return request<{ message: string }>(`/projects/${encodeURIComponent(id)}/config`, { method: "PUT", body: JSON.stringify(config) });
+  },
+  setProjectMember(id: string, userId: string, role: ProjectRole) {
+    return request(`/projects/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`, { method: "PUT", body: JSON.stringify({ role }) });
+  },
+  removeProjectMember(id: string, userId: string) {
+    return request(`/projects/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`, { method: "DELETE" });
+  },
+  createRequirement(id: string, data: { title: string; description: string; acceptance: string }) {
+    return request(`/projects/${encodeURIComponent(id)}/requirements`, { method: "POST", body: JSON.stringify(data) });
+  },
+  createRelease(id: string, data: { name: string; description: string }) {
+    return request(`/projects/${encodeURIComponent(id)}/releases`, { method: "POST", body: JSON.stringify(data) });
+  },
   login(username: string, password: string) {
     return request<{ token: string; user: { id: string; role: string } }>("/auth/login", {
       method: "POST",
@@ -71,234 +108,30 @@ export const api = {
     );
   },
 
-  // Workspaces
-  getWorkspaces() {
-    return request<Workspace[]>("/workspaces");
-  },
 
-  getWorkspace(id: string) {
-    return request<Workspace>(`/workspaces/${id}`);
-  },
-
-  createWorkspace(data: CreateWorkspacePayload) {
-    return request<Workspace>("/workspaces", {
-      method: "POST",
-      body: JSON.stringify(data),
-    });
-  },
-
-  updateWorkspace(id: string, data: Partial<CreateWorkspacePayload>) {
-    return request<Workspace>(`/workspaces/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    });
-  },
-
-  deleteWorkspace(id: string) {
-    return request<{ message: string }>(`/workspaces/${id}`, { method: "DELETE" });
-  },
-
-  syncWorkspace(id: string) {
-    return request<{ message: string }>(`/workspaces/${id}/sync`, { method: "POST" });
-  },
-
-  startWorkspace(id: string) {
-    return request<Workspace>(`/workspaces/${id}/start`, { method: "POST" });
-  },
-
-  stopWorkspace(id: string) {
-    return request<Workspace>(`/workspaces/${id}/stop`, { method: "POST" });
-  },
-
-  restartWorkspace(id: string) {
-    return request<Workspace>(`/workspaces/${id}/restart`, { method: "POST" });
-  },
-
-  // Git
-  getBranches(workspaceId: string, repo: string) {
-    return request<{ branches: string[]; current: string }>(
-      `/workspaces/${workspaceId}/git/${encodeURIComponent(repo)}/branches`
-    );
-  },
-
-  checkout(workspaceId: string, repo: string, branch: string, create = false, baseBranch?: string) {
-    return request<{ message: string }>(
-      `/workspaces/${workspaceId}/git/${encodeURIComponent(repo)}/checkout`,
-      { method: "POST", body: JSON.stringify({ branch, create, baseBranch }) }
-    );
-  },
-
-  getGitStatus(workspaceId: string, repo: string) {
-    return request<{ status: string }>(
-      `/workspaces/${workspaceId}/git/${encodeURIComponent(repo)}/status`
-    );
-  },
-
-  getDiff(workspaceId: string, repo: string, path?: string) {
-    const q = path ? `?path=${encodeURIComponent(path)}` : "";
-    return request<{ diff: string }>(
-      `/workspaces/${workspaceId}/git/${encodeURIComponent(repo)}/diff${q}`
-    );
-  },
-
-  gitPush(workspaceId: string, repo: string, options?: { remote?: string; branch?: string; force?: boolean }) {
-    return request<{ message: string; stdout: string; stderr: string }>(
-      `/workspaces/${workspaceId}/git/${encodeURIComponent(repo)}/push`,
-      { method: "POST", body: JSON.stringify(options || {}) }
-    );
-  },
-
-  gitPull(workspaceId: string, repo: string, options?: { remote?: string; branch?: string }) {
-    return request<{ message: string; stdout: string; stderr: string }>(
-      `/workspaces/${workspaceId}/git/${encodeURIComponent(repo)}/pull`,
-      { method: "POST", body: JSON.stringify(options || {}) }
-    );
-  },
-
-  getGitLog(workspaceId: string, repo: string, limit = 20) {
-    return request<{ commits: CommitEntry[] }>(
-      `/workspaces/${workspaceId}/git/${encodeURIComponent(repo)}/log?limit=${limit}`
-    );
-  },
-
-  // File operations
-  listFiles(workspaceId: string, repo: string, path = ".") {
-    return request<{ files: FileEntry[]; path: string }>(
-      `/workspaces/${workspaceId}/git/${encodeURIComponent(repo)}/files?path=${encodeURIComponent(path)}`
-    );
-  },
-
-  readFile(workspaceId: string, repo: string, path: string) {
-    return request<{ content: string; path: string; size: number }>(
-      `/workspaces/${workspaceId}/git/${encodeURIComponent(repo)}/file?path=${encodeURIComponent(path)}`
-    );
-  },
-
-  createFile(workspaceId: string, repo: string, path: string, content: string) {
-    return request<{ message: string; path: string }>(
-      `/workspaces/${workspaceId}/git/${encodeURIComponent(repo)}/file`,
-      { method: "POST", body: JSON.stringify({ path, content }) }
-    );
-  },
-
-  deleteFile(workspaceId: string, repo: string, path: string) {
-    return request<{ message: string }>(
-      `/workspaces/${workspaceId}/git/${encodeURIComponent(repo)}/file`,
-      { method: "DELETE", body: JSON.stringify({ path }) }
-    );
-  },
-
-  // Shares
-  getShares(workspaceId: string) {
-    return request<WorkspaceShare[]>(`/workspaces/${workspaceId}/shares`);
-  },
-
-  addShare(workspaceId: string, userId: string, permission: "readonly" | "edit") {
-    return request<WorkspaceShare>(`/workspaces/${workspaceId}/shares`, {
-      method: "POST",
-      body: JSON.stringify({ userId, permission }),
-    });
-  },
-
-  updateShare(workspaceId: string, shareId: string, permission: "readonly" | "edit") {
-    return request<{ message: string }>(`/workspaces/${workspaceId}/shares/${shareId}`, {
-      method: "PUT",
-      body: JSON.stringify({ permission }),
-    });
-  },
-
-  removeShare(workspaceId: string, shareId: string) {
-    return request<{ message: string }>(`/workspaces/${workspaceId}/shares/${shareId}`, {
-      method: "DELETE",
-    });
-  },
-
-  // Services
-  getServiceStatus(id: string) {
-    return request<{ container: string; agentPort: number | null; devPort: number | null; status: string }>(
-      `/workspaces/${id}/services/status`
-    );
-  },
-
-  getServiceLogs(id: string, source = "all", tail = 1000) {
-    return request<{ logs: string }>(`/workspaces/${id}/services/logs?source=${source}&tail=${tail}`);
-  },
-
-  restartServices(id: string) {
-    return request<Workspace>(`/workspaces/${id}/services/restart`, { method: "POST" });
-  },
 };
 
-export interface RepoConfig {
-  name: string;
-  url: string;
-  branch: string;
+export type ProjectRole = "viewer" | "editor" | "admin";
+export interface ProjectConfig {
+  repos: { name: string; url: string; branch: string }[];
+  gitAuth: {
+    mode: "token" | "ssh"; sshPort: number; token?: string; sshKey?: string;
+    hasToken?: boolean; hasSshKey?: boolean; credentialRef?: string; requiresUpdate?: boolean;
+  };
+  model: { provider: string; baseUrl: string; model: string; credentialRef?: string; apiKey?: string; hasApiKey?: boolean };
+  initScript: string;
+  startupScript: string;
+  guidance: string;
 }
-
-export type AccessLevel = "owner" | "admin" | "edit" | "readonly" | null;
-
-export interface Workspace {
-  id: string;
-  name: string;
-  owner_id: string;
-  repos: RepoConfig[];
-  claude_md: string;
-  startup_script: string;
-  git_access_token: string;
-  git_ssh_key: string;
-  git_ssh_port: number;
-  agent_type: "claude" | "glm" | "claude-sub";
-  anthropic_api_key: string;
-  anthropic_base_url: string;
-  anthropic_model: string;
-  https_proxy: string;
-  status: "stopped" | "syncing" | "starting" | "running" | "error";
-  sync_status: "none" | "syncing" | "synced" | "failed";
-  dev_port?: number;
-  agent_port?: number;
-  code_server_port?: number;
-  container_id?: string;
-  error_message?: string;
-  created_at: string;
-  updated_at: string;
-  access_level?: AccessLevel;
+export interface Project {
+  id: string; name: string; description: string; created_by: string; created_at: string;
+  access_role: ProjectRole; requirement_count: number; release_count: number;
+  agent_sdk?: string;
 }
-
-export interface WorkspaceShare {
-  id: string;
-  workspace_id: string;
-  user_id: string;
-  permission: "readonly" | "edit";
-  created_at: string;
-}
-
-export interface FileEntry {
-  name: string;
-  type: "file" | "directory";
-  size: number;
-  modified: string;
-}
-
-export interface CommitEntry {
-  hash: string;
-  shortHash: string;
-  author: string;
-  email: string;
-  timestamp: number;
-  message: string;
-}
-
-export interface CreateWorkspacePayload {
-  name: string;
-  repos: RepoConfig[];
-  claudeMd?: string;
-  startupScript?: string;
-  gitAccessToken?: string;
-  gitSshKey?: string;
-  gitSshPort?: number;
-  agentType?: "claude" | "glm" | "claude-sub";
-  anthropicApiKey?: string;
-  anthropicBaseUrl?: string;
-  anthropicModel?: string;
-  httpsProxy?: string;
+export interface ProjectDetail extends Project {
+  config?: ProjectConfig;
+  members: { user_id: string; role: ProjectRole; permission_source: "creator" | "platform_admin" | "explicit" }[];
+  member_candidates?: { id: string }[];
+  requirements: { id: string; title: string; description: string; acceptance: string; status: string; environment_status: string; session_id: string; created_by: string }[];
+  releases: { id: string; name: string; description: string; status: string; environment_status: string; created_by: string }[];
 }

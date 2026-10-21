@@ -26,7 +26,7 @@ export function useAuth() {
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
       setUser(data.user);
-      navigate("/dashboard");
+      navigate("/projects");
     },
     [navigate]
   );

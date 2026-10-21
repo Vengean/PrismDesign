@@ -1,0 +1,5 @@
+FROM localhost/prism-workspace:latest
+USER root
+COPY preview-app.cjs /fixture-work/server.cjs
+RUN git -C /fixture-work init -b main && git -C /fixture-work add . && git -C /fixture-work -c user.name=Fixture -c user.email=fixture@example.com commit -m fixture && git clone --bare /fixture-work /fixture.git && chown -R prism:prism /fixture.git && chmod -R a+rX /fixture.git && git config --system url.file:///fixture.git.insteadOf https://fixture.invalid/repo && git config --system protocol.file.allow always
+USER prism

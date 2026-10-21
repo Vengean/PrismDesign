@@ -4,6 +4,8 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": true,
+    "noEmit": true,
+    "tsBuildInfoFile": "./node_modules/.cache/platform-web.tsbuildinfo",
     "jsx": "react-jsx",
     "esModuleInterop": true,
     "skipLibCheck": true,

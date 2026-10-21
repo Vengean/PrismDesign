@@ -1,127 +1,27 @@
-import { useState, useRef, useEffect } from "react";
-import { Outlet, NavLink, Navigate } from "react-router-dom";
+import { Link, Navigate, Outlet, useLocation } from "react-router-dom";
+import { ArrowLeft, KeyRound, LogOut, Users } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
-import { LayoutDashboard, Users, KeyRound, LogOut } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { Separator } from "@/components/ui/separator";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 export default function Layout() {
-  const { user, isAdmin, logout } = useAuth();
-
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
-
-  return (
-    <div className="flex h-screen">
-      {/* Sidebar */}
-      <aside className="w-60 border-r bg-card flex flex-col">
-        <div className="p-5">
-          <h1 className="text-lg font-bold tracking-tight">Prism Studio</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">管理平台</p>
+  const {user,isAdmin,logout} = useAuth();
+  const {pathname} = useLocation();
+  if (!user) return <Navigate to="/login" replace />;
+  return <div className="app-shell">
+    <header className="app-header">
+      <div className="app-header-inner">
+        <Link to="/projects" className="brand" aria-label="Prism Studio 首页"><img src="/prism-logo.png" alt="" className="size-8 shrink-0" /><span>Prism<span className="font-normal text-muted-foreground"> Studio</span></span></Link>
+        {pathname !== "/projects" && <Link to="/projects" aria-label="返回项目列表" title="返回项目列表" className="ml-3 inline-flex h-9 items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground sm:ml-5"><ArrowLeft size={16} /><span className="hidden sm:inline">所有项目</span></Link>}
+        <div className="ml-auto flex items-center gap-3">
+          <DropdownMenu><DropdownMenuTrigger asChild><button type="button" aria-label="打开账号菜单" className="avatar-button">{user.id[0]?.toUpperCase()}</button></DropdownMenuTrigger><DropdownMenuContent align="end" sideOffset={12} className="w-52 rounded-2xl p-1.5 shadow-lg shadow-black/5">
+            <div className="px-3 py-2"><p className="truncate text-sm font-medium" title={user.id}>{user.id}</p><p className="mt-1 text-xs text-muted-foreground">{isAdmin?"平台管理员":"普通用户"}</p></div><DropdownMenuSeparator />
+            {isAdmin && <DropdownMenuItem asChild className="rounded-lg px-3 py-2.5"><Link to="/admin/users"><Users size={16} />用户管理</Link></DropdownMenuItem>}
+            <DropdownMenuItem asChild className="rounded-lg px-3 py-2.5"><Link to="/settings/password"><KeyRound size={16} />修改密码</Link></DropdownMenuItem><DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={logout} className="rounded-lg px-3 py-2.5 text-destructive focus:bg-destructive/5 focus:text-destructive"><LogOut size={16} />退出登录</DropdownMenuItem>
+          </DropdownMenuContent></DropdownMenu>
         </div>
-        <Separator />
-
-        <nav className="flex-1 p-3 space-y-1">
-          <SidebarLink to="/dashboard" icon={<LayoutDashboard size={18} />}>
-            工作台
-          </SidebarLink>
-          {isAdmin && (
-            <SidebarLink to="/admin/users" icon={<Users size={18} />}>
-              用户管理
-            </SidebarLink>
-          )}
-          <SidebarLink to="/settings/password" icon={<KeyRound size={18} />}>
-            修改密码
-          </SidebarLink>
-        </nav>
-      </aside>
-
-      {/* Right area: top bar + content */}
-      <div className="flex-1 flex flex-col">
-        {/* Top bar */}
-        <header className="h-14 border-b bg-card flex items-center justify-end px-6 shrink-0">
-          <UserMenu user={user} onLogout={logout} />
-        </header>
-
-        {/* Main content */}
-        <main className="flex-1 overflow-auto bg-muted/30">
-          <Outlet />
-        </main>
       </div>
-    </div>
-  );
-}
-
-function UserMenu({ user, onLogout }: { user: { id: string }; onLogout: () => void }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    if (open) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [open]);
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 cursor-pointer rounded-lg px-2 py-1.5 hover:bg-accent transition-colors"
-      >
-        <div className="size-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-medium text-primary">
-          {user.id[0].toUpperCase()}
-        </div>
-        <span className="text-sm font-medium">{user.id}</span>
-      </button>
-
-      {open && (
-        <div className="absolute right-0 top-full mt-1 w-40 rounded-lg border bg-card shadow-md py-1 z-50">
-          <button
-            onClick={() => {
-              setOpen(false);
-              onLogout();
-            }}
-            className="flex items-center gap-2 w-full px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer"
-          >
-            <LogOut size={15} />
-            退出登录
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SidebarLink({
-  to,
-  icon,
-  children,
-}: {
-  to: string;
-  icon: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <NavLink
-      to={to}
-      className={({ isActive }) =>
-        cn(
-          "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
-          isActive
-            ? "bg-primary/10 text-primary font-medium"
-            : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-        )
-      }
-    >
-      {icon}
-      {children}
-    </NavLink>
-  );
+    </header>
+    <main id="main-content" className="app-main"><Outlet /></main>
+  </div>;
 }

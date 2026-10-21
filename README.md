@@ -4,6 +4,8 @@ English | [简体中文](./README.zh-CN.md)
 
 Prism Studio connects a running web page to its source project and an AI coding agent. Product managers, designers, developers, and testers can describe changes in natural language, attach element-level comments, edit the live page visually, and verify the result in a real browser while all durable changes remain in source control.
 
+For the project-based platform, see [development progress and handoff](./platform/docs/development-progress.md) and [system design](./platform/docs/system-design.md).
+
 ## What it provides
 
 - **Chrome Extension** — the recommended interface, with AI chat, element comments, visual editing, real-browser automation, evidence, and test-driven repair flows.

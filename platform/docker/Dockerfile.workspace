@@ -14,6 +14,9 @@ RUN ARCH=$(dpkg --print-architecture) && \
     "https://gh-proxy.com/https://github.com/coder/code-server/releases/download/v${CODE_SERVER_VERSION}/code-server_${CODE_SERVER_VERSION}_${ARCH}.deb" && \
     dpkg -i /tmp/code-server.deb && rm /tmp/code-server.deb
 
+COPY fix-code-server-extensions.cjs /fix-code-server-extensions.cjs
+RUN node /fix-code-server-extensions.cjs
+
 # Install agent
 WORKDIR /prism-agent
 COPY agent-package.json ./package.json
@@ -27,7 +30,9 @@ RUN useradd -m -s /bin/bash prism && \
     cp -a /home/prism /home/prism-skel
 
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY project-entrypoint.sh /project-entrypoint.sh
+COPY preview-proxy.cjs /preview-proxy.cjs
+RUN chmod +x /entrypoint.sh /project-entrypoint.sh
 
 WORKDIR /workspace
 EXPOSE 5173 8080 9527

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { api } from "@/lib/api";
-import { KeyRound, CheckCircle2 } from "lucide-react";
+import { CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -44,13 +44,10 @@ export default function ChangePassword() {
   }
 
   return (
-    <div className="p-8">
-      <div className="flex items-center gap-3 mb-6">
-        <KeyRound size={24} className="text-primary" />
-        <h1 className="text-2xl font-bold">修改密码</h1>
-      </div>
+    <div className="page-container mx-auto max-w-xl">
+      <p className="eyebrow mb-3">ACCOUNT SECURITY</p><h1 className="page-heading mb-3">更新你的密码</h1><p className="page-caption mb-8">为账号设置一个只有你知道的密码。</p>
 
-      <Card className="max-w-md">
+      <Card className="rounded-3xl border bg-white shadow-none">
         <CardHeader>
           <CardTitle>更新密码</CardTitle>
           <CardDescription>请输入当前密码和新密码</CardDescription>
@@ -107,7 +104,7 @@ export default function ChangePassword() {
               />
             </div>
 
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" className="w-full rounded-full" disabled={loading}>
               {loading ? "修改中..." : "确认修改"}
             </Button>
           </form>

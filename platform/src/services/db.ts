@@ -1,8 +1,7 @@
 import Database from "better-sqlite3";
 import bcrypt from "bcryptjs";
-import crypto from "crypto";
 import path from "path";
-import type { Workspace, WorkspaceRow, WorkspaceShare, SharePermission, WorkspaceAccessLevel } from "../types.js";
+import fs from "node:fs";
 
 const DATA_DIR = process.env.PRISM_DATA_DIR || "./data";
 const DB_PATH = path.join(DATA_DIR, "platform.db");
@@ -11,9 +10,11 @@ let db: Database.Database;
 
 export function getDb(): Database.Database {
   if (!db) {
+    fs.mkdirSync(DATA_DIR,{recursive:true});
     db = new Database(DB_PATH);
     db.pragma("journal_mode = WAL");
     db.pragma("foreign_keys = ON");
+    db.pragma("secure_delete = ON");
     initTables();
     ensureAdmin();
   }
@@ -29,69 +30,21 @@ function initTables() {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
-    CREATE TABLE IF NOT EXISTS workspaces (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      repos TEXT NOT NULL DEFAULT '[]',
-      claude_md TEXT NOT NULL DEFAULT '',
-      startup_script TEXT NOT NULL DEFAULT '',
-      git_access_token TEXT NOT NULL DEFAULT '',
-      git_ssh_key TEXT NOT NULL DEFAULT '',
-      git_ssh_port INTEGER NOT NULL DEFAULT 22,
-      agent_type TEXT NOT NULL DEFAULT 'claude',
-      anthropic_api_key TEXT NOT NULL DEFAULT '',
-      anthropic_base_url TEXT NOT NULL DEFAULT '',
-      anthropic_model TEXT NOT NULL DEFAULT '',
-      status TEXT NOT NULL DEFAULT 'stopped',
-      sync_status TEXT NOT NULL DEFAULT 'none',
-      dev_port INTEGER,
-      agent_port INTEGER,
-      container_id TEXT,
-      error_message TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
   `);
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS workspace_shares (
-      id TEXT PRIMARY KEY,
-      workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      permission TEXT NOT NULL DEFAULT 'readonly',
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      UNIQUE(workspace_id, user_id)
-    );
-  `);
-
-  // Migrations for existing databases
-  migrate();
-}
-
-function migrate() {
-  const columns = db.pragma("table_info(workspaces)") as { name: string }[];
-  const colNames = columns.map((c) => c.name);
-
-  if (colNames.length > 0 && !colNames.includes("git_ssh_key")) {
-    db.exec(`ALTER TABLE workspaces ADD COLUMN git_ssh_key TEXT NOT NULL DEFAULT ''`);
-  }
-  if (colNames.length > 0 && !colNames.includes("git_ssh_port")) {
-    db.exec(`ALTER TABLE workspaces ADD COLUMN git_ssh_port INTEGER NOT NULL DEFAULT 22`);
-  }
-  if (colNames.length > 0 && !colNames.includes("agent_type")) {
-    db.exec(`ALTER TABLE workspaces ADD COLUMN agent_type TEXT NOT NULL DEFAULT 'claude'`);
-  }
-  for (const col of ["anthropic_api_key", "anthropic_base_url", "anthropic_model"]) {
-    if (colNames.length > 0 && !colNames.includes(col)) {
-      db.exec(`ALTER TABLE workspaces ADD COLUMN ${col} TEXT NOT NULL DEFAULT ''`);
-    }
-  }
-  if (colNames.length > 0 && !colNames.includes("code_server_port")) {
-    db.exec(`ALTER TABLE workspaces ADD COLUMN code_server_port INTEGER`);
-  }
-  if (colNames.length > 0 && !colNames.includes("https_proxy")) {
-    db.exec(`ALTER TABLE workspaces ADD COLUMN https_proxy TEXT NOT NULL DEFAULT ''`);
+  db.exec(`CREATE TABLE IF NOT EXISTS legacy_resource_cleanup (
+    workspace_id TEXT PRIMARY KEY, container_id TEXT, last_error TEXT
+  )`);
+  const legacy = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='workspaces'").get();
+  if (legacy) {
+    const columns = db.pragma("table_info(workspaces)") as {name:string}[];
+    const container = columns.some(c => c.name === "container_id") ? "container_id" : "NULL";
+    db.transaction(() => {
+      db.exec(`INSERT OR IGNORE INTO legacy_resource_cleanup(workspace_id,container_id) SELECT id,${container} FROM workspaces`);
+      db.exec("DROP TABLE IF EXISTS workspace_shares; DROP TABLE workspaces;");
+    })();
+    // Remove retired rows and plaintext legacy credentials from free pages and WAL.
+    db.exec("VACUUM");
+    db.pragma("wal_checkpoint(TRUNCATE)");
   }
 }
 
@@ -134,166 +87,4 @@ export function deleteUser(id: string) {
 
 export function updatePassword(id: string, passwordHash: string) {
   getDb().prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(passwordHash, id);
-}
-
-// ─── Workspace helpers ───
-
-function rowToWorkspace(row: WorkspaceRow): Workspace {
-  return {
-    ...row,
-    repos: JSON.parse(row.repos),
-    dev_port: row.dev_port ?? undefined,
-    agent_port: row.agent_port ?? undefined,
-    code_server_port: row.code_server_port ?? undefined,
-    container_id: row.container_id ?? undefined,
-    error_message: row.error_message ?? undefined,
-  } as Workspace;
-}
-
-export function listWorkspaces(ownerId?: string, isAdmin = false): Workspace[] {
-  const rows = isAdmin
-    ? getDb().prepare("SELECT * FROM workspaces ORDER BY updated_at DESC").all()
-    : getDb()
-        .prepare("SELECT * FROM workspaces WHERE owner_id = ? ORDER BY updated_at DESC")
-        .all(ownerId!);
-  return (rows as WorkspaceRow[]).map(rowToWorkspace);
-}
-
-export function findWorkspaceById(id: string): Workspace | undefined {
-  const row = getDb().prepare("SELECT * FROM workspaces WHERE id = ?").get(id) as
-    | WorkspaceRow
-    | undefined;
-  return row ? rowToWorkspace(row) : undefined;
-}
-
-export function createWorkspace(data: {
-  name: string;
-  ownerId: string;
-  repos: string;
-  claudeMd: string;
-  startupScript: string;
-  gitAccessToken: string;
-  gitSshKey: string;
-  gitSshPort: number;
-  agentType: string;
-  anthropicApiKey: string;
-  anthropicBaseUrl: string;
-  anthropicModel: string;
-  httpsProxy: string;
-}): string {
-  const id = crypto.randomUUID();
-  getDb()
-    .prepare(
-      `INSERT INTO workspaces (id, name, owner_id, repos, claude_md, startup_script, git_access_token, git_ssh_key, git_ssh_port, agent_type, anthropic_api_key, anthropic_base_url, anthropic_model, https_proxy)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(id, data.name, data.ownerId, data.repos, data.claudeMd, data.startupScript, data.gitAccessToken, data.gitSshKey, data.gitSshPort, data.agentType, data.anthropicApiKey, data.anthropicBaseUrl, data.anthropicModel, data.httpsProxy);
-  return id;
-}
-
-export function updateWorkspace(
-  id: string,
-  fields: Partial<
-    Pick<
-      Workspace,
-      | "name"
-      | "repos"
-      | "claude_md"
-      | "startup_script"
-      | "git_access_token"
-      | "git_ssh_key"
-      | "git_ssh_port"
-      | "agent_type"
-      | "anthropic_api_key"
-      | "anthropic_base_url"
-      | "anthropic_model"
-      | "https_proxy"
-      | "status"
-      | "sync_status"
-      | "dev_port"
-      | "agent_port"
-      | "code_server_port"
-      | "container_id"
-      | "error_message"
-    >
-  >
-) {
-  const sets: string[] = [];
-  const values: unknown[] = [];
-
-  for (const [key, value] of Object.entries(fields)) {
-    if (value === undefined) continue;
-    const dbKey = key === "repos" ? "repos" : key;
-    sets.push(`${dbKey} = ?`);
-    values.push(key === "repos" ? JSON.stringify(value) : value);
-  }
-
-  if (sets.length === 0) return;
-
-  sets.push("updated_at = datetime('now')");
-  values.push(id);
-
-  getDb()
-    .prepare(`UPDATE workspaces SET ${sets.join(", ")} WHERE id = ?`)
-    .run(...values);
-}
-
-export function deleteWorkspace(id: string) {
-  getDb().prepare("DELETE FROM workspaces WHERE id = ?").run(id);
-}
-
-// ─── Share helpers ───
-
-export function getWorkspaceAccessLevel(workspaceId: string, userId: string, userRole: string): WorkspaceAccessLevel {
-  if (userRole === "admin") return "admin";
-  const workspace = findWorkspaceById(workspaceId);
-  if (!workspace) return null;
-  if (workspace.owner_id === userId) return "owner";
-  const share = getDb()
-    .prepare("SELECT permission FROM workspace_shares WHERE workspace_id = ? AND user_id = ?")
-    .get(workspaceId, userId) as { permission: SharePermission } | undefined;
-  if (share) return share.permission;
-  return null;
-}
-
-export function listWorkspaceShares(workspaceId: string): WorkspaceShare[] {
-  return getDb()
-    .prepare("SELECT * FROM workspace_shares WHERE workspace_id = ? ORDER BY created_at DESC")
-    .all(workspaceId) as WorkspaceShare[];
-}
-
-export function addWorkspaceShare(workspaceId: string, userId: string, permission: SharePermission): WorkspaceShare {
-  const id = crypto.randomUUID();
-  getDb()
-    .prepare("INSERT INTO workspace_shares (id, workspace_id, user_id, permission) VALUES (?, ?, ?, ?)")
-    .run(id, workspaceId, userId, permission);
-  return { id, workspace_id: workspaceId, user_id: userId, permission, created_at: new Date().toISOString() };
-}
-
-export function updateWorkspaceShare(shareId: string, permission: SharePermission) {
-  getDb().prepare("UPDATE workspace_shares SET permission = ? WHERE id = ?").run(permission, shareId);
-}
-
-export function removeWorkspaceShare(shareId: string) {
-  getDb().prepare("DELETE FROM workspace_shares WHERE id = ?").run(shareId);
-}
-
-export function removeWorkspaceShareByUserAndWorkspace(workspaceId: string, userId: string) {
-  getDb().prepare("DELETE FROM workspace_shares WHERE workspace_id = ? AND user_id = ?").run(workspaceId, userId);
-}
-
-export function listSharedWorkspaces(userId: string): (Workspace & { share_permission: SharePermission })[] {
-  const rows = getDb()
-    .prepare(`
-      SELECT w.*, ws.permission as share_permission
-      FROM workspaces w
-      JOIN workspace_shares ws ON w.id = ws.workspace_id
-      WHERE ws.user_id = ?
-      ORDER BY w.updated_at DESC
-    `)
-    .all(userId) as (WorkspaceRow & { share_permission: SharePermission })[];
-  return rows.map((row) => ({
-    ...rowToWorkspace(row),
-    share_permission: row.share_permission,
-  }));
 }

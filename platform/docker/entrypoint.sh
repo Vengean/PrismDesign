@@ -82,10 +82,12 @@ fi
 export PRISM_AGENT_URL="http://localhost:9527"
 
 # 9. Start Agent Server
-# claude-sub uses the same Claude Agent SDK but relies on ~/.claude/ login credentials
-AGENT_TYPE_FLAG=""
-if [ -n "$AGENT_TYPE" ] && [ "$AGENT_TYPE" != "claude" ] && [ "$AGENT_TYPE" != "claude-sub" ]; then
-  AGENT_TYPE_FLAG="--agent-type $AGENT_TYPE"
-fi
-echo "Starting agent server on port 9527 (type: ${AGENT_TYPE:-claude})..." | log_main
-cd /workspace && node /prism-agent/dist/cli.js start --port 9527 $AGENT_TYPE_FLAG > >(tee -a "$LOG_DIR/agent.log") 2>&1
+# Explicit CLI selection takes precedence over project-local prism.config.*.
+AGENT_PROVIDER="${PRISM_AGENT_PROVIDER:-${AGENT_TYPE:-claude}}"
+case "$AGENT_PROVIDER" in
+  claude|glm|claude-sub) ;;
+  *) echo "Unsupported Agent SDK: $AGENT_PROVIDER" >&2; exit 1 ;;
+esac
+export PRISM_AGENT_PROVIDER="$AGENT_PROVIDER"
+echo "Starting agent server on port 9527 (SDK: $AGENT_PROVIDER)..." | log_main
+cd /workspace && node /prism-agent/dist/cli.js start --port 9527 --provider "$AGENT_PROVIDER" > >(tee -a "$LOG_DIR/agent.log") 2>&1
