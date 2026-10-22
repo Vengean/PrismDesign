@@ -6,13 +6,14 @@
   "scripts": {
     "test": "node --import tsx --test tests/*.test.ts",
     "dev": "concurrently \"pnpm dev:server\" \"pnpm dev:web\"",
-    "dev:server": "tsx watch src/server.ts",
+    "dev:server": "node scripts/build-widget.mjs && tsx watch src/server.ts",
     "dev:web": "cd web && npx vite",
     "build": "pnpm build:server && pnpm build:web",
     "build:server": "tsup",
-    "build:web": "cd web && npx vite build",
+    "build:web": "node scripts/build-widget.mjs && cd web && npx vite build",
     "start": "node dist/server.js",
-    "build:image": "bash scripts/build-workspace-image.sh"
+    "build:image": "bash scripts/build-workspace-image.sh",
+    "build:widget": "node scripts/build-widget.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

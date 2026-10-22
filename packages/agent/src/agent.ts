@@ -76,7 +76,7 @@ function getSession(clientId: string): UserSession {
   }
 
   console.log(`[Claude] 创建会话, model=${sessionOptions.model}`);
-  console.log(`[Claude] 环境变量: BASE_URL=${process.env.ANTHROPIC_BASE_URL || "(default)"}, KEY=${process.env.ANTHROPIC_API_KEY?.slice(0, 10)}...`);
+  console.log(`[Claude] 环境变量: BASE_URL=${process.env.ANTHROPIC_BASE_URL || "(default)"}, KEY=${(process.env.ANTHROPIC_API_KEY ? "(configured)" : "(unset)")}...`);
 
   const session = unstable_v2_createSession(sessionOptions as any);
 
@@ -92,6 +92,7 @@ export async function runAgent(
   clientId: string,
   userMessage: string,
   onProgress?: ProgressCallback,
+  onText?: (text:string) => void,
 ): Promise<AgentResult> {
   const userSession = getSession(clientId);
   const { session } = userSession;
@@ -138,6 +139,7 @@ export async function runAgent(
             }
           } else if (block.type === "text" && block.text) {
             textParts.push(block.text);
+            onText?.(block.text + "\n\n");
             console.log("[Claude] 文本:", block.text.length > 200 ? block.text.slice(0, 200) + "..." : block.text);
             onProgress?.(block.text.length > 80 ? block.text.slice(0, 80) + "..." : block.text);
           }
@@ -161,7 +163,7 @@ export async function runAgent(
   };
 }
 
-function removeSession(clientId: string) {
+export function removeSession(clientId: string) {
   const userSession = sessions.get(clientId);
   if (userSession) {
     try { userSession.session.close(); } catch {}

@@ -1,7 +1,12 @@
 import { defineConfig } from "vite";
 import path from "node:path";
+import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
+  plugins:[tailwindcss()],
+  resolve:{dedupe:["react","react-dom"]},
+  define:{"process.env.NODE_ENV":JSON.stringify("production")},
+  esbuild:{jsx:"automatic"},
   build: {
     lib: {
       entry: path.resolve(__dirname, "src/index.ts"),

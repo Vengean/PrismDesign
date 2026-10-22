@@ -16,6 +16,7 @@ export type ProgressCallback = (text: string) => void;
 
 class PrismAcpClient implements acp.Client {
   onProgress?: ProgressCallback;
+  onText?: (text:string) => void;
   filesModified = new Set<string>();
   textParts: string[] = [];
 
@@ -43,6 +44,7 @@ class PrismAcpClient implements acp.Client {
       case "agent_message_chunk":
         if (update.content.type === "text" && update.content.text) {
           this.textParts.push(update.content.text);
+          this.onText?.(update.content.text);
           this.onProgress?.(
             update.content.text.length > 80
               ? update.content.text.slice(0, 80) + "..."
@@ -224,9 +226,11 @@ export async function runGlmAgent(
   clientId: string,
   userMessage: string,
   onProgress?: ProgressCallback,
+  onText?: (text:string) => void,
 ): Promise<AgentResult> {
   const session = await getSession(clientId);
   session.client.onProgress = onProgress;
+  session.client.onText = onText;
   session.client.reset();
 
   console.log(`[GLM] 客户端 ${clientId} 发送消息:`);
@@ -261,10 +265,10 @@ export async function runGlmAgent(
 
 // ---- Cleanup ----
 
-function removeSession(clientId: string) {
+export function removeSession(clientId: string) {
   const session = sessions.get(clientId);
   if (session) {
-    try { session.connection.closeSession({ sessionId: session.sessionId }); } catch {}
+    try { void session.connection.closeSession({ sessionId: session.sessionId }).catch(() => {}); } catch {}
     try { session.process.kill(); } catch {}
     sessions.delete(clientId);
     console.log(`[GLM] 客户端 ${clientId} 会话已移除`);

@@ -1,4 +1,5 @@
-FROM docker.1ms.run/library/node:22-slim
+ARG NODE_IMAGE=docker.1ms.run/library/node:22-slim
+FROM ${NODE_IMAGE}
 
 RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null; \
     sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list 2>/dev/null; true
@@ -37,4 +38,6 @@ RUN chmod +x /entrypoint.sh /project-entrypoint.sh
 WORKDIR /workspace
 EXPOSE 5173 8080 9527
 USER prism
+COPY verify-agent-start.cjs /verify-agent-start.cjs
+RUN node /verify-agent-start.cjs
 ENTRYPOINT ["/entrypoint.sh"]

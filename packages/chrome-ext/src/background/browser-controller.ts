@@ -8,7 +8,6 @@ export interface CurrentTabCommand {
   deltaX?: number;
   deltaY?: number;
   condition?: { kind: "url"; value: string; timeoutMs?: number } | { kind: "text"; value: string; timeoutMs?: number } | { kind: "target"; target: NonNullable<CurrentTabCommand["target"]>; timeoutMs?: number };
-  requestId?: string;
 }
 
 interface RefDescriptor { tag: string; id: string; role: string; name: string; occurrence: number }

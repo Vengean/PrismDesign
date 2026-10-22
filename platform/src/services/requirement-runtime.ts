@@ -1,3 +1,4 @@
+import {assertRuntimeChangeAllowed,assertWorkspaceIdle,workspaceEvents,releaseInterruptedRun} from './workspace-lock.js';
 import Docker from 'dockerode';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -7,9 +8,9 @@ import { getDb } from './db.js';
 import { projectConfig, resolveProjectAgentRuntime, resolveProjectGitCredential } from './projects.js';
 import { buildAgentEnvironment } from './agent-runtime.js';
 
-export function containerEngine() {
+export function containerEngine(timeoutMs=15000) {
   const candidates=[process.env.CONTAINER_SOCKET,path.join(os.homedir(),'.local/share/containers/podman/machine/podman.sock'),path.join(os.homedir(),'.config/containers/podman/machine/podman.sock'),process.env.XDG_RUNTIME_DIR && `${process.env.XDG_RUNTIME_DIR}/podman/podman.sock`,'/run/podman/podman.sock','/var/run/docker.sock'];
-  return new Docker({socketPath:candidates.find(p=>p && fs.existsSync(p)) || '/var/run/docker.sock',timeout:15000});
+  return new Docker({socketPath:candidates.find(p=>p && fs.existsSync(p)) || '/var/run/docker.sock',timeout:timeoutMs});
 }
 export function initRuntimeTables() {
   getDb().exec(`CREATE TABLE IF NOT EXISTS requirement_environments (
@@ -31,15 +32,15 @@ export function redactRuntimeText(id:string,value:string,extraSecrets:string[] =
   if(config.gitAuth.credentialRef)secrets.push(resolveProjectGitCredential(r.project_id,config.gitAuth.credentialRef).secret);
   try{secrets.push(resolveProjectAgentRuntime(r.project_id).apiKey);}catch{}
   for(const secret of secrets.filter(Boolean))value=value.split(secret).join('[REDACTED]').split(encodeURIComponent(secret)).join('[REDACTED]');
-  return value;
+  return value.replace(/(__PRISM_AGENT_TOKEN__=)[^\r\n]+/g,'$1[REDACTED]').replace(/(访问 Token:\s*)[a-f0-9]{32,}/g,'$1[REDACTED]');
 }
 function state(id:string,status:string,error='') {
   getDb().prepare('UPDATE requirements SET environment_status=? WHERE id=?').run(status,id);
   getDb().prepare(`INSERT INTO requirement_environments(requirement_id,error) VALUES(?,?) ON CONFLICT(requirement_id) DO UPDATE SET error=excluded.error,updated_at=datetime('now')`).run(id,error);
 }
-export function runtimeContainer(id:string) {requirement(id);return containerEngine().getContainer(`prism-req-${id}`);}
-export async function execRuntime(id:string,cmd:string[]) {
-  const exec=await runtimeContainer(id).exec({Cmd:cmd,AttachStdout:true,AttachStderr:true});
+export function runtimeContainer(id:string,timeoutMs=15000) {requirement(id);return containerEngine(timeoutMs).getContainer(`prism-req-${id}`);}
+export async function execRuntime(id:string,cmd:string[],timeoutMs=15000) {
+  const exec=await runtimeContainer(id,timeoutMs).exec({Cmd:cmd,AttachStdout:true,AttachStderr:true});
   const stream=await exec.start({Detach:false,Tty:false});
   const out=new PassThrough();const chunks:Buffer[]=[];let size=0;
   out.on('data',(b:Buffer)=>{size+=b.length;if(size<=2*1024*1024)chunks.push(b);});
@@ -47,8 +48,16 @@ export async function execRuntime(id:string,cmd:string[]) {
   await new Promise<void>((resolve,reject)=>{stream.on('end',resolve);stream.on('error',reject);});
   const result=await exec.inspect();return {code:result.ExitCode,text:Buffer.concat(chunks).toString('utf8')};
 }
+const gitOperations=new Set<string>();
+export async function withGitOperation<T>(id:string,work:()=>Promise<T>):Promise<T>{
+ assertWorkspaceIdle(id);if(runtimeOperationActive(id))throw Error("环境或 Git 操作进行中，请稍后重试");
+ gitOperations.add(id);workspaceEvents.emit("locked",id);
+ try{return await work();}finally{gitOperations.delete(id);workspaceEvents.emit("changed",id);}
+}
 const operations=new Map<string,Promise<void>>();
+export function runtimeOperationActive(id:string){return operations.has(id)||gitOperations.has(id);}
 export function startRuntime(id:string):Promise<void> {
+  try{assertRuntimeChangeAllowed(id);if(gitOperations.has(id))throw Error("Git 操作进行中，请稍后重试");}catch(e){return Promise.reject(e);}
   const existing=operations.get(id);if(existing)return existing;
   const work=prepareRuntime(id).finally(()=>operations.delete(id));operations.set(id,work);return work;
 }
@@ -72,12 +81,13 @@ async function prepareRuntime(id:string) {
       await container.remove();
       getDb().prepare('UPDATE requirement_environments SET container_id=NULL WHERE requirement_id=?').run(id);
     } catch(e) {if((e as {statusCode?:number}).statusCode!==404)throw e;}
+    releaseInterruptedRun(id);
     // Named volumes survive stop/start and platform restarts; unrelated resources are never removed.
     const volume=`prism-req-code-${id}`;
     await engine.createVolume({Name:volume,Labels:{'prism.requirement':id}});
     container=await engine.createContainer({name,Image:process.env.PRISM_WORKSPACE_IMAGE || 'prism-workspace:latest',
       Entrypoint:['/project-entrypoint.sh'],WorkingDir:'/workspace',
-      Env:[...buildAgentEnvironment(agent),`PRISM_REPOS=${JSON.stringify(config.repos)}`,`PRISM_BRANCH=prism/requirement-${id}`,
+      Env:[...buildAgentEnvironment(agent),'PRISM_PERMISSION_FILESYSTEM=workspace-write','PRISM_PERMISSION_COMMANDS=workspace','PRISM_PERMISSION_BROWSER=false',`PRISM_REPOS=${JSON.stringify(config.repos)}`,`PRISM_BRANCH=prism/requirement-${id}`,
         `GIT_ACCESS_TOKEN=${git.mode==='token'?git.secret:''}`,`GIT_SSH_KEY=${git.mode==='ssh'?git.secret:''}`,`GIT_SSH_PORT=${config.gitAuth.sshPort}`,
         `INIT_SCRIPT=${config.initScript}`,`STARTUP_SCRIPT=${config.startupScript}`,`CLAUDE_MD=${config.guidance}`],
       Labels:{'prism.requirement':id,'prism.project':r.project_id},ExposedPorts:{'8090/tcp':{},'8080/tcp':{}},
@@ -87,9 +97,13 @@ async function prepareRuntime(id:string) {
     await container.start();
   }catch(e){state(id,'failed',redactRuntimeText(id,(e as Error).message));throw e;}
 }
-export async function stopRuntime(id:string) {
-  if(operations.has(id))throw new Error('环境操作进行中，请稍后重试');
+export function stopRuntime(id:string):Promise<void> {
+  try{assertRuntimeChangeAllowed(id);if(runtimeOperationActive(id))throw new Error('环境操作进行中，请稍后重试');}catch(e){return Promise.reject(e);}
+  const work=performStopRuntime(id).finally(()=>operations.delete(id));operations.set(id,work);return work;
+}
+async function performStopRuntime(id:string){
   try{await runtimeContainer(id).stop({t:10});}catch(e){if(![304,404].includes((e as {statusCode:number}).statusCode))throw e;}
+  releaseInterruptedRun(id);
   state(id,'stopped');
 }
 export async function runtimeServicePorts(id:string):Promise<number[]> {

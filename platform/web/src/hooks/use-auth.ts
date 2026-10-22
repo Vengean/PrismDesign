@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import {safeLoginNext} from "@/lib/auth-redirect";
 import { api } from "@/lib/api";
 
 interface AuthUser {
@@ -21,12 +22,12 @@ export function useAuth() {
   const navigate = useNavigate();
 
   const login = useCallback(
-    async (username: string, password: string) => {
+    async (username: string, password: string, next="/projects") => {
       const data = await api.login(username, password);
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
       setUser(data.user);
-      navigate("/projects");
+      navigate(safeLoginNext(next),{replace:true});
     },
     [navigate]
   );

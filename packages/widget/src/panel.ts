@@ -1,6 +1,7 @@
-import { ICON_CLOSE, ICON_PRISM, ICON_UNLINK } from "./icons.js";
+import { ICON_CLOSE, ICON_PRISM } from "./icons.js";
 import { t } from "./i18n.js";
 
+const MOBILE_QUERY = "(max-width: 767px), (pointer: coarse) and (max-device-width: 767px)";
 const STORAGE_KEY_VISIBLE = "prism-panel-visible";
 
 export interface PanelAPI {
@@ -10,16 +11,21 @@ export interface PanelAPI {
   isVisible(): boolean;
   getBody(): HTMLElement;
   onVisibilityChange(cb: (visible: boolean) => void): void;
-  setDisconnectHandler(handler: (() => void) | null): void;
   destroy(): void;
 }
 
 function isMobile(): boolean {
-  return window.matchMedia("(max-width: 639px)").matches;
+  return window.matchMedia(MOBILE_QUERY).matches;
 }
 
-export function createPanel(shadowRoot: ShadowRoot, position: "bottom-right" | "bottom-left" = "bottom-right"): PanelAPI {
+export function createPanel(shadowRoot: ShadowRoot, position: "bottom-right" | "bottom-left" = "bottom-right", onOpenRequest?: () => boolean, restoreVisibility = true): PanelAPI {
   const posClass = position === "bottom-left" ? "bottom-left" : "";
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "prism-backdrop";
+  backdrop.onclick = () => hide();
+  backdrop.addEventListener("touchmove", (event) => event.preventDefault(), { passive: false });
+  shadowRoot.appendChild(backdrop);
 
   // ── Container ──
   const container = document.createElement("div");
@@ -29,15 +35,8 @@ export function createPanel(shadowRoot: ShadowRoot, position: "bottom-right" | "
   const fab = document.createElement("button");
   fab.className = "prism-fab";
   fab.innerHTML = ICON_PRISM;
-  fab.onclick = () => show();
+  fab.onclick = () => {if(!onOpenRequest?.())show();};
   container.appendChild(fab);
-
-  // ── Mobile FAB (separate element, always in shadow root) ──
-  const mobileFab = document.createElement("button");
-  mobileFab.className = `prism-mobile-fab ${posClass}`.trim();
-  mobileFab.innerHTML = ICON_PRISM;
-  mobileFab.onclick = () => show();
-  shadowRoot.appendChild(mobileFab);
 
   // ── Panel inner ──
   const panelInner = document.createElement("div");
@@ -62,13 +61,6 @@ export function createPanel(shadowRoot: ShadowRoot, position: "bottom-right" | "
   title.textContent = t("panel.title");
   header.appendChild(title);
 
-  const disconnectBtn = document.createElement("button");
-  disconnectBtn.className = "prism-disconnect-btn";
-  disconnectBtn.innerHTML = ICON_UNLINK;
-  disconnectBtn.title = t("connect.disconnect");
-  disconnectBtn.style.display = "none";
-  header.appendChild(disconnectBtn);
-
   const closeBtn = document.createElement("button");
   closeBtn.className = "prism-close-btn";
   closeBtn.innerHTML = ICON_CLOSE;
@@ -89,23 +81,42 @@ export function createPanel(shadowRoot: ShadowRoot, position: "bottom-right" | "
   let visible = false;
   const visibilityCbs: Array<(v: boolean) => void> = [];
 
+  function updateViewport() {
+    const viewport = window.visualViewport;
+    container.style.setProperty("--prism-viewport-height", `${viewport?.height ?? window.innerHeight}px`);
+    const host = shadowRoot.host as HTMLElement | undefined;
+    host?.style.setProperty("--prism-viewport-width", `${viewport?.width ?? window.innerWidth}px`);
+    host?.style.setProperty("--prism-viewport-height", `${viewport?.height ?? window.innerHeight}px`);
+    host?.style.setProperty("--prism-viewport-left", `${viewport?.offsetLeft ?? 0}px`);
+    host?.style.setProperty("--prism-viewport-top", `${viewport?.offsetTop ?? 0}px`);
+  }
+  const onKeyDown = (event: KeyboardEvent) => { if (visible && event.key === "Escape") hide(); };
+  window.addEventListener("keydown", onKeyDown);
+  window.addEventListener("resize", updateViewport);
+  window.visualViewport?.addEventListener("resize", updateViewport);
+  window.visualViewport?.addEventListener("scroll", updateViewport);
+  updateViewport();
+
   function applyMobileClass() {
     if (isMobile()) {
       container.classList.add("mobile-sheet");
+      shadowRoot.host?.classList.add("prism-mobile");
     } else {
       container.classList.remove("mobile-sheet");
+      shadowRoot.host?.classList.remove("prism-mobile");
     }
   }
 
   // Listen for viewport changes
-  const mq = window.matchMedia("(max-width: 639px)");
+  const mq = window.matchMedia(MOBILE_QUERY);
   mq.addEventListener("change", applyMobileClass);
   applyMobileClass();
 
   function show() {
     container.classList.remove("collapsed");
     container.classList.add("expanded");
-    mobileFab.classList.add("hidden");
+    backdrop.classList.add("open");
+    updateViewport();
     visible = true;
     try { localStorage.setItem(STORAGE_KEY_VISIBLE, "1"); } catch {}
     visibilityCbs.forEach((cb) => cb(true));
@@ -114,7 +125,7 @@ export function createPanel(shadowRoot: ShadowRoot, position: "bottom-right" | "
   function hide() {
     container.classList.remove("expanded");
     container.classList.add("collapsed");
-    mobileFab.classList.remove("hidden");
+    backdrop.classList.remove("open");
     visible = false;
     try { localStorage.setItem(STORAGE_KEY_VISIBLE, "0"); } catch {}
     visibilityCbs.forEach((cb) => cb(false));
@@ -127,7 +138,7 @@ export function createPanel(shadowRoot: ShadowRoot, position: "bottom-right" | "
 
   // Restore from previous session (skip animation on restore)
   try {
-    if (localStorage.getItem(STORAGE_KEY_VISIBLE) === "1") {
+    if (restoreVisibility && localStorage.getItem(STORAGE_KEY_VISIBLE) === "1") {
       container.classList.add("no-transition");
       show();
       requestAnimationFrame(() => {
@@ -145,18 +156,13 @@ export function createPanel(shadowRoot: ShadowRoot, position: "bottom-right" | "
     isVisible: () => visible,
     getBody: () => body,
     onVisibilityChange: (cb) => visibilityCbs.push(cb),
-    setDisconnectHandler(handler) {
-      if (handler) {
-        disconnectBtn.style.display = "flex";
-        disconnectBtn.onclick = handler;
-      } else {
-        disconnectBtn.style.display = "none";
-        disconnectBtn.onclick = null;
-      }
-    },
     destroy: () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("resize", updateViewport);
+      window.visualViewport?.removeEventListener("resize", updateViewport);
+      window.visualViewport?.removeEventListener("scroll", updateViewport);
+      backdrop.remove();
       container.remove();
-      mobileFab.remove();
       mq.removeEventListener("change", applyMobileClass);
     },
   };

@@ -10,12 +10,22 @@
     "resolveJsonModule": true,
     "sourceMap": true,
     "outDir": "dist",
-    "rootDir": "src",
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "types": ["chrome"],
+    "rootDir": "..",
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "chrome"
+    ],
     "paths": {
-      "@/*": ["./src/sidepanel/*"]
+      "@/*": [
+        "./src/sidepanel/*"
+      ]
     }
   },
-  "include": ["src"]
+  "include": [
+    "src"
+  ]
 }

@@ -49,18 +49,23 @@ if [ "$(cat /workspace/.prism-init-hash 2>/dev/null || true)" != "$init_hash" ];
 fi
 printf 'starting' > /var/log/prism/state
 code-server --bind-addr 0.0.0.0:8080 --auth none --disable-telemetry /workspace > /var/log/prism/code-server.log 2>&1 &
-# SDK selection follows the immutable project configuration pinned to this requirement.
+# SDK selection follows the latest project configuration on each environment start.
 node /prism-agent/dist/cli.js start --port 9527 --provider "$PRISM_AGENT_PROVIDER" > /var/log/prism/agent.log 2>&1 &
+agent_pid=$!
 printf '%s\n' "$STARTUP_SCRIPT" > /tmp/prism-start.sh
 echo '执行启动脚本'
 bash -e /tmp/prism-start.sh > >(tee -a /var/log/prism/startup.log) 2>&1 &
 startup_pid=$!
 while true; do
-  if ! kill -0 "$startup_pid" 2>/dev/null; then
+  if ! kill -0 "$agent_pid" 2>/dev/null; then
+    echo 'Agent 已退出，请查看 Agent 日志。'
+    fail; exit 1
+  fi
+  if [ "$startup_pid" != 0 ] && ! kill -0 "$startup_pid" 2>/dev/null; then
     if wait "$startup_pid"; then echo '启动脚本已执行完毕'; else fail; exit 1; fi
     startup_pid=0
   fi
   sleep 2
   # A successful background startup script is allowed to leave its services running.
-  if [ "$startup_pid" = 0 ]; then sleep infinity & wait $!; fi
+
 done

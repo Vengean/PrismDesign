@@ -1,5 +1,5 @@
 /**
- * Floating toolbar — 3 mutually exclusive modes: select, drag, comment.
+ * Floating toolbar — Comment annotation toolbar.
  * Default: none highlighted. ESC exits all modes.
  */
 import { t as _t } from "./i18n-content.js";
@@ -21,13 +21,6 @@ const modLabel = isMac ? "\u2318\u21E7" : "Ctrl+Shift+";
 type LucideNode = readonly [tag: "path", attributes: Readonly<Record<string, string>>];
 
 const LUCIDE_ICONS = {
-  select: [["path", { d: "M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" }]],
-  drag: [
-    ["path", { d: "M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2" }],
-    ["path", { d: "M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2" }],
-    ["path", { d: "M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8" }],
-    ["path", { d: "M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" }],
-  ],
   comment: [["path", { d: "M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z" }]],
 } as const satisfies Record<string, readonly LucideNode[]>;
 
@@ -123,14 +116,6 @@ export function createToolbar(toolbarActions: ToolbarActions) {
   toolbar = document.createElement("div");
   toolbar.id = "prism-studio-toolbar";
   toolbar.innerHTML = `
-    <button id="pd-tb-select">
-      ${lucideIcon(LUCIDE_ICONS.select)}
-      <span class="pd-tooltip">${_t("toolbar.select")}<span class="pd-shortcut">${modLabel}E</span></span>
-    </button>
-    <button id="pd-tb-drag">
-      ${lucideIcon(LUCIDE_ICONS.drag)}
-      <span class="pd-tooltip">${_t("toolbar.drag")}<span class="pd-shortcut">${modLabel}D</span></span>
-    </button>
     <button id="pd-tb-comment">
       ${lucideIcon(LUCIDE_ICONS.comment)}
       <span class="pd-tooltip">${_t("toolbar.comment")}<span class="pd-shortcut">${modLabel}C</span></span>
@@ -138,8 +123,6 @@ export function createToolbar(toolbarActions: ToolbarActions) {
   `;
   document.body.appendChild(toolbar);
 
-  toolbar.querySelector("#pd-tb-select")!.addEventListener("click", () => switchMode("select"));
-  toolbar.querySelector("#pd-tb-drag")!.addEventListener("click", () => switchMode("drag"));
   toolbar.querySelector("#pd-tb-comment")!.addEventListener("click", () => switchMode("comment"));
 
   syncButtonStates();
@@ -154,8 +137,6 @@ function switchMode(mode: "select" | "drag" | "comment") {
 
 function syncButtonStates() {
   if (!toolbar) return;
-  toolbar.querySelector("#pd-tb-select")!.classList.toggle("pd-active", activeMode === "select");
-  toolbar.querySelector("#pd-tb-drag")!.classList.toggle("pd-active", activeMode === "drag");
   toolbar.querySelector("#pd-tb-comment")!.classList.toggle("pd-active", activeMode === "comment");
   toolbar.classList.toggle("pd-disabled", disabled);
 }

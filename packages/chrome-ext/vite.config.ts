@@ -7,6 +7,7 @@ import { readFileSync, writeFileSync, rmSync } from "fs";
 export default defineConfig({
   base: "./",
   resolve: {
+    dedupe:["react","react-dom"],
     alias: {
       "@": resolve(__dirname, "src/sidepanel"),
     },

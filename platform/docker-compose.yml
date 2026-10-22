@@ -3,8 +3,8 @@ version: "3.8"
 services:
   platform:
     build:
-      context: .
-      dockerfile: docker/Dockerfile.platform
+      context: ..
+      dockerfile: platform/docker/Dockerfile.platform
     # Linux deployment: gateway listeners and loopback-only container ports share the host network.
     network_mode: host
     volumes:

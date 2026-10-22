@@ -5,8 +5,6 @@ import http from "node:http";
 import { randomBytes } from "node:crypto";
 import type { AgentEvent, AgentProvider } from "./core/types.js";
 import { LegacyProvider } from "./providers/legacy-provider.js";
-import { OpenAIProvider } from "./providers/openai-provider.js";
-import { CodexProvider } from "./providers/codex-provider.js";
 import { BrowserRuntime, type BrowserAction } from "./testing/browser-runtime.js";
 import { VerificationStore } from "./testing/verification-store.js";
 import { createBrowserToolRegistry } from "./testing/browser-tools.js";
@@ -47,18 +45,20 @@ export async function startServer(
   if (agentType === "glm") {
     const glm = await import("./glm-agent.js");
     glm.initGlmAgent(projectRoot);
-    provider = new LegacyProvider("glm", process.env.ANTHROPIC_MODEL || "glm-5.1", glm.runGlmAgent, glm.closeAllGlmSessions);
+    provider = new LegacyProvider("glm", process.env.ANTHROPIC_MODEL || "glm-5.1", glm.runGlmAgent, glm.closeAllGlmSessions, glm.removeSession);
     console.log("[Server] 使用 GLM Agent (glm-acp-agent)");
   } else if (agentType === "openai") {
+    const {OpenAIProvider}=await import("./providers/openai-provider.js");
     provider = new OpenAIProvider(projectRoot, toolRegistry);
     console.log(`[Server] 使用 OpenAI Agents SDK (${provider.model})`);
   } else if (agentType === "codex") {
+    const {CodexProvider}=await import("./providers/codex-provider.js");
     provider = new CodexProvider(projectRoot);
     console.log(`[Server] 使用 Codex SDK (${provider.model})`);
   } else {
     const claude = await import("./agent.js");
     claude.initAgent(projectRoot);
-    provider = new LegacyProvider(agentType === "claude-sub" ? "claude-sub" : "claude", process.env.ANTHROPIC_MODEL || "claude-opus-4-6", claude.runAgent, claude.closeAllSessions);
+    provider = new LegacyProvider(agentType === "claude-sub" ? "claude-sub" : "claude", process.env.ANTHROPIC_MODEL || "claude-opus-4-6", claude.runAgent, claude.closeAllSessions, claude.removeSession);
     console.log("[Server] 使用 Claude Agent SDK");
   }
 
@@ -246,7 +246,7 @@ export async function startServer(
         error: event.success ? undefined : safeError || `${event.tool} 执行失败`,
       });
       const step = updatedRun?.steps.find((item) => item.id === event.toolCallId);
-      if (step) {
+      if (step && updatedRun) {
         console.log(`[TestPerformance] run=${updatedRun.id} phase=tool tool=${JSON.stringify(step.tool)} durationMs=${step.durationMs || 0} success=${event.success}`);
       }
     }

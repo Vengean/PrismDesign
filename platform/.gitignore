@@ -4,3 +4,5 @@ web/dist/
 data/
 *.db
 .env
+
+web/public/prism-widget.js

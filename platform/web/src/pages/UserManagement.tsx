@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { api } from "@/lib/api";
 import { copyToClipboard } from "@/lib/utils";
 import { Plus, Trash2, RotateCcw, Copy, Check } from "lucide-react";
@@ -261,25 +261,30 @@ function CredentialDialog({
   info: { id: string; password: string; title: string } | null;
   onClose: () => void;
 }) {
-  const [copied, setCopied] = useState(false);
+  const [copied,setCopied]=useState(false),[copyError,setCopyError]=useState(''),[copying,setCopying]=useState(false);
+  const container=useRef<HTMLDivElement>(null),timer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined),latestInfo=useRef(info);latestInfo.current=info;
+  useEffect(()=>{setCopied(false);setCopyError('');setCopying(false);return()=>{if(timer.current)clearTimeout(timer.current);};},[info]);
 
   if (!info) return null;
 
   async function handleCopy() {
-    await copyToClipboard(`用户名: ${info!.id}\n密码: ${info!.password}`);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    if(!info||copying)return;const current=info;setCopying(true);setCopied(false);setCopyError('');
+    const success=await copyToClipboard(`用户名: ${current.id}\n密码: ${current.password}`,container.current);
+    if(latestInfo.current!==current)return;
+    setCopying(false);
+    if(!success){setCopyError('复制失败，请选中账号和密码手动复制。');return;}
+    setCopied(true);if(timer.current)clearTimeout(timer.current);timer.current=setTimeout(()=>setCopied(false),2000);
   }
 
   return (
     <Dialog open={!!info} onOpenChange={() => onClose()}>
-      <DialogContent>
+      <DialogContent ref={container}>
         <DialogHeader>
           <DialogTitle>{info.title}</DialogTitle>
           <DialogDescription>请复制并妥善保管密码，关闭后将无法再次查看。</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          <div className="p-4 bg-muted rounded-lg font-mono text-sm space-y-1.5">
+          <div className="select-text p-4 bg-muted rounded-lg font-mono text-sm space-y-1.5">
             <p>
               <span className="text-muted-foreground">用户名：</span>
               <span className="font-semibold">{info.id}</span>
@@ -289,10 +294,11 @@ function CredentialDialog({
               <span className="font-semibold">{info.password}</span>
             </p>
           </div>
+          {copyError&&<p role="alert" className="text-xs text-destructive">{copyError}</p>}
           <DialogFooter>
-            <Button variant="outline" onClick={handleCopy}>
+            <Button variant="outline" onClick={handleCopy} disabled={copying}>
               {copied ? <Check size={14} /> : <Copy size={14} />}
-              {copied ? "已复制" : "复制"}
+              {copying ? "正在复制…" : copied ? "已复制" : "复制"}
             </Button>
             <Button onClick={onClose}>确定</Button>
           </DialogFooter>

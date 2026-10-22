@@ -10,6 +10,8 @@ import authRoutes from "./routes/auth.js";
 import userRoutes from "./routes/users.js";
 import { initRuntimeTables } from "./services/requirement-runtime.js";
 import environmentRoutes from "./routes/environments.js";
+import {initConversationTables,interruptPreviousRuns} from './services/conversations.js';
+import conversationRoutes from './routes/conversations.js';
 import projectRoutes from "./routes/projects.js";
 import { initProjectTables } from "./services/projects.js";
 
@@ -26,8 +28,11 @@ if (!fs.existsSync(dataDir)) {
 
 // Initialize database
 getDb();
+console.log(`Platform database: ${path.resolve(dataDir,"platform.db")}`);
 initProjectTables();
 initRuntimeTables();
+initConversationTables();
+interruptPreviousRuns();
 
 // Middleware
 app.use(cors({ origin: true, credentials: true }));
@@ -35,6 +40,7 @@ app.use(express.json());
 
 // API routes
 app.use("/api/auth", authRoutes);
+app.use("/api/projects/:id/requirements/:requirementId/conversation", conversationRoutes);
 app.use("/api/projects/:id/requirements/:requirementId/environment", environmentRoutes);
 app.use("/api/projects", projectRoutes);
 app.use("/api/users", userRoutes);

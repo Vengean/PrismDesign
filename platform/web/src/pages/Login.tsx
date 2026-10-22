@@ -1,17 +1,20 @@
 import { useState, type FormEvent } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate,useSearchParams } from "react-router-dom";
 import { ArrowRight, Eye, EyeOff, Loader2 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+import {safeLoginNext} from "@/lib/auth-redirect";
+
 export default function Login() {
   const {user,login} = useAuth();
+  const [params]=useSearchParams();const next=safeLoginNext(params.get("next"));
   const [username,setUsername] = useState("");const [password,setPassword] = useState("");
   const [showPassword,setShowPassword] = useState(false);const [error,setError] = useState("");const [loading,setLoading] = useState(false);
-  if(user)return <Navigate to="/projects" replace />;
-  async function submit(e:FormEvent){e.preventDefault();setError("");setLoading(true);try{await login(username,password);}catch(e){setError(e instanceof Error?e.message:"登录失败，请稍后重试");}finally{setLoading(false);}}
+  if(user)return <Navigate to={next} replace />;
+  async function submit(e:FormEvent){e.preventDefault();setError("");setLoading(true);try{await login(username,password,next);}catch(e){setError(e instanceof Error?e.message:"登录失败，请稍后重试");}finally{setLoading(false);}}
   return <div className="relative flex min-h-dvh flex-col overflow-hidden bg-[#f8faf5]">
     <div aria-hidden="true" className="pointer-events-none absolute -right-48 -top-48 size-[600px] rounded-full bg-[#e8efdd]/50 blur-[100px]" />
     <header className="relative px-6 py-7 sm:px-10"><span className="brand"><img src="/prism-logo.png" alt="" className="size-8 shrink-0" /><span>Prism<span className="font-normal text-muted-foreground"> Studio</span></span></span></header>

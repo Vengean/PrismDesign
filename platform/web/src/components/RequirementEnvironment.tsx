@@ -1,3 +1,4 @@
+import RequirementGit from './RequirementGit';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -36,6 +37,7 @@ export default function RequirementEnvironment({projectId,requirementId,initialS
       {editor&&active&&<Button size="sm" variant="outline" disabled={busy} onClick={()=>action('stop')}>停止环境</Button>}
       {status==='running'&&<Button size="sm" disabled={busy} onClick={()=>open('preview')}>打开预览</Button>}
       {editor&&['starting','running'].includes(status)&&<Button size="sm" variant="outline" disabled={busy} onClick={()=>open('ide')}>VS Code</Button>}
+      {editor&&status==='running'&&<RequirementGit projectId={projectId} requirementId={requirementId}/>}
       {editor&&<Button size="sm" variant="ghost" onClick={()=>setLogsOpen(true)}>运行日志</Button>}
     </div>
     {error&&<p className="break-words text-xs text-destructive" role="alert">{error}</p>}

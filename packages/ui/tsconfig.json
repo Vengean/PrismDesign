@@ -3,7 +3,14 @@
   "compilerOptions": {
     "jsx": "react-jsx",
     "noEmit": true,
-    "rootDir": "."
+    "rootDir": ".",
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ]
   },
-  "include": ["src"]
+  "include": [
+    "src"
+  ]
 }

@@ -1,4 +1,5 @@
-FROM docker.1ms.run/library/node:22-slim
+ARG NODE_IMAGE=docker.1ms.run/library/node:22-slim
+FROM ${NODE_IMAGE} AS build
 
 RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null; \
     sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list 2>/dev/null; true
@@ -9,19 +10,34 @@ RUN npm install -g pnpm@9
 WORKDIR /app
 
 # Install server dependencies
-COPY package.json pnpm-lock.yaml* ./
+COPY platform/package.json platform/pnpm-lock.yaml* ./
 RUN pnpm install --frozen-lockfile || pnpm install
 
 # Install web dependencies
-COPY web/package.json web/
+COPY platform/web/package.json web/
 RUN cd web && pnpm install
 
 # Copy source
-COPY . .
+COPY pnpm-workspace.yaml tsconfig.json /widget-build/
+COPY packages/ui /widget-build/packages/ui
+COPY packages/widget /widget-build/packages/widget
+RUN cd /widget-build/packages/widget && pnpm install
+ENV PRISM_WIDGET_DIR=/widget-build/packages/widget
+COPY platform .
 
-# Build
-RUN pnpm build
+# Standalone platform configs use newer pnpm settings; this image installs
+# platform and web independently with pnpm 9, not as a shared workspace.
+RUN rm -f /app/pnpm-workspace.yaml /app/web/pnpm-workspace.yaml && pnpm build
 
+# Keep build tools and Widget/web dependencies out of the runtime image.
+RUN pnpm prune --prod
+
+FROM ${NODE_IMAGE} AS runtime
+WORKDIR /app
+COPY --from=build /app/package.json ./package.json
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/web/dist ./web/dist
 # Runtime
 ENV NODE_ENV=production
 ENV PORT=3000

@@ -3,10 +3,12 @@ import { ArrowLeft, KeyRound, LogOut, Users } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
+import {loginLocation} from "@/lib/auth-redirect";
+
 export default function Layout() {
   const {user,isAdmin,logout} = useAuth();
-  const {pathname} = useLocation();
-  if (!user) return <Navigate to="/login" replace />;
+  const {pathname,search,hash} = useLocation();
+  if (!user) return <Navigate to={loginLocation(pathname+search+hash)} replace />;
   return <div className="app-shell">
     <header className="app-header">
       <div className="app-header-inner">

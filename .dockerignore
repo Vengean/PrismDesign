@@ -1,0 +1,16 @@
+.git
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+platform/data
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/credentials.key
+.pnpm-store
+.aws
+.ssh
+.codex
+.agents
+**/.DS_Store

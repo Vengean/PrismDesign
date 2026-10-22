@@ -1,3 +1,4 @@
+import {loginLocation} from "./auth-redirect";
 const BASE_URL = "/api";
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
@@ -16,10 +17,10 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
     headers,
   });
 
-  if (res.status === 401) {
+  if (res.status === 401 && url!=="/auth/login") {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
-    window.location.href = "/login";
+    window.location.href = loginLocation(window.location.pathname+window.location.search+window.location.hash);
     throw new Error("Unauthorized");
   }
 
@@ -33,6 +34,12 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  getRequirementGit(projectId:string,requirementId:string){return request<{repos:{name:string}[];branch:string}>(`/projects/${projectId}/requirements/${requirementId}/environment/git`);},
+  getRequirementGitStatus(projectId:string,requirementId:string,repo:string){return request<{dirty:boolean}>(`/projects/${projectId}/requirements/${requirementId}/environment/git/status?repo=${encodeURIComponent(repo)}`);},
+  operateRequirementGit(projectId:string,requirementId:string,repo:string,action:'pull'|'push'|'commit',message?:string){return request<{success:boolean;message:string;commit:string}>(`/projects/${projectId}/requirements/${requirementId}/environment/git/${action}`,{method:'POST',body:JSON.stringify({repo,message})});},
+  getConversation(projectId:string,requirementId:string,after=0,eventAfter=0){return request<Conversation>(`/projects/${projectId}/requirements/${requirementId}/conversation?after=${after}&eventAfter=${eventAfter}`);},
+  sendConversation(projectId:string,requirementId:string,message:string,requestId:string){return request<{id:string}>(`/projects/${projectId}/requirements/${requirementId}/conversation/messages`,{method:'POST',body:JSON.stringify({message,requestId})});},
+  cancelConversation(projectId:string,requirementId:string,runId:string){return request(`/projects/${projectId}/requirements/${requirementId}/conversation/runs/${runId}/cancel`,{method:'POST'});},
   getEnvironment(projectId:string,requirementId:string) {
     return request<{status:string;error:string;branch:string;ports:number[]}>(`/projects/${projectId}/requirements/${requirementId}/environment`);
   },
@@ -43,7 +50,7 @@ export const api = {
     return request<{logs:string}>(`/projects/${projectId}/requirements/${requirementId}/environment/logs`);
   },
   openEnvironment(projectId:string,requirementId:string,kind:"preview"|"ide",port?:number) {
-    return request<{url:string}>(`/projects/${projectId}/requirements/${requirementId}/environment/open-${kind}`,{method:"POST",body:JSON.stringify({port})});
+    return request<{url:string}>(`/projects/${encodeURIComponent(projectId)}/requirements/${encodeURIComponent(requirementId)}/environment/open-${kind}`,{method:"POST",body:JSON.stringify({port})});
   },
   getProjects(options: {q?:string;cursor?:string;limit?:number} = {}, signal?:AbortSignal) {
     const params = new URLSearchParams({limit:String(options.limit || 12)});
@@ -134,4 +141,13 @@ export interface ProjectDetail extends Project {
   member_candidates?: { id: string }[];
   requirements: { id: string; title: string; description: string; acceptance: string; status: string; environment_status: string; session_id: string; created_by: string }[];
   releases: { id: string; name: string; description: string; status: string; environment_status: string; created_by: string }[];
+}
+
+export interface ConversationMessage {id:string;seq:number;role:'user'|'assistant';body:string;user_id:string|null;run_id:string;}
+export interface Conversation {
+ session_id:string;restricted:boolean;messages:ConversationMessage[];current_messages:ConversationMessage[];
+ runs:{id:string;status:string;user_id:string;error?:string;cancel_supported?:number}[];
+ active_run:{id:string;status:string;user_id:string}|null;
+ events:{seq:number;type:string;data:Record<string,unknown>}[];
+ next_message_cursor:number;next_event_cursor:number;
 }
