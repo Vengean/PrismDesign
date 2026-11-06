@@ -94,21 +94,33 @@ try {
   messages.push({id:'group-task',seq:messages.at(-1).seq+1,run_id:activeRun.id,role:'assistant',body:'正在修改按钮',user_id:null});
   messages.push({id:'group-alice',seq:messages.at(-1).seq+1,run_id:null,role:'user',body:'补充：按钮保持蓝色',user_id:'alice'});push();
   const task=page.locator('[data-message-id="group-task"]');await task.getByRole('button',{name:'取消运行',exact:true}).waitFor();await task.getByText('调整按钮样式',{exact:true}).waitFor();await page.screenshot({path:'/tmp/prism-group-running.png'});
-  assert.equal(await page.locator('[data-message-id="group-alice"]').getByRole('img',{name:'alice的头像'}).count(),1);
+  assert.equal(await page.locator('[data-message-id="group-alice"] .message-author').innerText(),'alice');assert.equal(await page.locator('[data-message-id] img, [data-message-id] time').count(),0);assert.equal(await page.locator('[data-message-id="m38"] .message-author').count(),0);assert.equal(await task.getByRole('button',{name:'取消运行',exact:true}).innerText(),'');const titleSize=await task.locator('.message-task-title').evaluate(el=>getComputedStyle(el).fontSize);assert.equal(titleSize,await page.locator('[data-message-id="group-alice"] .chat-markdown').evaluate(el=>getComputedStyle(el).fontSize));
   const input=page.locator('textarea');await input.fill('运行中继续发消息');const send=page.getByRole('button',{name:/^(发送|Send)$/});assert.equal(await send.isEnabled(),true);await send.click();await page.waitForFunction(()=>!document.querySelector('textarea').value);
   await page.waitForTimeout(100);assert.equal(messages.filter(m=>m.body==='运行中继续发消息').length,1);assert.equal(await page.getByRole('button',{name:'取消运行',exact:true}).count(),1);
   await page.evaluate(()=>{window.taskNode=document.querySelector('[data-message-id="group-task"]');const list=document.querySelector('[data-chat-viewport]>div');list.scrollTop=300;window.groupScroll=list.scrollTop;});await page.waitForTimeout(100);
   const row=messages.find(m=>m.id==='group-task');row.body='已完成修改。\n\n@u 请确认按钮颜色。';row.mentions=JSON.stringify(['u']);activeRun=null;runRows=[{id:'collaboration-run',status:'succeeded',user_id:'alice',cancel_supported:1}];push();
   await task.getByText('已完成修改。',{exact:true}).waitFor();assert.equal(await task.getByRole('button',{name:'取消运行',exact:true}).count(),0);assert.equal(await task.locator('[data-mention-user="u"]').count(),1);
   assert.deepEqual(await page.evaluate(()=>({same:window.taskNode===document.querySelector('[data-message-id="group-task"]'),scroll:document.querySelector('[data-chat-viewport]>div').scrollTop===window.groupScroll})),{same:true,scroll:true});
-  const reminder=page.getByRole('button',{name:'有人 @ 了你 · 查看消息'});await reminder.click();assert.equal(await reminder.count(),0);
+  const reminder=page.getByRole('button',{name:'有人 @ 了你 · 查看消息'});await reminder.waitFor();
+  // Reading by scrolling is enough; no reminder click is required.
+  await task.locator('[data-mention-user="u"]').scrollIntoViewIfNeeded();await reminder.waitFor({state:'hidden'});
+  assert.equal(await page.evaluate(()=>Number(localStorage.getItem('prism-mention-seen:s:u'))),row.seq);
+  push();await page.waitForTimeout(100);assert.equal(await reminder.count(),0);
   await page.screenshot({path:'/tmp/prism-group-completed.png'});
+  await page.evaluate(()=>{const list=document.querySelector('[data-chat-viewport]>div');list.scrollTop=list.scrollHeight;});await page.waitForTimeout(100);
+  const visibleMention={id:'visible-mention',seq:messages.at(-1).seq+1,run_id:'visible',role:'assistant',body:'@u 已经在可视区域的新消息。',mentions:JSON.stringify(['u']),user_id:null};messages.push(visibleMention);push();
+  await page.waitForFunction(seq=>Number(localStorage.getItem('prism-mention-seen:s:u'))===seq,visibleMention.seq);assert.equal(await reminder.count(),0);
   // The next running turn owns its cancellation control; cancelling keeps sending enabled.
   activeRun={id:'collaboration-run',status:'running',user_id:'bob'};runRows=[{...activeRun,title:'调整按钮样式',cancel_supported:1}];row.body='正在执行下一轮';push();await task.getByRole('button',{name:'取消运行',exact:true}).click();await page.waitForTimeout(100);assert.equal(activeRun.status,'cancelling');assert.equal(await task.getByRole('button',{name:'取消运行',exact:true}).count(),0);await input.fill('取消期间也能继续讨论');assert.equal(await send.isEnabled(),true);await input.fill('');
   activeRun=null;runRows=[{id:'collaboration-run',status:'cancelled',user_id:'bob'}];row.body='任务已取消。';push();await task.getByText('任务已取消。',{exact:true}).waitFor();
-  const widget=await browser.newPage();await widget.addInitScript(()=>localStorage.setItem('prism-panel-visible','1'));await widget.goto(base+'/?widget=1');const root=widget.locator('#prism-studio-widget');await root.locator('[data-message-id="group-task"]').waitFor();assert.equal(await root.getByRole('img',{name:'alice的头像'}).count(),1);
+  const widget=await browser.newPage();await widget.addInitScript(()=>localStorage.setItem('prism-panel-visible','1'));await widget.goto(base+'/?widget=1');const root=widget.locator('#prism-studio-widget');await root.locator('[data-message-id="group-task"]').waitFor();assert.equal(await root.locator('[data-message-id="group-alice"] .message-author').innerText(),'alice');assert.equal(await root.locator('[data-message-id] img, [data-message-id] time').count(),0);
+  await root.getByRole('button',{name:'关闭面板',exact:true}).click();
+  const hiddenMention={id:'hidden-mention',seq:messages.at(-1).seq+1,run_id:'hidden',role:'assistant',body:'@u 关闭面板时收到的消息。',mentions:JSON.stringify(['u']),user_id:null};messages.push(hiddenMention);push();
+  await root.locator('[data-message-id="hidden-mention"]').waitFor({state:'attached'});await widget.waitForTimeout(100);assert.ok(await widget.evaluate(seq=>Number(localStorage.getItem('prism-mention-seen:s:u'))<seq,hiddenMention.seq));
+  await root.locator('.prism-fab').click();await widget.waitForFunction(seq=>Number(localStorage.getItem('prism-mention-seen:s:u'))===seq,hiddenMention.seq);
+  await widget.reload();await root.locator('[data-message-id="hidden-mention"]').waitFor();assert.equal(await root.getByRole('button',{name:'有人 @ 了你 · 查看消息'}).count(),0);
   contextData.role='viewer';await widget.reload();await widget.waitForTimeout(300);assert.equal(await widget.locator('#prism-studio-widget').count(),0);await page.reload();await page.getByText('当前账号仅可预览页面，群聊仅向编辑成员开放。',{exact:true}).waitFor();assert.equal(await page.locator('textarea').count(),0);
-  assert.deepEqual(errors,[]);console.log('PASS: real extension and widget group avatars, sending during runs, inline cancellation, in-place completion, stable scroll, mentions and viewer exclusion.');
+  assert.deepEqual(errors,[]);console.log('PASS: real extension and widget nickname-only headers, consistent task font, stop icons, sending during runs, inline cancellation, in-place completion, stable scroll, visibility-based mention read receipts, hidden-panel unread state, reload persistence and viewer exclusion.');
  }else if(process.argv.includes('--attachments')){
   const input=page.locator('input[type="file"]'),popover=page.locator('.attachment-popover');
   const doc=Buffer.from('# 需求文档\n请实现一个保存按钮。'),resource=Buffer.from([0,255,1,2,13,10,0]);

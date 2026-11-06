@@ -1,13 +1,13 @@
 import type {ToolActivity} from './conversation-progress.js';
+import {observeMentionVisibility} from './mention-visibility.js';
 import {observeChatViewport} from './chat-viewport.js';
 import React from 'react';
 import { useRef, useEffect, useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "./button";
-import { Send, Trash2, MessageSquare, MessageSquareText, Loader2, AlertCircle, CheckCircle2, Circle, XCircle, ChevronDown, Paperclip, X, Pencil, FlaskConical, Copy, Download, RefreshCw } from "lucide-react";
+import { Send, Square, Trash2, MessageSquare, MessageSquareText, Loader2, AlertCircle, CheckCircle2, Circle, XCircle, ChevronDown, Paperclip, X, Pencil, FlaskConical, Copy, Download, RefreshCw } from "lucide-react";
 import { t } from "./i18n.js";
 import type { ChatMessage, CommentAnnotation, ElementSelection, TestRunInfo } from "./types.js";
-import {MessageAvatar} from './message-identity.js';
 import {MAX_ATTACHMENTS,MAX_ATTACHMENT_SIZE,MAX_ATTACHMENT_TOTAL,type AttachmentClient,type AttachmentMeta} from "./attachment-client.js";
 
 import {MessageMarkdown} from './MessageMarkdown.js';
@@ -353,6 +353,11 @@ function ChatView({ readOnly,unavailable,chat, selection, comments, onEditCommen
     setContextOrder((order) => comments.length ? (order.includes("comments") ? order : [...order, "comments"]) : order.filter((item) => item !== "comments"));
   }, [comments.length]);
 
+  useEffect(()=>{
+    if(!chat.mentionTarget||!chat.onMentionRead||!scrollRef.current)return;
+    return observeMentionVisibility(scrollRef.current,chat.mentionTarget,chat.currentUserId,chat.onMentionRead);
+  },[chat.mentionTarget,chat.onMentionRead,chat.currentUserId,messages]);
+
   const handleSend = async () => {
     if(readOnly||sending||chat.blocked)return;
     if (!input.trim() && !comments.length && !attachments.some((item) => !item.uploading && !item.error)) return;
@@ -438,11 +443,10 @@ function ChatView({ readOnly,unavailable,chat, selection, comments, onEditCommen
             const hasContext = msg.role === "user" && Boolean(msg.comments?.length || msg.attachments?.length);
             return (
             <div key={message.id ?? i} data-message-id={message.id} className={`group flex gap-2 ${own ? "justify-end" : "justify-start"}`}>
-              {chat.collaborative&&!own&&<MessageAvatar name={msg.authorName||'Agent'} agent={msg.role!=="user"}/>}
               <div className="min-w-0 max-w-[85%] flex-1" style={{flex: '0 1 auto'}}>
-              {chat.collaborative&&<div className={`mb-1 flex items-center gap-2 text-[10px] text-muted-foreground ${own?'justify-end':''}`}><span>{msg.authorName||'Agent'}</span>{msg.timestamp>0&&<time>{new Date(msg.timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</time>}</div>}
+              {chat.collaborative&&!own&&<div className="message-author mb-1 text-xs leading-5 text-muted-foreground">{msg.authorName||'Agent'}</div>}
               <div className={`relative min-w-0 text-sm font-normal leading-relaxed ${hasContent && msg.role === "user" ? "px-3 py-2 rounded-xl" : ""} ${!msg.pending ? "mb-6" : ""} ${msg.verification && (msg.testRun || ["passed", "failed", "inconclusive"].includes(msg.verification.status || "")) ? "mb-7" : ""} ${hasContent && hasContext ? "mt-7" : ""} ${hasContent && msg.role === "user" ? "bg-[#dbeafe] text-[#2563eb] rounded-br-sm" : hasContent ? "text-foreground" : ""}`}>
-                {msg.pending&&msg.taskTitle&&<div className="mb-1 text-xs font-medium text-foreground [overflow-wrap:anywhere]">{msg.taskTitle}</div>}
+                {msg.pending&&msg.taskTitle&&<div className="message-task-title mb-1 text-sm font-normal leading-relaxed text-foreground [overflow-wrap:anywhere]">{msg.taskTitle}</div>}
                 {hasContext && <div className={`${hasContent ? (own?"absolute bottom-full right-0 mb-1":"absolute bottom-full left-0 mb-1") : ""} flex max-w-[calc(100vw-32px)] gap-1`}>{(msg.contextOrder?.length ? msg.contextOrder : ["comments", "attachments"]).map((kind) => kind === "comments" ? <CommentTag key={kind} comments={msg.comments || []} align={own?"right":"left"} /> : <AttachmentTag key={kind} files={msg.attachments || []} align={own?"right":"left"} onDownload={chat.downloadAttachment} />)}</div>}
                 {hasContent && (msg.content.startsWith("⏳") ? (
                   <div className="flex min-w-0 max-w-full items-start gap-1.5 overflow-hidden">
@@ -450,7 +454,7 @@ function ChatView({ readOnly,unavailable,chat, selection, comments, onEditCommen
                       <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
                     </span>
                     <span className="min-w-0 flex-1 whitespace-pre-wrap break-all text-muted-foreground">{msg.content.slice(2)}</span>
-                    {!readOnly&&msg.pending&&(msg.canCancel??chat.canCancel)!==false&&<button type="button" className="shrink-0 rounded border px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted" onClick={cancelCurrent}>取消运行</button>}
+                    {!readOnly&&msg.pending&&(msg.canCancel??chat.canCancel)!==false&&<button type="button" aria-label="取消运行" title="取消运行" className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" onClick={cancelCurrent}><Square className="h-3 w-3 fill-current" aria-hidden="true" /></button>}
                   </div>
                 ) : (
                   <div className="chat-markdown">
@@ -471,7 +475,6 @@ function ChatView({ readOnly,unavailable,chat, selection, comments, onEditCommen
                 </div>}
               </div>
               </div>
-              {chat.collaborative&&own&&<MessageAvatar name={msg.authorName||'我'}/>}
             </div>
           );})}
           </>
@@ -481,7 +484,7 @@ function ChatView({ readOnly,unavailable,chat, selection, comments, onEditCommen
       </div>
 
       <div className="p-2 space-y-1.5">
-        {chat.mentionTarget&&<button type="button" className="w-full rounded border bg-amber-50 px-2 py-1.5 text-left text-xs text-amber-900" onClick={()=>{const target=Array.from(scrollRef.current?.querySelectorAll<HTMLElement>('[data-message-id]')||[]).find(el=>el.dataset.messageId===chat.mentionTarget);if(target){followLatest.current=false;target.scrollIntoView({block:'center'});chat.onMentionRead?.();}}}>有人 @ 了你 · 查看消息</button>}
+        {chat.mentionTarget&&<button type="button" className="w-full rounded border bg-amber-50 px-2 py-1.5 text-left text-xs text-amber-900" onClick={()=>{const target=Array.from(scrollRef.current?.querySelectorAll<HTMLElement>('[data-message-id]')||[]).find(el=>el.dataset.messageId===chat.mentionTarget);if(target){followLatest.current=false;target.scrollIntoView({block:'center'});}}}>有人 @ 了你 · 查看消息</button>}
         {attachmentError&&<p role="alert" className="text-xs text-destructive">{attachmentError}</p>}
         {chat.blockedReason && !sending && <p role="status" className="text-xs leading-relaxed text-muted-foreground">{chat.blockedReason}</p>}
         {(comments.length > 0 || attachments.length > 0) && <div className="flex flex-wrap gap-1">{contextOrder.map((kind) => kind === "comments" ? <CommentTag key={kind} comments={comments} editable onEdit={onEditComment} onRemove={onRemoveComment} /> : <AttachmentTag key={kind} files={attachments} editable onRemove={removeAttachment} onRetry={id=>{const item=attachments.find(file=>file.id===id);if(item)queueUpload(item);}} onDownload={chat.downloadAttachment} />)}</div>}
