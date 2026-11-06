@@ -1,0 +1,14 @@
+# Run Caddy on the Linux host (same network namespace as the platform).
+# Wildcard certificate/key must be provisioned beforehand, e.g. via DNS-01.
+{$PRISM_PLATFORM_HOST} {
+    tls {$PRISM_TLS_CERT} {$PRISM_TLS_KEY}
+    reverse_proxy 127.0.0.1:3000
+}
+
+*.{$PRISM_PREVIEW_DOMAIN} {
+    tls {$PRISM_TLS_CERT} {$PRISM_TLS_KEY}
+    reverse_proxy 127.0.0.1:3100 {
+        # Preserve the browser-facing authority used for host routing and IDE WS.
+        header_up Host {host}
+    }
+}

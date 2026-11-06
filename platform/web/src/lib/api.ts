@@ -37,11 +37,11 @@ export const api = {
   getRequirementGit(projectId:string,requirementId:string){return request<{repos:{name:string}[];branch:string}>(`/projects/${projectId}/requirements/${requirementId}/environment/git`);},
   getRequirementGitStatus(projectId:string,requirementId:string,repo:string){return request<{dirty:boolean}>(`/projects/${projectId}/requirements/${requirementId}/environment/git/status?repo=${encodeURIComponent(repo)}`);},
   operateRequirementGit(projectId:string,requirementId:string,repo:string,action:'pull'|'push'|'commit',message?:string){return request<{success:boolean;message:string;commit:string}>(`/projects/${projectId}/requirements/${requirementId}/environment/git/${action}`,{method:'POST',body:JSON.stringify({repo,message})});},
-  getConversation(projectId:string,requirementId:string,after=0,eventAfter=0){return request<Conversation>(`/projects/${projectId}/requirements/${requirementId}/conversation?after=${after}&eventAfter=${eventAfter}`);},
+  getConversation(projectId:string,requirementId:string,after=0,eventAfter=0,wait=false,liveAfter=''){return request<Conversation>(`/projects/${projectId}/requirements/${requirementId}/conversation?after=${after}&eventAfter=${eventAfter}&liveAfter=${encodeURIComponent(liveAfter)}${wait?'&wait=1':''}`);},
   sendConversation(projectId:string,requirementId:string,message:string,requestId:string){return request<{id:string}>(`/projects/${projectId}/requirements/${requirementId}/conversation/messages`,{method:'POST',body:JSON.stringify({message,requestId})});},
   cancelConversation(projectId:string,requirementId:string,runId:string){return request(`/projects/${projectId}/requirements/${requirementId}/conversation/runs/${runId}/cancel`,{method:'POST'});},
   getEnvironment(projectId:string,requirementId:string) {
-    return request<{status:string;error:string;branch:string;ports:number[]}>(`/projects/${projectId}/requirements/${requirementId}/environment`);
+    return request<{status:string;error:string;branch:string;ports:number[];services:{port:number;protocol:string;ready:boolean;page?:boolean;statusCode?:number}[];agentReady:boolean;phase:string;elapsedSeconds:number;defaultPort?:number}>(`/projects/${projectId}/requirements/${requirementId}/environment`);
   },
   environmentAction(projectId:string,requirementId:string,action:"start"|"stop") {
     return request(`/projects/${projectId}/requirements/${requirementId}/environment/${action}`,{method:"POST"});
@@ -143,11 +143,11 @@ export interface ProjectDetail extends Project {
   releases: { id: string; name: string; description: string; status: string; environment_status: string; created_by: string }[];
 }
 
-export interface ConversationMessage {id:string;seq:number;role:'user'|'assistant';body:string;user_id:string|null;run_id:string;}
+export interface ConversationMessage {id:string;seq:number;role:'user'|'assistant';body:string;user_id:string|null;run_id:string|null;mentions?:string;created_at?:string;}
 export interface Conversation {
  session_id:string;restricted:boolean;messages:ConversationMessage[];current_messages:ConversationMessage[];
- runs:{id:string;status:string;user_id:string;error?:string;cancel_supported?:number}[];
+ runs:{id:string;status:string;title?:string;user_id:string;error?:string;cancel_supported?:number}[];
  active_run:{id:string;status:string;user_id:string}|null;
- events:{seq:number;type:string;data:Record<string,unknown>}[];
- next_message_cursor:number;next_event_cursor:number;
+ events:{seq:number;transient?:boolean;type:string;data:Record<string,unknown>}[];
+ next_message_cursor:number;next_event_cursor:number;next_live_cursor?:string;
 }

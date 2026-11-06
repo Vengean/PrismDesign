@@ -1,3 +1,4 @@
+import {findDevPort} from "../scripts/dev-port.mjs";
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -26,7 +27,7 @@ function corsPlugin(): Plugin {
   };
 }
 
-export default defineConfig({
+export default defineConfig(async ({command}) => ({
   plugins: [corsPlugin(), react(), tailwindcss()],
   resolve: {
     alias: {
@@ -35,10 +36,11 @@ export default defineConfig({
   },
   server: {
     host: "0.0.0.0",
-    port: 5173,
+    port: command === "serve" ? await findDevPort() : 5173,
+    strictPort: true,
     proxy: {
       "/api": {
-        target: "http://localhost:3001",
+        target: `http://127.0.0.1:${process.env.PORT || 3001}`,
         changeOrigin: true,
       },
     },
@@ -46,4 +48,4 @@ export default defineConfig({
   build: {
     outDir: "dist",
   },
-});
+}));

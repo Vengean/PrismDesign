@@ -122,7 +122,7 @@ export class CodexProvider implements AgentProvider {
 
   private toolLabel(item: ThreadItem): { tool: string; label: string } | null {
     if (item.type === "command_execution") {
-      return { tool: "command_execution", label: `执行命令 ${item.command.slice(0, 100)}` };
+      return { tool: "command_execution", label: `执行命令 ${item.command}` };
     }
     if (item.type === "file_change") {
       return { tool: "file_change", label: `修改文件 ${item.changes.map((change) => change.path).join(", ")}` };

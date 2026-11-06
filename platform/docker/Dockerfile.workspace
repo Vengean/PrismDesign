@@ -33,6 +33,7 @@ RUN useradd -m -s /bin/bash prism && \
 COPY entrypoint.sh /entrypoint.sh
 COPY project-entrypoint.sh /project-entrypoint.sh
 COPY preview-proxy.cjs /preview-proxy.cjs
+COPY runtime-health.cjs /runtime-health.cjs
 RUN chmod +x /entrypoint.sh /project-entrypoint.sh
 
 WORKDIR /workspace

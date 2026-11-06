@@ -1,3 +1,4 @@
+import {ReplyBuffer} from './core/reply-buffer.js';
 import {
   unstable_v2_createSession,
   type SDKSession,
@@ -103,10 +104,11 @@ export async function runAgent(
   const TOOL_LABELS: Record<string, string> = {
     Read: "读取", Write: "写入", Edit: "编辑",
     Glob: "搜索文件", Grep: "搜索内容", Bash: "执行命令",
+    TodoWrite: "更新任务计划", TodoRead: "查看任务计划",
   };
 
   let resultText = "";
-  const textParts: string[] = [];
+  const reply = new ReplyBuffer();
   const filesModified = new Set<string>();
 
   try {
@@ -122,13 +124,17 @@ export async function runAgent(
       }
 
       if (m.type === "assistant" && m.message?.content) {
+        reply.clear();
         const blocks: any[] = Array.isArray(m.message.content) ? m.message.content : [];
         for (const block of blocks) {
           if (block.type === "tool_use") {
+            reply.clear();
             const toolName = block.name || "";
             const input = block.input || {};
             const filePath = input.file_path || input.path || input.filePath;
-            if (filePath) {
+            if (toolName === "Bash" && typeof input.command === "string") {
+              onProgress?.(`执行命令 ${input.command}`);
+            } else if (filePath) {
               if (toolName === "Write" || toolName === "Edit") filesModified.add(filePath);
               const shortPath = filePath.split("/").slice(-2).join("/");
               console.log(`[Claude] 工具调用: ${toolName} ${shortPath}`);
@@ -138,7 +144,7 @@ export async function runAgent(
               onProgress?.(`${TOOL_LABELS[toolName] || toolName}...`);
             }
           } else if (block.type === "text" && block.text) {
-            textParts.push(block.text);
+            reply.append(block.text+"\n\n");
             onText?.(block.text + "\n\n");
             console.log("[Claude] 文本:", block.text.length > 200 ? block.text.slice(0, 200) + "..." : block.text);
             onProgress?.(block.text.length > 80 ? block.text.slice(0, 80) + "..." : block.text);
@@ -153,7 +159,7 @@ export async function runAgent(
     throw error;
   }
 
-  const finalMessage = resultText || textParts.join("\n\n");
+  const finalMessage = reply.final(resultText) || "已完成。";
   console.log("[Claude] 完成, filesModified:", [...filesModified]);
 
   return {

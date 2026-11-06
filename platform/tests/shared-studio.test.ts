@@ -9,7 +9,7 @@ import {isRunWorking,runMessageBody,connectionMessage} from '../../packages/ui/s
 import {STUDIO_LOGO} from '../../packages/ui/src/studio/brand';
 const require=createRequire(new URL('../../packages/ui/package.json',import.meta.url));
 const {createElement}=require('react'),{renderToStaticMarkup}=require('react-dom/server');
-test('Widget header contains only centered branding and close action; extension header shows demand and status',()=>{
+test('studio headers keep connection errors and retry controls inside the fixed header',()=>{
  const props={
   surface:'widget',actions:createElement('button',{'aria-label':'关闭面板'},'×'),
   context:{protocol:1,projectId:'p',requirementId:'r',sessionId:'s',projectName:'项目名称',title:'需求名称',role:'editor',userId:'owner'},
@@ -17,10 +17,10 @@ test('Widget header contains only centered branding and close action; extension 
   chat:{messages:[{role:'ai',content:'**Markdown answer**',timestamp:1},{role:'user',content:'调整按钮',timestamp:2,comments:[{element:{tagName:'BUTTON',domPath:'body > button'},comment:'改成蓝色'}]}],sending:false,sendMessage(){},cancelCurrent(){},clearHistory(){},deleteMessage(){},startVerification(){},fixVerification(){}},
  };const html=renderToStaticMarkup(createElement(StudioPanel,props));
  const header=html.match(/<header\b[\s\S]*?<\/header>/)![0];
- assert.match(header,/Prism Studio/);assert.match(header,/关闭面板/);assert.match(header,/items-center/);assert.ok(!header.includes('项目名称'));assert.ok(!header.includes('需求名称'));assert.ok(!header.includes('role="status"'));
+ assert.match(header,/Prism Studio/);assert.match(header,/关闭面板/);assert.match(header,/items-center/);assert.ok(!header.includes('项目名称'));assert.ok(!header.includes('需求名称'));assert.match(header,/role="status"/);assert.match(header,/连接中断 · 重试/);assert.match(header,/h-11 shrink-0/);assert.ok(!html.includes('role="alert"'));
  const extension=renderToStaticMarkup(createElement(StudioPanel,{...props,surface:'extension',actions:undefined}));const extensionHeader=extension.match(/<header\b[\s\S]*?<\/header>/)![0];
  assert.match(extensionHeader,/需求名称/);assert.match(extensionHeader,/role="status"/);assert.match(extensionHeader,/items-center/);assert.ok(!extensionHeader.includes('<img'));assert.ok(!extensionHeader.includes('Prism Studio'));assert.ok(!extensionHeader.includes('项目名称'));
-assert.match(html,/<strong>Markdown answer<\/strong>/);assert.match(html,/条评论/);assert.match(html,/连接已断开/);assert.match(html,/重试/);assert.match(html,/disabled/);
+assert.match(html,/<strong>Markdown answer<\/strong>/);assert.match(html,/条评论/);assert.ok(!html.includes('连接已断开'));assert.ok(!html.includes('连接记录'));assert.match(html,/重新连接平台/);assert.match(html,/重试/);assert.match(html,/disabled/);
  assert.ok(html.includes(STUDIO_LOGO));assert.ok(!html.includes('type="password"'));assert.ok(!html.includes('断开连接'));assert.ok(!html.includes('始终允许'));
  assert.equal(Buffer.compare(Buffer.from(STUDIO_LOGO.split(',')[1],'base64'),fs.readFileSync(new URL('../../packages/chrome-ext/public/icons/icon-48.png',import.meta.url))),0);
 });
@@ -49,4 +49,13 @@ test('interrupted tasks display recovery in the assistant message without a perm
  const html=renderToStaticMarkup(createElement(StudioPanel,{surface:'extension',context:{title:'需求名称',role:'editor'},annotations:{start(){},stop(){},subscribe(){return()=>{};}},connection:{connected:true,error:'',retry(){}},chat:{messages:[{role:'ai',content,timestamp:1,pending:false}],sending:false,blocked:true,canCancel:false,sendMessage(){},cancelCurrent(){},clearHistory(){},deleteMessage(){},startVerification(){},fixVerification(){}}}));
  assert.ok(!html.includes('role="alert"'));assert.match(html,/已完成部分修改/);assert.match(html,/任务已中断/);assert.match(html,/重启需求环境/);assert.ok(!html.includes('取消运行'));assert.ok(!html.includes('chat.thinking'));
  assert.match(connectionMessage(Error('Failed to fetch')),/检查网络/);assert.equal(connectionMessage(Error('请登录平台')),'请登录平台');
+});
+
+test('connection diagnostics distinguish request timeouts, tab messaging and network failures',()=>{
+ assert.match(connectionMessage(Error('/conversation: signal timed out')),/平台请求超时.*signal timed out/);
+ assert.match(connectionMessage(Error('Could not establish connection. Receiving end does not exist.')),/插件与当前页面通信中断.*Receiving end/);
+ assert.match(connectionMessage(Error('/conversation HTTP 504: Gateway Timeout')),/HTTP 504/);
+ assert.match(connectionMessage(Error('Failed to fetch')),/Failed to fetch/);
+ assert.equal(connectionMessage(Error('请登录平台')),'请登录平台');
+ assert.ok(!connectionMessage(Error('Failed to fetch\nsecond line')).includes('second line'));
 });

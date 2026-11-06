@@ -27,32 +27,32 @@ app.use('/api/projects/:id/requirements/:requirementId/environment',environmentR
 const server=app.listen(0,'127.0.0.1');await new Promise<void>(r=>server.once('listening',r));
 async function call(id:string,user:string,method='GET',suffix='',body?:unknown){return fetch(`http://127.0.0.1:${(server.address() as {port:number}).port}/api/projects/${project}/requirements/${id}/conversation${suffix}`,{method,headers:{Authorization:`Bearer ${signToken({userId:user,role:user==='owner'?'admin':'user'})}`,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});}
 after(async()=>{await new Promise<void>(r=>server.close(()=>r()));getDb().close();rmSync(directory,{recursive:true,force:true});});
-test('persists messages before execution, prevents concurrent writes and replays request IDs once',async()=>{
+test('persists messages before execution, preserves workspace lock and replays request IDs once',async()=>{
  const id=demand();const result=service.submit(id,'editor','first request','request-0001');await Promise.resolve();
- assert.equal(activeWorkspaceRun(id)?.id,result.id);assert.throws(()=>service.submit(id,'owner','other','request-0002'),/正在处理/);
- assert.equal(service.submit(id,'editor','first request','request-0001').id,result.id);assert.throws(()=>service.submit(id,'editor','different','request-0001'),/不同消息/);
+ assert.equal(activeWorkspaceRun(id)?.id,result.runId);
+ assert.equal(service.submit(id,'editor','first request','request-0001').messageId,result.messageId);assert.throws(()=>service.submit(id,'editor','different','request-0001'),/不同消息/);
  await assert.rejects(startRuntime(id),/Agent/);await assert.rejects(stopRuntime(id),/Agent/);await assert.rejects(issueRuntimeLink(id,'owner','ide','127.0.0.1'),/Agent/);
- send('message.delta',{runId:result.id,delta:'partial'});send('tool.started',{runId:result.id,label:'读取文件'});
- assert.equal((readConversation(id).current_messages as {body:string}[])[0].body,'partial');
+ send('message.delta',{runId:result.runId!,delta:'partial'});send('tool.started',{runId:result.runId!,label:'读取文件'});
+ assert.equal((readConversation(id).current_messages as {body:string;role:string}[]).find(m=>m.role==='assistant')!.body,'partial');
  const editor=await (await call(id,'editor')).json();assert.ok(editor.messages.some((m:any)=>m.body==='first request'));assert.ok(editor.events.some((e:any)=>e.type==='tool.started'));
- const viewer=await (await call(id,'viewer')).json();assert.equal(viewer.restricted,true);assert.deepEqual(viewer.messages,[]);assert.deepEqual(viewer.events,[]);assert.equal(viewer.active_run.id,result.id);
+ assert.equal((await call(id,'viewer')).status,403);
  assert.equal((await call(id,'viewer','POST','/messages',{message:'denied',requestId:'request-0003'})).status,403);assert.equal((await call(id,'stranger')).status,404);
- done();await service.wait(result.id);assert.equal(activeWorkspaceRun(id),undefined);assert.ok((readConversation(id).messages as {body:string}[]).some(m=>m.body==='fixture answer'));
+ done();await service.wait(result.runId!);assert.equal(activeWorkspaceRun(id),undefined);assert.ok((readConversation(id).messages as {body:string}[]).some(m=>m.body==='fixture answer'));
  const next=service.submit(id,'editor','follow up','request-0004');await Promise.resolve();assert.match(input.message,/first request/);assert.match(input.message,/fixture answer/);assert.match(input.message,/follow up/);done();await service.wait(next.id);
 });
 test('cancellation acknowledgement retains lock until Agent execution actually finishes',async()=>{
- const id=demand();const result=service.submit(id,'editor','cancel request','cancel-0001');await Promise.resolve();await service.cancel(id,result.id);
- assert.equal(activeWorkspaceRun(id)?.status,'cancelling');assert.throws(()=>assertRuntimeChangeAllowed(id),/Agent/);done();await service.wait(result.id);assert.equal(activeWorkspaceRun(id),undefined);
+ const id=demand();const result=service.submit(id,'editor','cancel request','cancel-0001');await Promise.resolve();await service.cancel(id,result.runId!);
+ assert.equal(activeWorkspaceRun(id)?.status,'cancelling');assert.throws(()=>assertRuntimeChangeAllowed(id),/Agent/);done();await service.wait(result.runId!);assert.equal(activeWorkspaceRun(id),undefined);
  assert.equal((readConversation(id).runs as {status:string}[])[0].status,'cancelled');cancelled=false;
 });
 test('uncertain bridge disconnect and platform restart keep exclusive lock until environment termination',async()=>{
  const id=demand();const failed=createConversationService({async run(_id,input,onEvent){onEvent({type:'bridge.dispatch',data:{}});onEvent({type:'message.delta',data:{runId:input.runId,delta:'已读取项目文件'}});throw Error('socket lost');},async cancel(){}});
- const result=failed.submit(id,'owner','test','disconnect-01');await failed.wait(result.id);assert.equal(activeWorkspaceRun(id)?.status,'interrupted');assert.match((readConversation(id).current_messages as {body:string}[])[0].body,/已读取项目文件[\s\S]*重启需求环境/);assert.throws(()=>failed.submit(id,'owner','retry','disconnect-02'),/连接中断/);
+ const result=failed.submit(id,'owner','test','disconnect-01');await failed.wait(result.runId!);assert.equal(activeWorkspaceRun(id)?.status,'interrupted');assert.match((readConversation(id).current_messages as {body:string;role:string}[]).find(m=>m.role==='assistant')!.body,/重启需求环境/);assert.ok(!(readConversation(id).current_messages as {body:string;role:string}[]).find(m=>m.role==='assistant')!.body.includes('已读取项目文件'));assert.ok(failed.submit(id,'owner','retry','disconnect-02').messageId);
  assert.doesNotThrow(()=>assertRuntimeChangeAllowed(id));releaseInterruptedRun(id);assert.equal(activeWorkspaceRun(id),undefined);
  const next=service.submit(id,'owner','test restart','restart-001');await Promise.resolve();interruptPreviousRuns();assert.equal(activeWorkspaceRun(id)?.status,'interrupted');done();await service.wait(next.id);
 });
 test('early transport failure is durable and does not strand a lock',async()=>{
- const id=demand();const failing=createConversationService({async run(){throw Error('请先启动需求环境');},async cancel(){}});const result=failing.submit(id,'owner','hello','startup-0001');await failing.wait(result.id);
+ const id=demand();const failing=createConversationService({async run(){throw Error('请先启动需求环境');},async cancel(){}});const result=failing.submit(id,'owner','hello','startup-0001');await failing.wait(result.runId!);
  assert.equal(activeWorkspaceRun(id),undefined);assert.equal((readConversation(id).runs as {status:string}[])[0].status,'failed');
  assert.ok(readConversation(id).next_event_cursor>0);const cursor=readConversation(id).next_event_cursor;assert.equal(readConversation(id,0,cursor).events.length,0);
 });
@@ -64,8 +64,8 @@ test('element comments persist with UI text, retain idempotency and stay private
  assert.equal(JSON.parse(stored.client_context).text,'修改颜色');assert.equal(JSON.parse(stored.client_context).comments[0].element.component.sourceFile,'src/Button.tsx');
  assert.equal(service.submit(id,'editor','Element: BUTTON body > button\n改成蓝色','comment-0001',metadata).replayed,true);
  assert.throws(()=>service.submit(id,'editor','Element: BUTTON body > button\n改成蓝色','comment-0001',{...metadata,text:'different'}),/不同消息/);
- const viewer=await (await call(id,'viewer')).json();assert.deepEqual(viewer.messages,[]);assert.deepEqual(viewer.current_messages,[]);
- await Promise.resolve();done();await service.wait(result.id);
+ assert.equal((await call(id,'viewer')).status,403);
+ await Promise.resolve();done();await service.wait(result.runId!);
  assert.throws(()=>service.submit(id,'editor','test','comment-0002',{text:'test',comments:[{element:{domPath:'body',tagName:'BODY',textContent:{}},comment:'test'}]}),/上下文无效/);
  assert.throws(()=>service.submit(id,'editor','test','comment-0003',{text:'test',comments:[{element:{domPath:'body',tagName:'BODY',textContent:'a'.repeat(65000)},comment:'test'}]}),/上下文过大/);
 });
@@ -74,7 +74,7 @@ test('Git operations exclude Agent/start/stop and release their lock after failu
  const id=demand();let release:()=>void=()=>{};
  const work=withGitOperation(id,()=>new Promise<void>(resolve=>{release=resolve;}));
  assert.equal(runtimeOperationActive(id),true);
- assert.throws(()=>service.submit(id,'owner','test','git-locked-001'),/环境操作/);
+ assert.ok(service.submit(id,'owner','test','git-locked-001').messageId);
  await assert.rejects(startRuntime(id),/Git 操作/);await assert.rejects(stopRuntime(id),/环境操作/);
  await assert.rejects(withGitOperation(id,async()=>{}),/操作进行中/);
  release();await work;assert.equal(runtimeOperationActive(id),false);
@@ -89,4 +89,27 @@ test('Git configuration and actions are unavailable to viewers and cross-project
  assert.equal((await gitCall('editor','GET','other-project')).status,404);
  const response=await gitCall('editor');assert.equal(response.status,200);const value=await response.json();assert.deepEqual(value.repos,[]);assert.equal(value.branch,`prism/requirement-${id}`);
  assert.equal((await gitCall('editor','POST')).status,409);
+});
+
+test('live reads wake on tool/text events and close their subscriptions without waiting for a polling tick',async()=>{
+ const {conversationEvents}=await import('../src/services/conversation-events.js');
+ const id=demand(),session=(readConversation(id)).session_id;
+ const result=service.submit(id,'editor','live request','live-request-0001');await Promise.resolve();
+ async function subscribed(){const until=Date.now()+3000;while(!conversationEvents.listenerCount(session)){assert.ok(Date.now()<until,'live read did not subscribe');await new Promise(r=>setTimeout(r,5));}}
+ try{
+  let snapshot=readConversation(id);
+  const waiting=call(id,'editor','GET',`?after=${snapshot.next_message_cursor}&eventAfter=${snapshot.next_event_cursor}&liveAfter=${encodeURIComponent(snapshot.next_live_cursor || '')}&wait=1`);
+  await subscribed();
+  send('tool.started',{runId:result.runId!,toolCallId:'read-1',tool:'Read',label:'读取 package.json'});
+  const tools=await (await waiting).json();assert.ok(tools.events.some((event:any)=>event.data.label==='读取 package.json'));assert.equal(conversationEvents.listenerCount(session),0);
+  const text=call(id,'editor','GET',`?after=${tools.next_message_cursor}&eventAfter=${tools.next_event_cursor}&liveAfter=${encodeURIComponent(tools.next_live_cursor || '')}&wait=1`);
+  await subscribed();send('message.delta',{runId:result.runId!,delta:'已找到配置'});
+  const partial=await (await text).json();assert.ok(partial.current_messages.some((message:any)=>message.body==='已找到配置'));assert.equal(partial.active_run.id,result.runId);
+  // Catch-up data is returned immediately instead of sleeping until another event.
+  const catchup=await (await call(id,'editor','GET','?wait=1')).json();assert.ok(catchup.events.length);assert.equal(conversationEvents.listenerCount(session),0);
+  snapshot=readConversation(id);
+  const abort=new AbortController();const disconnected=fetch(`http://127.0.0.1:${(server.address() as {port:number}).port}/api/projects/${project}/requirements/${id}/conversation?after=${snapshot.next_message_cursor}&eventAfter=${snapshot.next_event_cursor}&liveAfter=${encodeURIComponent(snapshot.next_live_cursor || '')}&wait=1`,{signal:abort.signal,headers:{Authorization:`Bearer ${signToken({userId:'editor',role:'user'})}`}}).catch(()=>undefined);
+  await subscribed();abort.abort();await disconnected;
+  const until=Date.now()+3000;while(conversationEvents.listenerCount(session)){assert.ok(Date.now()<until,'disconnected listener was not removed');await new Promise(r=>setTimeout(r,5));}
+ }finally{done();await service.wait(result.runId!);}
 });

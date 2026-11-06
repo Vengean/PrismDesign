@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { build, defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { resolve } from "path";
@@ -17,7 +17,6 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        content: resolve(__dirname, "src/content/index.ts"),
         "page-bridge": resolve(__dirname, "src/content/page-bridge.ts"),
         sidepanel: resolve(__dirname, "src/sidepanel/index.html"),
         background: resolve(__dirname, "src/background/index.ts"),
@@ -34,8 +33,19 @@ export default defineConfig({
     tailwindcss(),
     {
       name: "fix-chrome-ext-paths",
-      closeBundle() {
+      async closeBundle() {
         const distDir = resolve(__dirname, "dist");
+        // Manifest content scripts are classic scripts. Bundle separately so
+        // shared WebSocket code never introduces an unsupported ESM import.
+        await build({
+          configFile: false,
+          publicDir: false,
+          build: {
+            outDir: distDir,
+            emptyOutDir: false,
+            lib: { entry: resolve(__dirname, "src/content/index.ts"), name: "PrismContent", formats: ["iife"], fileName: () => "content.js" },
+          },
+        });
         const srcHtml = resolve(distDir, "src/sidepanel/index.html");
         try {
           let html = readFileSync(srcHtml, "utf-8");

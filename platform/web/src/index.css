@@ -70,3 +70,10 @@ button:disabled {cursor:not-allowed;}
 
 .project-skeleton-grid {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;}
 @media(max-width:767px) {.project-masonry {columns:1;}.project-skeleton-grid {grid-template-columns:1fr;}}
+
+.chat-markdown p + p {margin-top:0.75em;}
+.chat-markdown ul,.chat-markdown ol {padding-left:1.5em;margin:0.5em 0;}
+.chat-markdown ul {list-style:disc;}
+.chat-markdown ol {list-style:decimal;}
+.chat-markdown pre {overflow:auto;border-radius:8px;background:var(--color-muted);padding:12px;margin:8px 0;}
+.chat-markdown a {text-decoration:underline;}

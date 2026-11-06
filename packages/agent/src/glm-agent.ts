@@ -1,3 +1,4 @@
+import {ReplyBuffer} from './core/reply-buffer.js';
 import { spawn, type ChildProcess } from "node:child_process";
 import { Writable, Readable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
@@ -18,11 +19,11 @@ class PrismAcpClient implements acp.Client {
   onProgress?: ProgressCallback;
   onText?: (text:string) => void;
   filesModified = new Set<string>();
-  textParts: string[] = [];
+  reply = new ReplyBuffer();
 
   reset() {
     this.filesModified.clear();
-    this.textParts = [];
+    this.reply.clear();
   }
 
   async requestPermission(
@@ -43,7 +44,7 @@ class PrismAcpClient implements acp.Client {
     switch (update.sessionUpdate) {
       case "agent_message_chunk":
         if (update.content.type === "text" && update.content.text) {
-          this.textParts.push(update.content.text);
+          this.reply.append(update.content.text);
           this.onText?.(update.content.text);
           this.onProgress?.(
             update.content.text.length > 80
@@ -53,10 +54,11 @@ class PrismAcpClient implements acp.Client {
         }
         break;
       case "tool_call": {
+        this.reply.clear();
         const title = update.title || "";
         console.log(`[GLM] 工具调用: ${title} (${update.status})`);
         if (update.status === "in_progress") {
-          this.onProgress?.(`${title}`);
+          this.onProgress?.(title.replace(/\bTodoWrite\b/g, "更新任务计划").replace(/\bTodoRead\b/g, "查看任务计划"));
         }
         // Track file modifications: "Write file: path/to/file" or "write_file path"
         if (/write.file/i.test(title)) {
@@ -249,7 +251,7 @@ export async function runGlmAgent(
     console.log(`[GLM] 完成, stopReason=${result.stopReason}, filesModified:`, [...session.client.filesModified]);
 
     // Use collected text from agent_message_chunk events
-    const finalMessage = session.client.textParts.join("") || "修改完成。";
+    const finalMessage = session.client.reply.final() || "已完成。";
 
     return {
       success: true,

@@ -59,7 +59,7 @@ export function runtimeOperationActive(id:string){return operations.has(id)||git
 export function startRuntime(id:string):Promise<void> {
   try{assertRuntimeChangeAllowed(id);if(gitOperations.has(id))throw Error("Git 操作进行中，请稍后重试");}catch(e){return Promise.reject(e);}
   const existing=operations.get(id);if(existing)return existing;
-  const work=prepareRuntime(id).finally(()=>operations.delete(id));operations.set(id,work);return work;
+  const work=prepareRuntime(id).finally(()=>{operations.delete(id);workspaceEvents.emit('changed',id);});operations.set(id,work);return work;
 }
 async function prepareRuntime(id:string) {
   const {r,config}=configFor(id);
@@ -89,7 +89,7 @@ async function prepareRuntime(id:string) {
       Entrypoint:['/project-entrypoint.sh'],WorkingDir:'/workspace',
       Env:[...buildAgentEnvironment(agent),'PRISM_PERMISSION_FILESYSTEM=workspace-write','PRISM_PERMISSION_COMMANDS=workspace','PRISM_PERMISSION_BROWSER=false',`PRISM_REPOS=${JSON.stringify(config.repos)}`,`PRISM_BRANCH=prism/requirement-${id}`,
         `GIT_ACCESS_TOKEN=${git.mode==='token'?git.secret:''}`,`GIT_SSH_KEY=${git.mode==='ssh'?git.secret:''}`,`GIT_SSH_PORT=${config.gitAuth.sshPort}`,
-        `INIT_SCRIPT=${config.initScript}`,`STARTUP_SCRIPT=${config.startupScript}`,`CLAUDE_MD=${config.guidance}`],
+        `INIT_SCRIPT=${config.initScript}`,`STARTUP_SCRIPT=${config.startupScript}`,`CLAUDE_MD=${config.guidance}`,`PRISM_PREPARE_TIMEOUT=${process.env.PRISM_PREPARE_TIMEOUT || 1800}`,`PRISM_STARTUP_TIMEOUT=${process.env.PRISM_STARTUP_TIMEOUT || 120}`],
       Labels:{'prism.requirement':id,'prism.project':r.project_id},ExposedPorts:{'8090/tcp':{},'8080/tcp':{}},
       HostConfig:{Binds:[`${volume}:/workspace`],PortBindings:{'8090/tcp':[{HostIp:'127.0.0.1',HostPort:''}],'8080/tcp':[{HostIp:'127.0.0.1',HostPort:''}]},
         Memory:4*1024*1024*1024,NanoCpus:2e9,PidsLimit:512,CapDrop:['ALL'],SecurityOpt:['no-new-privileges'],LogConfig:{Type:'json-file',Config:{'max-size':'10m','max-file':'3'}}}});
@@ -99,33 +99,54 @@ async function prepareRuntime(id:string) {
 }
 export function stopRuntime(id:string):Promise<void> {
   try{assertRuntimeChangeAllowed(id);if(runtimeOperationActive(id))throw new Error('环境操作进行中，请稍后重试');}catch(e){return Promise.reject(e);}
-  const work=performStopRuntime(id).finally(()=>operations.delete(id));operations.set(id,work);return work;
+  const work=performStopRuntime(id).finally(()=>{operations.delete(id);workspaceEvents.emit('changed',id);});operations.set(id,work);return work;
 }
 async function performStopRuntime(id:string){
   try{await runtimeContainer(id).stop({t:10});}catch(e){if(![304,404].includes((e as {statusCode:number}).statusCode))throw e;}
   releaseInterruptedRun(id);
   state(id,'stopped');
 }
-export async function runtimeServicePorts(id:string):Promise<number[]> {
-  const result=await execRuntime(id,['node','-e',`const fs=require('fs');const ports=new Set();for(const file of ['/proc/net/tcp','/proc/net/tcp6'])for(const line of fs.readFileSync(file,'utf8').trim().split('\\n').slice(1)){const c=line.trim().split(/\\s+/);const p=parseInt(c[1].split(':')[1],16);if(c[3]==='0A'&&p>1024&&![8080,8090,9527].includes(p))ports.add(p)}console.log(JSON.stringify([...ports].sort((a,b)=>a-b)))`]);
+export interface RuntimeService {port:number;protocol:'http'|'non-http'|'timeout'|'unavailable';ready:boolean;page?:boolean;statusCode?:number;contentType?:string}
+export interface RuntimeHealth {status:string;phase:string;startedAt:number;checkedAt:number;agentReady:boolean;services:RuntimeService[];defaultPort?:number;error:string}
+async function runtimeHealth(id:string):Promise<RuntimeHealth> {
+  const result=await execRuntime(id,['node','-e',`const fs=require('fs');try{process.stdout.write(fs.readFileSync('/var/log/prism/health.json','utf8'))}catch{process.stdout.write('{}')}`]);
+  if(result.code!==0)throw Error('无法读取环境健康状态');
   return JSON.parse(result.text);
+}
+export async function runtimeServices(id:string) {const health=await runtimeHealth(id);return health.checkedAt&&Date.now()-health.checkedAt<15000?health.services || []:[];}
+export async function runtimeServicePorts(id:string):Promise<number[]> {
+  return (await runtimeServices(id)).filter(s=>s.protocol==='http'&&s.ready).map(s=>s.port);
 }
 export async function runtimeStatus(id:string) {
   const r=requirement(id);
-  if(operations.has(id))return {status:'preparing',ports:[] as number[],error:'',branch:`prism/requirement-${id}`};
-  let status=r.environment_status;let ports:number[]=[];let engineError='';
+  let status=r.environment_status,health:Partial<RuntimeHealth>={},engineError='';
+  if(operations.has(id))return {status:'preparing',ports:[] as number[],services:[] as RuntimeService[],agentReady:false,phase:'preparing',elapsedSeconds:0,error:'',branch:`prism/requirement-${id}`};
   try {
     const info=await runtimeContainer(id).inspect();
-    if(!info.State.Running)status=info.State.ExitCode && status!=='stopped'?'failed':'stopped';
-    else {
-      const result=await execRuntime(id,['node','-e',`const fs=require('fs');let s='preparing';try{s=fs.readFileSync('/var/log/prism/state','utf8')}catch{};if(s==='starting'){const text=fs.readFileSync('/proc/net/tcp','utf8')+fs.readFileSync('/proc/net/tcp6','utf8');if(text.split('\\n').some(l=>{const c=l.trim().split(/\\s+/);const p=parseInt(c[1]?.split(':')[1],16);return c[3]==='0A'&&p>1024&&![8080,8090,9527].includes(p)}))s='running'}process.stdout.write(s)`]);
-      if(['preparing','starting','running','failed'].includes(result.text))status=result.text;
-      if(status==='running')ports=await runtimeServicePorts(id);
+    if(!info.State.Running) {
+      status=info.State.ExitCode && status!=='stopped'?'failed':'stopped';
+      if(status==='failed'){
+        const raw=await runtimeContainer(id).logs({stdout:true,stderr:true,tail:20});
+        const text=Buffer.isBuffer(raw)?raw.toString('utf8'):String(raw);
+        engineError=[...text.matchAll(/__PRISM_RUNTIME_ERROR__=([^\r\n]+)/g)].at(-1)?.[1] || '环境进程已退出，请查看运行日志后重试。';
+      }
+    } else {
+      health=await runtimeHealth(id);
+      if(health.checkedAt&&Date.now()-health.checkedAt<15000)status=health.status || 'preparing';
+      else {
+        status='starting';
+        const age=Date.now()-new Date(info.State.StartedAt).getTime();
+        if(age>20000){status='failed';engineError='环境健康检查不可用，请重新构建需求镜像并重启环境。';}
+      }
     }
-  }catch(e){if((e as {statusCode?:number}).statusCode===404){if(!operations.has(id) && ['preparing','starting','running'].includes(status))status='failed';}else engineError='容器引擎暂时不可用，请稍后重试';}
+  }catch(e){if((e as {statusCode?:number}).statusCode===404){if(['preparing','starting','running'].includes(status))status='failed';}else engineError='容器引擎暂时不可用，请稍后重试';}
   if(status!==r.environment_status)state(id,status);
   const row=getDb().prepare('SELECT error FROM requirement_environments WHERE requirement_id=?').get(id) as {error:string}|undefined;
-  return {status,ports,error:engineError || row?.error || '',branch:`prism/requirement-${id}`};
+  const services=['starting','running'].includes(status)?health.services || []:[];
+  return {status,ports:services.filter(s=>s.protocol==='http'&&s.ready).map(s=>s.port),services,
+    agentReady:health.agentReady===true&&['starting','running'].includes(status),phase:health.phase || status,
+    defaultPort:health.defaultPort,elapsedSeconds:health.startedAt?Math.max(0,Math.floor((Date.now()-health.startedAt)/1000)):0,
+    error:redactRuntimeText(id,engineError || health.error || row?.error || ''),branch:`prism/requirement-${id}`};
 }
 export async function runtimeLogs(id:string) {
   let value='';const runtimeSecrets:string[]=[];
@@ -136,7 +157,7 @@ export async function runtimeLogs(id:string) {
     while(offset+8<=b.length){const length=b.readUInt32BE(offset+4);if(offset+8+length>b.length)break;value+=b.subarray(offset+8,offset+8+length).toString();offset+=8+length;}
     const info=await runtimeContainer(id).inspect();
     for(const entry of info.Config.Env || [])if(/^(GIT_ACCESS_TOKEN|GIT_SSH_KEY|ANTHROPIC_API_KEY)=/.test(entry))runtimeSecrets.push(entry.slice(entry.indexOf('=')+1));
-    if(info.State.Running){const app=await execRuntime(id,['sh','-c','tail -n 200 /var/log/prism/startup.log /var/log/prism/agent.log /var/log/prism/code-server.log 2>/dev/null']);value+='\n'+app.text;}
+    if(info.State.Running){const app=await execRuntime(id,['sh','-c','tail -n 200 /var/log/prism/startup.log /var/log/prism/agent.log /var/log/prism/code-server.log /var/log/prism/proxy.log 2>/dev/null']);value+='\n'+app.text;}
   }catch(e){if((e as {statusCode?:number}).statusCode!==404)throw e;}
   return redactRuntimeText(id,value,runtimeSecrets).slice(-100000);
 }

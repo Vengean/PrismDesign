@@ -1,3 +1,4 @@
+import {previewHostConfig} from './services/preview-host.js';
 import express from "express";
 import cors from "cors";
 import http from "http";
@@ -10,13 +11,14 @@ import authRoutes from "./routes/auth.js";
 import userRoutes from "./routes/users.js";
 import { initRuntimeTables } from "./services/requirement-runtime.js";
 import environmentRoutes from "./routes/environments.js";
-import {initConversationTables,interruptPreviousRuns} from './services/conversations.js';
+import {initConversationTables,interruptPreviousRuns,conversations} from './services/conversations.js';
 import conversationRoutes from './routes/conversations.js';
 import projectRoutes from "./routes/projects.js";
 import { initProjectTables } from "./services/projects.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+previewHostConfig(); // Fail early on invalid production gateway configuration.
 const app = express();
 const PORT = parseInt(process.env.PORT || "3001");
 
@@ -33,12 +35,14 @@ initProjectTables();
 initRuntimeTables();
 initConversationTables();
 interruptPreviousRuns();
+conversations.resume();
 
 // Middleware
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 
 // API routes
+app.get("/api/health", (_req,res) => res.json({service:"prism-platform",status:"ready"}));
 app.use("/api/auth", authRoutes);
 app.use("/api/projects/:id/requirements/:requirementId/conversation", conversationRoutes);
 app.use("/api/projects/:id/requirements/:requirementId/environment", environmentRoutes);

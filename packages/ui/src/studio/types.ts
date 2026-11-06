@@ -59,6 +59,13 @@ export interface DOMTreeNode {
 }
 
 export interface ChatMessage {
+  id?: string;
+  userId?:string;
+  authorName?:string;
+  runId?:string;
+  mentions?:string[];
+  canCancel?:boolean;
+  taskTitle?:string;
   role: "user" | "ai";
   content: string;
   timestamp: number;

@@ -10,7 +10,7 @@ import {PlatformClient,type PlatformContext,type PlatformRequest} from '../../pa
 test('real container: clone, branch, scripts, authorized HTTP/WebSocket preview, IDE and persistent restart', {skip:process.env.PRISM_TEST_CONTAINERS!=='1',timeout:120000},async()=>{
  const dir=mkdtempSync(path.join(os.tmpdir(),'prism-container-test-'));
  process.env.PRISM_DATA_DIR=dir;process.env.ADMIN_USER='owner';process.env.ADMIN_PASSWORD='fixture-password';
- process.env.PRISM_WORKSPACE_IMAGE='prism-runtime-fixture:latest';process.env.PRISM_PREVIEW_BIND='127.0.0.1';
+ process.env.PRISM_WORKSPACE_IMAGE=process.env.PRISM_TEST_WORKSPACE_IMAGE || 'prism-runtime-fixture:latest';process.env.PRISM_PREVIEW_BIND='127.0.0.1';
  const {getDb,createUser}=await import('../src/services/db.js');
  const {initProjectTables,createProject,emptyConfig,projectConfig}=await import('../src/services/projects.js');
  const {initRuntimeTables,startRuntime,stopRuntime,runtimeStatus,runtimeLogs,execRuntime,containerEngine}=await import('../src/services/requirement-runtime.js');
@@ -34,15 +34,15 @@ test('real container: clone, branch, scripts, authorized HTTP/WebSocket preview,
   await assert.rejects(issueRuntimeLink(id,'owner','preview','127.0.0.1',9527),/端口无效/);
   const secondLink=await issueRuntimeLink(id,'viewer','preview','127.0.0.1',3457);const secondOpen=await fetch(secondLink,{redirect:'manual'});
   assert.equal(await (await fetch(new URL(secondLink).origin,{headers:{Cookie:secondOpen.headers.get('set-cookie')!.split(';')[0]}})).text(),'second-ipv6-service');
-  const link=await issueRuntimeLink(id,'viewer','preview','127.0.0.1',undefined,'http://127.0.0.1:5173');const origin=new URL(link).origin;
+  const link=await issueRuntimeLink(id,'viewer','preview','127.0.0.1',3456,'http://127.0.0.1:5173');const origin=new URL(link).origin;
   assert.equal((await fetch(origin)).status,401);
   const anonymousPage=await fetch(origin+'/nested?q=1',{headers:{Accept:'text/html'},redirect:'manual'});assert.equal(anonymousPage.status,302);
   const login=new URL(anonymousPage.headers.get('location')!);assert.equal(login.origin,'http://127.0.0.1:5173');assert.equal(login.pathname,'/login');
   const next=new URL(login.searchParams.get('next')!,'http://platform');assert.equal(next.searchParams.get('requirement'),id);assert.equal(next.searchParams.get('path'),'/nested?q=1');
   const unauthorizedApi=await fetch(origin+'/__prism_platform__/context',{headers:{Accept:'text/html'},redirect:'manual'});assert.equal(unauthorizedApi.status,401);assert.match((await unauthorizedApi.json()).error,/请登录/);
-  const resume=await issueRuntimeLink(id,'owner','preview','127.0.0.1');const target=new URL(resume);target.searchParams.set('path','/nested?resumed=1');
+  const resume=await issueRuntimeLink(id,'owner','preview','127.0.0.1',3456);const target=new URL(resume);target.searchParams.set('path','/nested?resumed=1');
   const resumed=await fetch(target,{redirect:'manual'});assert.equal(resumed.status,302);assert.equal(resumed.headers.get('location'),'/nested?resumed=1');assert.ok(resumed.headers.get('set-cookie'));
-  const unsafe=new URL(await issueRuntimeLink(id,'owner','preview','127.0.0.1'));unsafe.searchParams.set('path','//evil.example');assert.equal((await fetch(unsafe,{redirect:'manual'})).headers.get('location'),'/');
+  const unsafe=new URL(await issueRuntimeLink(id,'owner','preview','127.0.0.1',3456));unsafe.searchParams.set('path','//evil.example');assert.equal((await fetch(unsafe,{redirect:'manual'})).headers.get('location'),'/');
 
   const open=await fetch(link,{redirect:'manual'});assert.equal(open.status,302);const cookie=open.headers.get('set-cookie')!.split(';')[0];assert.notEqual(cookie.split('=')[0],secondOpen.headers.get('set-cookie')!.split('=')[0]);
   assert.equal((await fetch(link,{redirect:'manual'})).status,403,'ticket is single use');
@@ -53,9 +53,9 @@ test('real container: clone, branch, scripts, authorized HTTP/WebSocket preview,
   await new Promise<void>((resolve,reject)=>{socket.once('open',()=>resolve());socket.once('error',reject);});socket.terminate();
 
   const html=await fetch(origin+'/html',{headers:{Cookie:cookie}});assert.equal(html.headers.get('x-prism-widget'),'injected');assert.match(await html.text(),/__prism_platform__\/widget.js/);
-  assert.equal((await fetch(origin+'/__prism_platform__/widget.js',{headers:{Cookie:cookie}})).status,200);
+  assert.equal((await fetch(origin+'/__prism_platform__/widget.js',{headers:{Cookie:cookie}})).status,204);
   const viewerContext=await (await fetch(origin+'/__prism_platform__/context',{headers:{Cookie:cookie}})).json() as PlatformContext;assert.equal(viewerContext.requirementId,id);assert.equal(viewerContext.role,'viewer');
-  const ownerPreview=await issueRuntimeLink(id,'owner','preview','127.0.0.1');const ownerOpen=await fetch(ownerPreview,{redirect:'manual'});const ownerCookie=ownerOpen.headers.get('set-cookie')!.split(';')[0];
+  const ownerPreview=await issueRuntimeLink(id,'owner','preview','127.0.0.1',3456);const ownerOpen=await fetch(ownerPreview,{redirect:'manual'});const ownerCookie=ownerOpen.headers.get('set-cookie')!.split(';')[0];
   const request:PlatformRequest=async<T>(path,method='GET',body)=>{const response=await fetch(origin+'/__prism_platform__'+path,{method,headers:{Cookie:ownerCookie,'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});const data=await response.json();if(!response.ok)throw Error(data.error);return data as T;};
   const ownerContext=await request<PlatformContext>('/context');const widget=new PlatformClient(ownerContext,request),plugin=new PlatformClient(ownerContext,request);assert.equal(ownerContext.sessionId,viewerContext.sessionId);
   const mismatch=await fetch(origin+'/__prism_platform__/messages?sessionId=wrong',{method:'POST',headers:{Cookie:ownerCookie,'Content-Type':'application/json'},body:JSON.stringify({message:'must not run',requestId:'mismatch-request'})});assert.equal(mismatch.status,409);
@@ -74,7 +74,7 @@ test('real container: clone, branch, scripts, authorized HTTP/WebSocket preview,
   await assert.rejects(startRuntime(id),/Agent/);
   for(let i=0;i<15;i++){if((readConversation(id).runs as {cancel_supported:number}[])[0].cancel_supported)break;await pause();}
   assert.equal((readConversation(id).runs as {cancel_supported:number}[])[0].cancel_supported,1,JSON.stringify(readConversation(id).runs));
-  await conversations.cancel(id,held.id);await conversations.wait(held.id);assert.equal(activeWorkspaceRun(id),undefined);
+  await conversations.cancel(id,activeWorkspaceRun(id)!.id);await conversations.wait(held.id);assert.equal(activeWorkspaceRun(id),undefined);
   const normal=conversations.submit(id,'owner','fixture edit request','fixture-normal-01');await conversations.wait(normal.id);
   assert.equal((readConversation(id).runs as {status:string}[])[0].status,'succeeded');
   assert.ok((readConversation(id).current_messages as {body:string}[]).some(m=>m.body==='处理完成 ✅'));
@@ -93,7 +93,29 @@ test('real container: clone, branch, scripts, authorized HTTP/WebSocket preview,
   assert.equal((await execRuntime(id,['cat','/workspace/startup-value'])).text.trim(),'latest-startup');
   assert.equal((await execRuntime(id,['cat','/workspace/app/edit.txt'])).text.trim(),'retained');assert.equal((await execRuntime(id,['cat','/workspace/init-count'])).text.trim(),'initialized\nnew-init');
   getDb().prepare('DELETE FROM project_members WHERE project_id=? AND user_id=?').run(project,'viewer');assert.equal((await fetch(origin,{headers:{Cookie:cookie}})).status,401);
+  // A listening database must never mark the environment ready; timeout preserves source.
+  process.env.PRISM_STARTUP_TIMEOUT='4';
+  getDb().prepare('UPDATE project_configs SET config=? WHERE project_id=?').run(JSON.stringify({...updated,startupScript:`node -e "require('net').createServer(s=>s.end('DATABASE greeting')).listen(5432,'127.0.0.1')"`}),project);
+  await startRuntime(id);
+  let failure;for(let i=0;i<15;i++){failure=await runtimeStatus(id);if(failure.status==='failed')break;assert.notEqual(failure.status,'running');await pause();}
+  assert.equal(failure?.status,'failed');assert.match(failure!.error,/HTTP/);
+  delete process.env.PRISM_STARTUP_TIMEOUT;
+  // Preparation has its own deadline, independent of a browser polling status.
+  process.env.PRISM_PREPARE_TIMEOUT='2';
+  getDb().prepare('UPDATE project_configs SET config=? WHERE project_id=?').run(JSON.stringify({...updated,initScript:'sleep 20'}),project);
+  await startRuntime(id);await new Promise(r=>setTimeout(r,5500));
+  const prepared=await runtimeStatus(id);assert.equal(prepared.status,'failed');assert.match(prepared.error,/准备超时/);
+  delete process.env.PRISM_PREPARE_TIMEOUT;
+  getDb().prepare('UPDATE project_configs SET config=? WHERE project_id=?').run(JSON.stringify({...updated,startupScript:'exit 7'}),project);
+  await startRuntime(id);
+  let scriptFailure;for(let i=0;i<15;i++){scriptFailure=await runtimeStatus(id);if(scriptFailure.status==='failed')break;await pause();}
+  assert.equal(scriptFailure?.status,'failed');assert.match(scriptFailure!.error,/业务启动脚本/);
+  getDb().prepare('UPDATE project_configs SET config=? WHERE project_id=?').run(JSON.stringify({...updated,startupScript:'sleep 2\n'+updated.startupScript}),project);
+  await startRuntime(id);await ready();assert.equal((await runtimeStatus(id)).agentReady,true);
+  assert.equal((await execRuntime(id,['cat','/workspace/app/edit.txt'])).text.trim(),'retained');
+
  }finally{
+  delete process.env.PRISM_STARTUP_TIMEOUT;delete process.env.PRISM_PREPARE_TIMEOUT;
   await containerEngine().getContainer(`prism-req-${id}`).remove({force:true}).catch(()=>{});
   await containerEngine().getVolume(`prism-req-code-${id}`).remove().catch(()=>{});
   getDb().close();rmSync(dir,{recursive:true,force:true});

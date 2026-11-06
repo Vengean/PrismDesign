@@ -41,6 +41,6 @@ router.post('/start',(req:AuthRequest,res)=>{
 router.post('/stop',async(req:AuthRequest,res)=>{try{await stopRuntime(String(req.params.requirementId));res.json({message:'环境已停止'});}catch{res.status(409).json({error:'环境操作进行中或容器引擎不可用，请稍后重试'});}});
 for(const kind of ['preview','ide'] as const)router.post(`/open-${kind}`,async(req:AuthRequest,res)=>{
   if(kind==='ide' && (activeWorkspaceRun(String(req.params.requirementId))||runtimeOperationActive(String(req.params.requirementId)))){res.status(423).json({error:activeWorkspaceRun(String(req.params.requirementId))?.status==='interrupted'?'任务已中断，请重启需求环境后重新打开 IDE':'工作区操作进行中，结束后可重新打开 IDE'});return;}
-  try{const platformOrigin=new URL(req.headers.origin||req.headers.referer||`${req.protocol}://${req.headers.host}`).origin;res.json({url:await issueRuntimeLink(String(req.params.requirementId),req.user!.userId,kind,req.hostname,req.body?.port,platformOrigin)});}catch{res.status(409).json({error:'环境尚未运行，请先启动环境并查看日志'});}
+  try{const platformOrigin=new URL(req.headers.origin||req.headers.referer||`${req.protocol}://${req.headers.host}`).origin;res.json({url:await issueRuntimeLink(String(req.params.requirementId),req.user!.userId,kind,req.hostname,req.body?.port,platformOrigin)});}catch(e){res.status(409).json({error:(e as Error).message || '环境尚未运行，请先启动环境并查看日志'});}
 });
 export default router;

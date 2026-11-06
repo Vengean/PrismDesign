@@ -1,37 +1,44 @@
-// Internal proxy: app ports stay inside the container, only this port is published.
+// One published container entry point for dynamically discovered HTTP services.
 const http = require('node:http');
 const net = require('node:net');
-const fs = require('node:fs');
-function ports() {
-  const values = new Set();
-  for (const file of ['/proc/net/tcp','/proc/net/tcp6']) {
-    for (const line of fs.readFileSync(file,'utf8').trim().split('\n').slice(1)) {
-      const columns=line.trim().split(/\s+/);
-      const port=parseInt(columns[1].split(':')[1],16);
-      if(columns[3]==='0A' && port>1024 && ![8080,8090,9527].includes(port)) values.add(port);
-    }
+const {chooseService, readJson, startMonitor} = require('./runtime-health.cjs');
+function createPreviewProxy({services = () => readJson('/var/log/prism/health.json', {}).services || [], hostname = port => require('./runtime-health.cjs').listeners().find(s => s.port === port)?.hostname || '127.0.0.1', timeout = 30000} = {}) {
+  function target(req) {
+    const raw = req.headers['x-prism-service-port'];
+    return chooseService(services(), raw === undefined ? undefined : Number(raw));
   }
-  return [...values].sort((a,b)=>a-b);
+  function headers(req, port) { const h = {...req.headers, host: `localhost:${port}`}; delete h['x-prism-service-port']; return h; }
+  const server = http.createServer((req, res) => {
+    const port = target(req);
+    if (!port) { res.writeHead(503, {'Content-Type': 'text/plain; charset=utf-8'}); res.end('HTTP 服务尚未就绪，或存在多个服务，请从平台选择预览服务。'); return; }
+    const upstream = http.request({hostname: hostname(port), port, path: req.url, method: req.method, headers: headers(req, port)}, response => {
+      clearTimeout(timer);
+      res.writeHead(response.statusCode, response.headers); response.pipe(res);
+      response.on('error', () => res.destroy());
+    });
+    const timer = setTimeout(() => { upstream.destroy(Object.assign(Error('timeout'), {code: 'ETIMEDOUT'})); }, timeout);
+    upstream.setTimeout(timeout, () => upstream.destroy(Object.assign(Error('timeout'), {code: 'ETIMEDOUT'})));
+    upstream.on('error', error => {
+      clearTimeout(timer);
+      if (res.headersSent) { res.destroy(); return; }
+      const timedOut = error.code === 'ETIMEDOUT';
+      res.writeHead(timedOut ? 504 : 502, {'Content-Type': 'text/plain; charset=utf-8'});
+      res.end(timedOut ? '业务服务响应超时，请查看启动日志。' : error.code?.startsWith('HPE_') ? '目标端口未返回有效 HTTP 响应，请检查服务协议。' : '业务服务连接失败，请查看启动日志。');
+    });
+    req.pipe(upstream); res.on('close', () => { clearTimeout(timer); upstream.destroy(); });
+  });
+  server.on('upgrade', (req, socket, head) => {
+    const port = target(req); if (!port) return socket.destroy();
+    const timer = setTimeout(() => { upstream.destroy(); socket.destroy(); }, timeout);
+    const upstream = net.connect(port, hostname(port), () => {
+      upstream.write(`${req.method} ${req.url} HTTP/1.1\r\n${Object.entries(headers(req, port)).map(([k, v]) => `${k}: ${v}`).join('\r\n')}\r\n\r\n`);
+      upstream.write(head); socket.pipe(upstream); upstream.pipe(socket);
+    });
+    upstream.once('data', () => clearTimeout(timer));
+    upstream.on('error', () => socket.destroy()); socket.on('error', () => upstream.destroy());
+    socket.on('close', () => { clearTimeout(timer); upstream.destroy(); });
+  });
+  return server;
 }
-function target(req) {const available=ports();const selected=Number(req.headers['x-prism-service-port']);return selected ? (available.includes(selected)?selected:undefined) : available[0];}
-function hostname(port) {
-  const v4=fs.readFileSync('/proc/net/tcp','utf8').trim().split('\n').slice(1).some(line=>{const c=line.trim().split(/\s+/);return c[3]==='0A'&&parseInt(c[1].split(':')[1],16)===port;});
-  return v4?'127.0.0.1':'::1';
-}
-const server=http.createServer((req,res)=>{
-  const port=target(req);
-  if(!port){res.writeHead(503,{'Content-Type':'text/plain; charset=utf-8'});res.end('应用尚未监听端口，请查看启动日志。');return;}
-  const headers={...req.headers,host:`localhost:${port}`};delete headers['x-prism-service-port'];
-  const upstream=http.request({hostname:hostname(port),port,path:req.url,method:req.method,headers},r=>{res.writeHead(r.statusCode,r.headers);r.pipe(res);});
-  upstream.on('error',()=>{if(!res.headersSent)res.writeHead(502);res.end('应用连接失败');});
-  req.pipe(upstream);res.on('close',()=>upstream.destroy());
-});
-server.on('upgrade',(req,socket,head)=>{
-  const port=target(req);if(!port)return socket.destroy();
-  const upstream=net.connect(port,hostname(port),()=>{
-    const headers={...req.headers,host:`localhost:${port}`};delete headers['x-prism-service-port'];
-    upstream.write(`${req.method} ${req.url} HTTP/1.1\r\n${Object.entries(headers).map(([k,v])=>`${k}: ${v}`).join('\r\n')}\r\n\r\n`);
-    upstream.write(head);socket.pipe(upstream);upstream.pipe(socket);
-  });upstream.on('error',()=>socket.destroy());socket.on('error',()=>upstream.destroy());socket.on('close',()=>upstream.destroy());
-});
-server.listen(8090,'0.0.0.0');
+module.exports = {createPreviewProxy};
+if (require.main === module) { startMonitor(); createPreviewProxy().listen(8090, '0.0.0.0'); }

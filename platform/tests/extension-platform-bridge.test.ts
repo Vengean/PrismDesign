@@ -7,7 +7,7 @@ test('Chrome content bridge uses same-origin credentials, restricts operations a
  let listener:any;const windowEvents=new Map<string,Function>();const domEvents=new Map<string,Function>();const calls:any[]=[];const sent:any[]=[];const posts:any[]=[];let isPlatform=true;
  class Element {id='';dataset:Record<string,string>={};}
  const window:any={addEventListener:(type:string,fn:Function)=>windowEvents.set(type,fn),postMessage:(message:any)=>posts.push(message)};
- const context={AbortSignal,exports:{},require:()=>({isContextInvalidated:()=>false}),chrome:{runtime:{onMessage:{addListener:(fn:any)=>listener=fn},sendMessage:async(m:any)=>{sent.push(m);return {success:true};}}},window,location:{origin:'http://preview.fixture'},document:{querySelector:()=>isPlatform?{}:null,addEventListener:(type:string,fn:Function)=>domEvents.set(type,fn)},HTMLElement:Element,fetch:async(url:string,options:any)=>{calls.push({url,options});return new Response(JSON.stringify({protocol:1,sessionId:'s'}));}};
+ const context={AbortSignal,exports:{},require:()=>({isContextInvalidated:()=>false}),chrome:{runtime:{onConnect:{addListener(){}},onMessage:{addListener:(fn:any)=>listener=fn},sendMessage:async(m:any)=>{sent.push(m);return {success:true};}}},window,location:{origin:'http://preview.fixture'},document:{querySelector:()=>isPlatform?{}:null,addEventListener:(type:string,fn:Function)=>domEvents.set(type,fn)},HTMLElement:Element,fetch:async(url:string,options:any)=>{calls.push({url,options});return new Response(JSON.stringify({protocol:1,sessionId:'s'}));}};
  const source=fs.readFileSync(new URL('../../packages/chrome-ext/src/content/platform.ts',import.meta.url),'utf8');const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;vm.runInNewContext(compiled,context);
  const result:any=await new Promise(r=>listener({type:'PRISM_PLATFORM_REQUEST',path:'/context'},{},r));assert.equal(result.platform,true);assert.equal(calls[0].url,'/__prism_platform__/context');assert.equal(calls[0].options.credentials,'same-origin');assert.equal(calls[0].options.headers.Authorization,undefined);
  const denied:any=await new Promise(r=>listener({type:'PRISM_PLATFORM_REQUEST',path:'/api/status'},{},r));assert.match(denied.error,/不支持/);assert.equal(calls.length,1);
@@ -45,4 +45,22 @@ test('comment toolbar has no visual-change or drag entry and retains comment mod
  const modes:any[]=[];exports.createToolbar({onModeChange:(mode:any)=>modes.push(mode)});
  const toolbar=elements.get('prism-studio-toolbar');assert.ok(toolbar.innerHTML.includes('pd-tb-comment'));assert.ok(!toolbar.innerHTML.includes('pd-tb-drag'));assert.ok(!toolbar.innerHTML.includes('pd-tb-select'));
  exports.triggerMode('comment');exports.triggerMode('comment');assert.deepEqual(modes,['comment',null]);exports.destroyToolbar();assert.equal(removed,2);
+});
+
+test('content bridge carries WebSocket snapshots over a tab port and closes the socket on disconnect',()=>{
+ let connect:Function=()=>{},receive:Function=()=>{},disconnect:Function=()=>{},emit:Function=()=>{};
+ const posts:any[]=[];let sockets=0,closed=0,platform=true;
+ const source=fs.readFileSync(new URL('../../packages/chrome-ext/src/content/platform.ts',import.meta.url),'utf8');
+ const exports:any={};
+ vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{
+  exports,require:(name:string)=>name.includes('conversation-stream')?{pageConversationLive:(cursor:any,listener:Function)=>{assert.equal(cursor.sessionId,'s');sockets++;emit=listener;return()=>{closed++;};}}:{isContextInvalidated:()=>false},
+  chrome:{runtime:{onConnect:{addListener:(fn:Function)=>{connect=fn;}},onMessage:{addListener(){}}}},
+  window:{addEventListener(){}},document:{querySelector:()=>platform?{}:null,addEventListener(){}},
+ });
+ const port={name:'prism-platform-live',onMessage:{addListener:(fn:Function)=>{receive=fn;}},onDisconnect:{addListener:(fn:Function)=>{disconnect=fn;}},postMessage:(event:any)=>posts.push(event)};
+ connect(port);receive({sessionId:'s',after:4,eventAfter:2,liveAfter:'live:1'});assert.equal(sockets,1);
+ emit({type:'snapshot',value:{session_id:'s'}});assert.equal(posts[0].value.session_id,'s');
+ receive({sessionId:'s',after:0,eventAfter:0,liveAfter:''});assert.equal(sockets,1);
+ disconnect();assert.equal(closed,1);emit({type:'heartbeat'});assert.equal(posts.length,1);
+ platform=false;connect(port);receive({sessionId:'s',after:0,eventAfter:0,liveAfter:''});assert.equal(sockets,1);assert.equal(posts.at(-1).type,'closed');
 });

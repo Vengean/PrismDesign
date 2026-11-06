@@ -2,6 +2,7 @@
 set -euo pipefail
 mkdir -p /var/log/prism "$HOME/.ssh" "$HOME/.local/share/code-server/extensions"
 umask 077
+node /runtime-health.cjs preparing
 node /preview-proxy.cjs > /var/log/prism/proxy.log 2>&1 &
 # Credentials are never embedded into repository URLs or echoed to logs.
 if [ -n "${GIT_SSH_KEY:-}" ]; then
@@ -18,8 +19,9 @@ ASKPASS
 fi
 git config --global user.name 'Prism Studio Agent'
 git config --global user.email 'agent@prism-studio.dev'
-fail() { printf 'failed' > /var/log/prism/state; echo '环境准备失败，请查看日志。'; }
+fail() { printf 'failed' > /var/log/prism/state; printf '__PRISM_RUNTIME_ERROR__=%s\n' "${1:-环境准备失败，请查看日志。}"; }
 trap fail ERR
+trap 'exit 1' TERM
 printf 'preparing' > /var/log/prism/state
 cd /workspace
 # JSON is parsed with node; names/URLs/branches are passed as arguments, never shell code.
@@ -42,11 +44,13 @@ done < <(node -e 'for(const r of JSON.parse(process.env.PRISM_REPOS))console.log
 printf '%s\n' "${CLAUDE_MD:-}" > /workspace/CLAUDE.md
 init_hash=$(printf '%s' "$INIT_SCRIPT" | sha256sum | cut -d' ' -f1)
 if [ "$(cat /workspace/.prism-init-hash 2>/dev/null || true)" != "$init_hash" ]; then
+  node /runtime-health.cjs initializing
   echo '执行初始化脚本'
   printf '%s\n' "$INIT_SCRIPT" > /tmp/prism-init.sh
   timeout "${PRISM_INIT_TIMEOUT:-1800}" bash -e /tmp/prism-init.sh
   printf '%s' "$init_hash" > /workspace/.prism-init-hash
 fi
+node /runtime-health.cjs starting
 printf 'starting' > /var/log/prism/state
 code-server --bind-addr 0.0.0.0:8080 --auth none --disable-telemetry /workspace > /var/log/prism/code-server.log 2>&1 &
 # SDK selection follows the latest project configuration on each environment start.
@@ -59,10 +63,10 @@ startup_pid=$!
 while true; do
   if ! kill -0 "$agent_pid" 2>/dev/null; then
     echo 'Agent 已退出，请查看 Agent 日志。'
-    fail; exit 1
+    fail 'Agent 已退出，请查看 Agent 日志。'; exit 1
   fi
   if [ "$startup_pid" != 0 ] && ! kill -0 "$startup_pid" 2>/dev/null; then
-    if wait "$startup_pid"; then echo '启动脚本已执行完毕'; else fail; exit 1; fi
+    if wait "$startup_pid"; then echo '启动脚本已执行完毕'; else fail '业务启动脚本执行失败，请查看启动日志。'; exit 1; fi
     startup_pid=0
   fi
   sleep 2

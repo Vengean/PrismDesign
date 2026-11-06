@@ -6,7 +6,7 @@ function broadcast(clientId,type,data){for(const [ws,id] of clients)if(id===clie
 const server=http.createServer(async(req,res)=>{
  if(req.headers.authorization!==`Bearer ${token}`){res.writeHead(401);res.end('{}');return;}
  const reply=value=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(value));};
- if(req.url==='/api/status')return reply({agent:{capabilities:{cancel:true}}});
+ if(req.url==='/api/status')return reply({status:'running',agent:{capabilities:{cancel:true}}});
  if(req.url==='/api/session')return reply({success:true});
  if(req.method==='DELETE'&&req.url.startsWith('/api/runs/')){active.get(decodeURIComponent(req.url.slice('/api/runs/'.length)))?.finish(true);return reply({success:true});}
  if(req.url!=='/api/chat'){res.writeHead(404);return reply({});}
