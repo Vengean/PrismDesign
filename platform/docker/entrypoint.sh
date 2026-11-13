@@ -47,8 +47,10 @@ if [ -n "$GIT_ACCESS_TOKEN" ]; then
   done
 fi
 
-# 4. Write CLAUDE.md
-[ -n "$CLAUDE_MD" ] && echo "$CLAUDE_MD" > /workspace/CLAUDE.md
+# 4. Seed project instructions only when the workspace has no CLAUDE.md.
+if [ -n "$CLAUDE_MD" ] && [ ! -e /workspace/CLAUDE.md ] && [ ! -L /workspace/CLAUDE.md ]; then
+  printf '%s\n' "$CLAUDE_MD" > /workspace/CLAUDE.md
+fi
 
 echo "Workspace initialized."
 } 2>&1 | log_main

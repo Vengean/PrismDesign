@@ -1,6 +1,6 @@
+import {toast} from '@/components/ui/toast';
 import { useState, type FormEvent } from "react";
 import { api } from "@/lib/api";
-import { CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,13 +11,11 @@ export default function ChangePassword() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
-    setSuccess("");
 
     if (newPassword !== confirmPassword) {
       setError("两次输入的新密码不一致");
@@ -32,7 +30,7 @@ export default function ChangePassword() {
     setLoading(true);
     try {
       await api.changePassword(oldPassword, newPassword);
-      setSuccess("密码修改成功");
+      toast.success("密码修改成功");
       setOldPassword("");
       setNewPassword("");
       setConfirmPassword("");
@@ -45,28 +43,22 @@ export default function ChangePassword() {
 
   return (
     <div className="page-container mx-auto max-w-xl">
-      <p className="eyebrow mb-3">ACCOUNT SECURITY</p><h1 className="page-heading mb-3">更新你的密码</h1><p className="page-caption mb-8">为账号设置一个只有你知道的密码。</p>
+      <h1 className="page-heading mb-3">账号安全</h1><p className="page-caption mb-8">管理你的登录密码。</p>
 
-      <Card className="rounded-3xl border bg-white shadow-none">
+      <Card className="rounded-xl border bg-white shadow-none">
         <CardHeader>
           <CardTitle>更新密码</CardTitle>
           <CardDescription>请输入当前密码和新密码</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="form-stack">
             {error && (
               <div className="p-3 text-sm bg-destructive/10 text-destructive rounded-lg border border-destructive/20">
                 {error}
               </div>
             )}
-            {success && (
-              <div className="flex items-center gap-2 p-3 text-sm bg-emerald-50 text-emerald-600 rounded-lg border border-emerald-200">
-                <CheckCircle2 size={16} />
-                {success}
-              </div>
-            )}
 
-            <div className="space-y-2">
+            <div className="form-field">
               <Label htmlFor="old-password">当前密码</Label>
               <Input
                 id="old-password"
@@ -78,7 +70,7 @@ export default function ChangePassword() {
               />
             </div>
 
-            <div className="space-y-2">
+            <div className="form-field">
               <Label htmlFor="new-password">新密码</Label>
               <Input
                 id="new-password"
@@ -91,7 +83,7 @@ export default function ChangePassword() {
               />
             </div>
 
-            <div className="space-y-2">
+            <div className="form-field">
               <Label htmlFor="confirm-password">确认新密码</Label>
               <Input
                 id="confirm-password"
@@ -104,7 +96,7 @@ export default function ChangePassword() {
               />
             </div>
 
-            <Button type="submit" className="w-full rounded-full" disabled={loading}>
+            <Button type="submit" className="w-full rounded-md" disabled={loading}>
               {loading ? "修改中..." : "确认修改"}
             </Button>
           </form>

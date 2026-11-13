@@ -17,17 +17,30 @@ test('real container: clone, branch, scripts, authorized HTTP/WebSocket preview,
  const {initConversationTables,conversations,readConversation}=await import('../src/services/conversations.js');
  const {activeWorkspaceRun}=await import('../src/services/workspace-lock.js');
  const {issueRuntimeLink}=await import('../src/services/preview-gateway.js');
- initProjectTables();initRuntimeTables();initConversationTables();createUser('viewer','unused');
- const project=createProject('Container fixture','','owner',[{userId:'viewer',role:'viewer'}],{...emptyConfig,
+ (await initProjectTables());(await initRuntimeTables());(await initConversationTables());(await createUser('viewer','unused'));
+ const project=(await createProject('Container fixture','','owner',[{userId:'viewer',role:'viewer'}],{...emptyConfig,
   repos:[{name:'app',url:'https://fixture.invalid/repo',branch:'main'}],
   gitAuth:{mode:'token',sshPort:22,token:'fixture-secret'},
   model:{provider:'claude',baseUrl:'https://fixture.invalid',model:'fixture-model',apiKey:'fixture-model-secret'},
-  initScript:'echo initialized >> /workspace/init-count',startupScript:'cd app\nnode server.cjs'});
- const id=crypto.randomUUID();getDb().prepare('INSERT INTO requirements(id,project_id,title,description,acceptance,created_by) VALUES(?,?,?,?,?,?)').run(id,project,'Fixture','','','owner');getDb().prepare('INSERT INTO project_sessions(id,requirement_id) VALUES(?,?)').run(crypto.randomUUID(),id);
+  initScript:'echo initialized >> /workspace/init-count',startupScript:'cd app\nnode server.cjs'}));
+ const id=crypto.randomUUID();(await getDb().prepare('INSERT INTO requirements(id,project_id,title,description,acceptance,created_by) VALUES(?,?,?,?,?,?)').run(id,project,'Fixture','','','owner'));(await getDb().prepare('INSERT INTO project_sessions(id,requirement_id) VALUES(?,?)').run(crypto.randomUUID(),id));
  const pause=()=>new Promise(r=>setTimeout(r,1000));
- async function ready(){for(let i=0;i<60;i++){const status=await runtimeStatus(id);if(status.status==='running')return;if(status.status==='failed')throw new Error(await runtimeLogs(id));await pause();}throw new Error('Container did not become ready: '+await runtimeLogs(id));}
+ async function ready(){for(let i=0;i<60;i++){const status=await runtimeStatus(id);if(status.status==='running')return;if(status.status==='failed')throw new Error(JSON.stringify(status)+'\n'+await runtimeLogs(id));await pause();}throw new Error('Container did not become ready: '+await runtimeLogs(id));}
  try {
+  const {operateRequirementGit}=await import('../src/services/requirement-git.js');
+  assert.equal((await operateRequirementGit(id,'app','status')).success,true);
+  assert.equal((await runtimeStatus(id)).status,'stopped');
+  assert.equal((await execRuntime(id,['test','-e','/workspace/init-count'])).code,1,'editing must not run install or service scripts');
+  const initialIde=await issueRuntimeLink(id,'owner','ide','127.0.0.1'),initialOpen=await fetch(initialIde,{redirect:'manual'}),initialCookie=initialOpen.headers.get('set-cookie')!.split(';')[0];
+  assert.equal(initialOpen.status,302);
+  await execRuntime(id,['sh','-c','echo preserve-before-start > /workspace/app/before-start.txt']);
   await startRuntime(id);await ready();
+  assert.equal((await execRuntime(id,['cat','/workspace/app/before-start.txt'])).text.trim(),'preserve-before-start');
+  const {dockerAgentTransport}=await import('../src/services/agent-transport.js');const browserEvents:any[]=[],commands:unknown[]=[];
+  await dockerAgentTransport.run(id,{runId:'browser-relay-fixture',clientId:'platform-browser-test-fixture',message:'verify browser relay',browser:{pageUrl:'http://preview.fixture/',verifyOnly:true,async execute(command){commands.push(command);return {title:'bound preview'};}}},event=>{browserEvents.push(event);});
+  assert.equal((commands[0] as {action:string}).action,'observe');assert.ok(browserEvents.some(event=>event.type==='test-run.updated'));assert.equal(browserEvents.find(event=>event.type==='bridge.result').data.verification.status,'passed');
+
+  assert.equal((await fetch(new URL(initialIde).origin,{headers:{Cookie:initialCookie}})).status,200,'authorized editor link remains usable while services run');
   assert.equal((await execRuntime(id,['git','-C','/workspace/app','branch','--show-current'])).text.trim(),`prism/requirement-${id}`);
   assert.ok((await runtimeStatus(id)).ports.includes(3457));
   await assert.rejects(issueRuntimeLink(id,'viewer','ide','127.0.0.1'),/权限不足/);
@@ -62,55 +75,58 @@ test('real container: clone, branch, scripts, authorized HTTP/WebSocket preview,
   const viewerPost=await fetch(origin+'/__prism_platform__/messages?sessionId='+viewerContext.sessionId,{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({message:'denied',requestId:'viewer-request-01'})});assert.equal(viewerPost.status,403);
   const fromWidget=await widget.send('widget entry request','widget-entry-request');await conversations.wait(fromWidget.id);assert.ok((await plugin.sync()).messages.some(m=>m.body==='widget entry request'));
   const fromPlugin=await plugin.send('plugin entry request','plugin-entry-request');await conversations.wait(fromPlugin.id);assert.ok((await widget.sync()).messages.some(m=>m.body==='plugin entry request'));
+  const runningContainer=(await containerEngine().getContainer(`prism-req-${id}`).inspect()).Id;
   const ide=await issueRuntimeLink(id,'owner','ide','127.0.0.1');const ideOpen=await fetch(ide,{redirect:'manual'});assert.equal(ideOpen.status,302);
+  assert.equal((await containerEngine().getContainer(`prism-req-${id}`).inspect()).Id,runningContainer);assert.equal((await runtimeStatus(id)).status,'running');
   let ideReady=false;for(let i=0;i<30;i++){const response=await fetch(new URL(ide).origin,{headers:{Cookie:ideOpen.headers.get('set-cookie')!.split(';')[0]}});if(response.status===200){ideReady=true;break;}await pause();}assert.equal(ideReady,true,'VS Code HTTP endpoint available');
   const ideOrigin=new URL(ide).origin;
   const ideSocket=new WebSocket(ideOrigin.replace('http:','ws:')+'/?reconnectionToken='+crypto.randomUUID()+'&reconnection=false&skipWebSocketFrames=false', {headers:{Cookie:ideOpen.headers.get('set-cookie')!.split(';')[0],Origin:ideOrigin}});
   await new Promise<void>((resolve,reject)=>{const timeout=setTimeout(()=>reject(new Error('VS Code WebSocket handshake timed out')),10000);ideSocket.once('open',()=>{clearTimeout(timeout);resolve();});ideSocket.once('error',e=>{clearTimeout(timeout);reject(e);});});
   const ideClosed=new Promise<void>(resolve=>ideSocket.once('close',()=>resolve()));
-  const held=conversations.submit(id,'owner','fixture-hold-run','fixture-hold-001');
-  await ideClosed;
-  assert.equal((await fetch(ideOrigin,{headers:{Cookie:ideOpen.headers.get('set-cookie')!.split(';')[0]}})).status,423);
+  const held=(await conversations.submit(id,'owner','fixture-hold-run','fixture-hold-001'));
+  assert.equal(ideSocket.readyState,WebSocket.OPEN);
+  assert.equal((await fetch(ideOrigin,{headers:{Cookie:ideOpen.headers.get('set-cookie')!.split(';')[0]}})).status,200);
+  const concurrentIde=await issueRuntimeLink(id,'owner','ide','127.0.0.1');assert.equal((await fetch(concurrentIde,{redirect:'manual'})).status,302);ideSocket.close();await ideClosed;
   await assert.rejects(startRuntime(id),/Agent/);
-  for(let i=0;i<15;i++){if((readConversation(id).runs as {cancel_supported:number}[])[0].cancel_supported)break;await pause();}
-  assert.equal((readConversation(id).runs as {cancel_supported:number}[])[0].cancel_supported,1,JSON.stringify(readConversation(id).runs));
-  await conversations.cancel(id,activeWorkspaceRun(id)!.id);await conversations.wait(held.id);assert.equal(activeWorkspaceRun(id),undefined);
-  const normal=conversations.submit(id,'owner','fixture edit request','fixture-normal-01');await conversations.wait(normal.id);
-  assert.equal((readConversation(id).runs as {status:string}[])[0].status,'succeeded');
-  assert.ok((readConversation(id).current_messages as {body:string}[]).some(m=>m.body==='处理完成 ✅'));
+  for(let i=0;i<15;i++){if(((await readConversation(id)).runs as {cancel_supported:number}[])[0].cancel_supported)break;await pause();}
+  assert.equal(((await readConversation(id)).runs as {cancel_supported:number}[])[0].cancel_supported,1,JSON.stringify((await readConversation(id)).runs));
+  await conversations.cancel(id,(await activeWorkspaceRun(id))!.id);await conversations.wait(held.id);assert.equal((await activeWorkspaceRun(id)),undefined);
+  const normal=(await conversations.submit(id,'owner','fixture edit request','fixture-normal-01'));await conversations.wait(normal.id);
+  assert.equal(((await readConversation(id)).runs as {status:string}[])[0].status,'succeeded');
+  assert.ok(((await readConversation(id)).current_messages as {body:string}[]).some(m=>m.body==='处理完成 ✅'));
   assert.equal((await execRuntime(id,['cat','/workspace/app/agent-edit.txt'])).text,'fixture source edit');
   const manifests=await execRuntime(id,['node','-e',`const fs=require('fs');for(const name of ['git-base','merge-conflict']){const root='/usr/lib/code-server/lib/vscode/extensions/'+name;const m=JSON.parse(fs.readFileSync(root+'/package.json'));if(m.browser)throw Error('Invalid browser entry remains: '+name);if(![m.main,m.main+'.js'].some(p=>fs.existsSync(root+'/'+p)))throw Error('Missing server bundle: '+name)}console.log('extensions-valid')`]);
   assert.equal(manifests.code,0);assert.equal(manifests.text.trim(),'extensions-valid');
   await execRuntime(id,['sh','-c','echo retained > /workspace/app/edit.txt']);
-  const historyBeforeRestart=readConversation(id);
+  const historyBeforeRestart=(await readConversation(id));
   await stopRuntime(id);assert.equal((await runtimeStatus(id)).status,'stopped');
   const before=(await containerEngine().getContainer(`prism-req-${id}`).inspect()).Id;
-  const updated={...projectConfig(project),startupScript:'echo latest-startup > /workspace/startup-value\ncd app\nnode server.cjs',initScript:'echo new-init >> /workspace/init-count'};
-  getDb().prepare('UPDATE project_configs SET config=? WHERE project_id=?').run(JSON.stringify(updated),project);
+  const updated={...(await projectConfig(project)),startupScript:'echo latest-startup > /workspace/startup-value\ncd app\nnode server.cjs',initScript:'echo new-init >> /workspace/init-count'};
+  (await getDb().prepare('UPDATE project_configs SET config=? WHERE project_id=?').run(JSON.stringify(updated),project));
   await startRuntime(id);await ready();
   assert.notEqual((await containerEngine().getContainer(`prism-req-${id}`).inspect()).Id,before);
-  assert.equal(readConversation(id).session_id,historyBeforeRestart.session_id);assert.deepEqual(readConversation(id).messages,historyBeforeRestart.messages);
+  assert.equal((await readConversation(id)).session_id,historyBeforeRestart.session_id);assert.deepEqual((await readConversation(id)).messages,historyBeforeRestart.messages);
   assert.equal((await execRuntime(id,['cat','/workspace/startup-value'])).text.trim(),'latest-startup');
   assert.equal((await execRuntime(id,['cat','/workspace/app/edit.txt'])).text.trim(),'retained');assert.equal((await execRuntime(id,['cat','/workspace/init-count'])).text.trim(),'initialized\nnew-init');
-  getDb().prepare('DELETE FROM project_members WHERE project_id=? AND user_id=?').run(project,'viewer');assert.equal((await fetch(origin,{headers:{Cookie:cookie}})).status,401);
+  (await getDb().prepare('DELETE FROM project_members WHERE project_id=? AND user_id=?').run(project,'viewer'));assert.equal((await fetch(origin,{headers:{Cookie:cookie}})).status,401);
   // A listening database must never mark the environment ready; timeout preserves source.
   process.env.PRISM_STARTUP_TIMEOUT='4';
-  getDb().prepare('UPDATE project_configs SET config=? WHERE project_id=?').run(JSON.stringify({...updated,startupScript:`node -e "require('net').createServer(s=>s.end('DATABASE greeting')).listen(5432,'127.0.0.1')"`}),project);
+  (await getDb().prepare('UPDATE project_configs SET config=? WHERE project_id=?').run(JSON.stringify({...updated,startupScript:`node -e "require('net').createServer(s=>s.end('DATABASE greeting')).listen(5432,'127.0.0.1')"`}),project));
   await startRuntime(id);
   let failure;for(let i=0;i<15;i++){failure=await runtimeStatus(id);if(failure.status==='failed')break;assert.notEqual(failure.status,'running');await pause();}
   assert.equal(failure?.status,'failed');assert.match(failure!.error,/HTTP/);
   delete process.env.PRISM_STARTUP_TIMEOUT;
   // Preparation has its own deadline, independent of a browser polling status.
   process.env.PRISM_PREPARE_TIMEOUT='2';
-  getDb().prepare('UPDATE project_configs SET config=? WHERE project_id=?').run(JSON.stringify({...updated,initScript:'sleep 20'}),project);
+  (await getDb().prepare('UPDATE project_configs SET config=? WHERE project_id=?').run(JSON.stringify({...updated,initScript:'sleep 20'}),project));
   await startRuntime(id);await new Promise(r=>setTimeout(r,5500));
   const prepared=await runtimeStatus(id);assert.equal(prepared.status,'failed');assert.match(prepared.error,/准备超时/);
   delete process.env.PRISM_PREPARE_TIMEOUT;
-  getDb().prepare('UPDATE project_configs SET config=? WHERE project_id=?').run(JSON.stringify({...updated,startupScript:'exit 7'}),project);
+  (await getDb().prepare('UPDATE project_configs SET config=? WHERE project_id=?').run(JSON.stringify({...updated,startupScript:'exit 7'}),project));
   await startRuntime(id);
   let scriptFailure;for(let i=0;i<15;i++){scriptFailure=await runtimeStatus(id);if(scriptFailure.status==='failed')break;await pause();}
   assert.equal(scriptFailure?.status,'failed');assert.match(scriptFailure!.error,/业务启动脚本/);
-  getDb().prepare('UPDATE project_configs SET config=? WHERE project_id=?').run(JSON.stringify({...updated,startupScript:'sleep 2\n'+updated.startupScript}),project);
+  (await getDb().prepare('UPDATE project_configs SET config=? WHERE project_id=?').run(JSON.stringify({...updated,startupScript:'sleep 2\n'+updated.startupScript}),project));
   await startRuntime(id);await ready();assert.equal((await runtimeStatus(id)).agentReady,true);
   assert.equal((await execRuntime(id,['cat','/workspace/app/edit.txt'])).text.trim(),'retained');
 
@@ -118,6 +134,6 @@ test('real container: clone, branch, scripts, authorized HTTP/WebSocket preview,
   delete process.env.PRISM_STARTUP_TIMEOUT;delete process.env.PRISM_PREPARE_TIMEOUT;
   await containerEngine().getContainer(`prism-req-${id}`).remove({force:true}).catch(()=>{});
   await containerEngine().getVolume(`prism-req-code-${id}`).remove().catch(()=>{});
-  getDb().close();rmSync(dir,{recursive:true,force:true});
+  (await getDb().close());rmSync(dir,{recursive:true,force:true});
  }
 });

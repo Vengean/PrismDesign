@@ -1,4 +1,5 @@
 import type { VerificationFailureCategory, VerificationStatus } from "../testing/verification-store.js";
+import type {TestRun} from '../testing/test-run-store.js';
 
 export type AgentProviderName = "claude" | "claude-sub" | "openai" | "codex" | "glm";
 
@@ -14,6 +15,7 @@ export interface AgentResult {
   message: string;
   filesModified: string[];
   runId?: string;
+  testRun?:TestRun;
   verification?: {
     id: string;
     status: VerificationStatus;

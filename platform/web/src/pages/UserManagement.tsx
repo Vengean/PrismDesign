@@ -1,3 +1,4 @@
+import {toast} from '@/components/ui/toast';
 import { useState, useEffect, useCallback, useRef } from "react";
 import { api } from "@/lib/api";
 import { copyToClipboard } from "@/lib/utils";
@@ -46,7 +47,7 @@ export default function UserManagement() {
       const data = await api.getUsers();
       setUsers(data);
     } catch (err) {
-      console.error("加载用户列表失败:", err);
+      toast.error(err instanceof Error?err.message:"加载用户列表失败");
     } finally {
       setLoading(false);
     }
@@ -60,9 +61,10 @@ export default function UserManagement() {
     try {
       await api.deleteUser(id);
       setDeleteConfirm(null);
+      toast.success("用户已删除");
       loadUsers();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "删除失败");
+      toast.error(err instanceof Error ? err.message : "删除失败");
     }
   }
 
@@ -71,24 +73,24 @@ export default function UserManagement() {
       const data = await api.resetPassword(id);
       setCredentialInfo({ id: data.id, password: data.password, title: "密码已重置" });
     } catch (err) {
-      alert(err instanceof Error ? err.message : "重置失败");
+      toast.error(err instanceof Error ? err.message : "重置失败");
     }
   }
 
   return (
     <div className="page-container">
-      <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
 
-          <div><p className="eyebrow mb-2">YOUR TEAM</p><h1 className="page-heading">一起创造的伙伴</h1><p className="page-caption">管理平台账号，再将伙伴邀请到项目中。</p></div>
+          <div><h1 className="page-heading">用户管理</h1><p className="page-caption">管理平台账号和登录凭证。</p></div>
         </div>
-        <Button className="rounded-full px-5" onClick={() => setCreateOpen(true)}>
+        <Button className="rounded-md px-5" onClick={() => setCreateOpen(true)}>
           <Plus size={16} />
           添加用户
         </Button>
       </div>
 
-      <Card className="overflow-hidden rounded-2xl bg-white shadow-none">
+      <Card className="overflow-hidden rounded-lg bg-white shadow-none">
         {loading ? (
           <div className="p-8 text-center text-muted-foreground">加载中...</div>
         ) : users.length === 0 ? (
@@ -109,7 +111,7 @@ export default function UserManagement() {
                   <TableCell className="font-medium"><span className="inline-flex items-center gap-3"><span className="avatar-button shrink-0">{u.id[0]?.toUpperCase()}</span>{u.id}</span></TableCell>
                   <TableCell>
                     <Badge variant={u.role === "admin" ? "default" : "secondary"}>
-                      {u.role === "admin" ? "管理员" : "用户"}
+                      {u.role === "admin" ? "管理员" : "开发者"}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
@@ -222,13 +224,13 @@ function CreateUserDialog({
           <DialogTitle>添加用户</DialogTitle>
           <DialogDescription>输入用户 ID，系统将自动生成初始密码。</DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="form-stack">
           {error && (
             <div className="p-3 text-sm bg-destructive/10 text-destructive rounded-lg border border-destructive/20">
               {error}
             </div>
           )}
-          <div className="space-y-2">
+          <div className="form-field">
             <Label htmlFor="new-user-id">用户 ID</Label>
             <Input
               id="new-user-id"

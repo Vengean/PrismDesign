@@ -91,10 +91,13 @@ export function createChat(
   textarea.placeholder = t("chat.placeholder");
   textarea.rows = 1;
   textarea.onkeydown = (e) => {
-    // Ctrl+Enter or Cmd+Enter to send
-    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+    // Only plain Enter sends. Modified Enter inserts a newline; preserve IME confirmation.
+    if (e.key === "Enter" && !e.isComposing && e.keyCode !== 229) {
       e.preventDefault();
-      sendMessage();
+      if (e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) {
+        textarea.setRangeText("\n", textarea.selectionStart, textarea.selectionEnd, "end");
+        autoResize();
+      } else if (!e.repeat) sendMessage();
       return;
     }
     // Backspace at position 0 with comment tags → remove last tag

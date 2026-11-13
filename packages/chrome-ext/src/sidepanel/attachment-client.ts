@@ -25,6 +25,7 @@ export function tabAttachmentClient(tabId:number,sessionId:string):AttachmentCli
   },
   async remove(id){await call({type:'PRISM_ATTACHMENT_REMOVE',id});},
   async download(file){const result=await call<{data:string}>({type:'PRISM_ATTACHMENT_DOWNLOAD',id:file.id});saveAttachment(new Blob([base64ToBytes(result.data)]),file.name);},
+  async downloadWorkspaceFile(path){await call({type:'PRISM_WORKSPACE_DOWNLOAD',path});},
  };
  return client;
 }

@@ -1,3 +1,4 @@
+import {runtimeResourceNames} from './runtime-identity.js';
 import crypto from 'node:crypto';
 import type {IncomingMessage,ServerResponse} from 'node:http';
 import {containerEngine,requirement} from './requirement-runtime.js';
@@ -95,11 +96,11 @@ function helperLog(buffer:Buffer){
  return text||buffer.toString();
 }
 export type AttachmentRunner=(id:string,input:Record<string,unknown>,content?:Buffer)=>Promise<{value:unknown;content?:Buffer}>;
-const runDockerAttachment:AttachmentRunner=async(id,input,content)=>{
- const engine=containerEngine(60000),volume=`prism-req-code-${id}`;
+export async function runWorkspaceProgram(id:string,input:Record<string,unknown>,content:Buffer|undefined,program:string,limit=MAX_ATTACHMENT_SIZE){
+ const engine=containerEngine(60000),volume=runtimeResourceNames(id).volume;
  try{await engine.getVolume(volume).inspect();}catch(error){if((error as {statusCode?:number}).statusCode===404)throw new AttachmentError('workspace 已清理或尚未创建',404);throw error;}
  const write=input.action==='upload'||input.action==='remove';
- const helper=await engine.createContainer({Image:process.env.PRISM_WORKSPACE_IMAGE||'prism-workspace:latest',Entrypoint:['node'],Cmd:['-e',attachmentFileProgram,JSON.stringify(input)],WorkingDir:'/tmp',Labels:{'prism.attachment-helper':id},
+ const helper=await engine.createContainer({Image:process.env.PRISM_WORKSPACE_IMAGE||'prism-workspace:latest',Entrypoint:['node'],Cmd:['-e',program,JSON.stringify(input)],WorkingDir:'/tmp',Labels:{'prism.attachment-helper':id},
   HostConfig:{Binds:[`${volume}:/workspace${write?'':':ro'}`],NetworkMode:'none',Memory:128*1024*1024,PidsLimit:32,CapDrop:['ALL'],SecurityOpt:['no-new-privileges']}});
  const timer=setTimeout(()=>{void helper.remove({force:true}).catch(()=>{});},45000);timer.unref();
  try{
@@ -108,10 +109,11 @@ const runDockerAttachment:AttachmentRunner=async(id,input,content)=>{
   const text=helperLog(await helper.logs({stdout:true,stderr:true,tail:20}) as Buffer);
   let value:any;try{value=JSON.parse(text);}catch{throw new AttachmentError('附件工作区操作失败，请检查环境',503);}
   if(result.StatusCode!==0)throw new AttachmentError(value.error||'附件操作失败',404);
-  if(input.action==='download')return {value,content:readAttachmentArchive(await boundedStream(await helper.getArchive({path:'/tmp/payload.bin'}),MAX_ATTACHMENT_SIZE+64*1024))};
+  if(input.action==='download')return {value,content:readAttachmentArchive(await boundedStream(await helper.getArchive({path:'/tmp/payload.bin'}),limit+64*1024))};
   return {value};
  }finally{clearTimeout(timer);await helper.remove({force:true}).catch(()=>{});}
-};
+}
+const runDockerAttachment:AttachmentRunner=(id,input,content)=>runWorkspaceProgram(id,input,content,attachmentFileProgram);
 export const runAttachmentHelper:AttachmentRunner=async(id,input,content)=>{
  try{return await runDockerAttachment(id,input,content);}catch(error){
   if(error instanceof AttachmentError)throw error;
@@ -119,42 +121,42 @@ export const runAttachmentHelper:AttachmentRunner=async(id,input,content)=>{
   throw new AttachmentError('无法访问需求 workspace，请确认容器服务可用后重试',503);
  }
 };
-function session(id:string){const row=getDb().prepare('SELECT id FROM project_sessions WHERE requirement_id=?').get(id) as {id:string}|undefined;if(!row)throw new AttachmentError('需求会话不存在',404);return row.id;}
-function access(id:string,userId:string){const role=projectRole(requirement(id).project_id,userId);if(!role||role==='viewer')throw new AttachmentError('只有项目编辑成员可以访问附件',403);return session(id);}
+async function session(id:string){const row=(await getDb().prepare('SELECT id FROM project_sessions WHERE requirement_id=?').get(id)) as {id:string}|undefined;if(!row)throw new AttachmentError('需求会话不存在',404);return row.id;}
+async function access(id:string,userId:string){const role=(await projectRole((await requirement(id)).project_id,userId));if(!role||role==='viewer')throw new AttachmentError('只有项目编辑成员可以访问附件',403);return (await session(id));}
 function attachmentIds(value:unknown):string[]{if(value===undefined)return [];if(!Array.isArray(value)||value.length>MAX_ATTACHMENTS||value.some(id=>typeof id!=='string'||!/^[a-f0-9-]{36}$/.test(id))||new Set(value).size!==value.length)throw new AttachmentError('附件列表无效');return value;}
-function published(sessionId:string,id:string){return !!getDb().prepare(`SELECT 1 FROM conversation_messages m,json_each(CASE WHEN json_valid(m.client_context) THEN m.client_context ELSE '{}' END,'$.attachments') a WHERE m.session_id=? AND json_extract(a.value,'$.id')=? LIMIT 1`).get(sessionId,id);}
+async function published(sessionId:string,id:string){return !!(await getDb().prepare(`SELECT 1 FROM conversation_messages m,json_each(CASE WHEN json_valid(m.client_context) THEN m.client_context ELSE '{}' END,'$.attachments') a WHERE m.session_id=? AND json_extract(a.value,'$.id')=? LIMIT 1`).get(sessionId,id));}
 function publicMeta(value:StoredAttachment):WorkspaceAttachment {const {id,name,mimeType,size,workspacePath,sha256}=value;return {id,name,mimeType,size,workspacePath,sha256};}
 export function createWorkspaceAttachments(run:AttachmentRunner=runAttachmentHelper){
  return {
   async upload(id:string,userId:string,name:string,mimeType:string,content:Buffer){
-   const sessionId=access(id,userId);
+   const sessionId=(await access(id,userId));
    name=name.replace(/\\/g,'/').split('/').at(-1)!.replace(/[\x00-\x1f\x7f]/g,'').trim();
    if(!name||name==='.'||name==='..'||Buffer.byteLength(name)>180)throw new AttachmentError('文件名无效或过长');
    if(!content.length||content.length>MAX_ATTACHMENT_SIZE)throw new AttachmentError('单个附件需大于 0 且不超过 5 MB',413);
    const result=await run(id,{action:'upload',id:crypto.randomUUID(),sessionId,userId,name,mimeType:mimeType.slice(0,120)||'application/octet-stream',createdAt:new Date().toISOString()},content);
-   access(id,userId);return publicMeta(result.value as StoredAttachment);
+   (await access(id,userId));return publicMeta(result.value as StoredAttachment);
   },
   async resolve(id:string,userId:string,value:unknown,requestId?:string){
-   const sessionId=access(id,userId),ids=attachmentIds(value);if(!ids.length)return [];
+   const sessionId=(await access(id,userId)),ids=attachmentIds(value);if(!ids.length)return [];
    // A retry of an already accepted message remains idempotent after files are
    // moved/cleaned: the existing durable message is the authoritative metadata.
-   if(requestId){const old=getDb().prepare(`SELECT client_context FROM conversation_messages WHERE session_id=? AND user_id=? AND request_id=? AND role='user'`).get(sessionId,userId,requestId) as {client_context:string}|undefined;
+   if(requestId){const old=(await getDb().prepare(`SELECT client_context FROM conversation_messages WHERE session_id=? AND user_id=? AND request_id=? AND role='user'`).get(sessionId,userId,requestId)) as {client_context:string}|undefined;
     if(old){const saved=JSON.parse(old.client_context||'{}').attachments||[];if(JSON.stringify(saved.map((item:WorkspaceAttachment)=>item.id))!==JSON.stringify(ids))throw new AttachmentError('相同请求标识不能用于不同附件');return saved as WorkspaceAttachment[];}}
    const result=await run(id,{action:'metadata',ids,sessionId});
    const records=result.value as StoredAttachment[];
-   for(const record of records)if(record.userId!==userId&&!published(sessionId,record.id))throw new AttachmentError('附件不存在或无权访问',404);
+   for(const record of records)if(record.userId!==userId&&!(await published(sessionId,record.id)))throw new AttachmentError('附件不存在或无权访问',404);
    if(records.reduce((sum,item)=>sum+item.size,0)>MAX_ATTACHMENT_TOTAL)throw new AttachmentError('每条消息的附件总计不能超过 20 MB',413);
-   access(id,userId);return records.map(publicMeta);
+   (await access(id,userId));return records.map(publicMeta);
   },
   async download(id:string,userId:string,attachmentId:string){
-   const sessionId=access(id,userId);attachmentIds([attachmentId]);
+   const sessionId=(await access(id,userId));attachmentIds([attachmentId]);
    const result=await run(id,{action:'download',id:attachmentId,sessionId}),meta=result.value as StoredAttachment;
-   if(meta.userId!==userId&&!published(sessionId,attachmentId))throw new AttachmentError('附件不存在或无权访问',404);
-   access(id,userId);return {attachment:publicMeta(meta),content:result.content!};
+   if(meta.userId!==userId&&!(await published(sessionId,attachmentId)))throw new AttachmentError('附件不存在或无权访问',404);
+   (await access(id,userId));return {attachment:publicMeta(meta),content:result.content!};
   },
   async remove(id:string,userId:string,attachmentId:string){
-   const sessionId=access(id,userId);attachmentIds([attachmentId]);
-   if(published(sessionId,attachmentId))throw new AttachmentError('已发送的附件随 workspace 保留，不能单独删除',409);
+   const sessionId=(await access(id,userId));attachmentIds([attachmentId]);
+   if((await published(sessionId,attachmentId)))throw new AttachmentError('已发送的附件随 workspace 保留，不能单独删除',409);
    await run(id,{action:'remove',id:attachmentId,sessionId,userId});
   },
  };

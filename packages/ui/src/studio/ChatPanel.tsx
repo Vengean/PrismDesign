@@ -1,15 +1,17 @@
+import {captureChatAnchor,restoreChatAnchor,type ChatScrollAnchor} from './chat-history.js';
 import type {ToolActivity} from './conversation-progress.js';
-import {observeMentionVisibility} from './mention-visibility.js';
+import {observeMentionVisibility,scrollToMention} from './mention-visibility.js';
 import {observeChatViewport} from './chat-viewport.js';
 import React from 'react';
 import { useRef, useEffect, useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "./button";
-import { Send, Square, Trash2, MessageSquare, MessageSquareText, Loader2, AlertCircle, CheckCircle2, Circle, XCircle, ChevronDown, Paperclip, X, Pencil, FlaskConical, Copy, Download, RefreshCw } from "lucide-react";
+import { Send, Trash2, MessageSquare, MessageSquareText, Loader2, AlertCircle, CheckCircle2, Circle, XCircle, ChevronDown, Paperclip, X, Pencil, FlaskConical, Copy, Download, RefreshCw } from "lucide-react";
 import { t } from "./i18n.js";
 import type { ChatMessage, CommentAnnotation, ElementSelection, TestRunInfo } from "./types.js";
 import {MAX_ATTACHMENTS,MAX_ATTACHMENT_SIZE,MAX_ATTACHMENT_TOTAL,type AttachmentClient,type AttachmentMeta} from "./attachment-client.js";
 
+import {RunControl} from './RunControl.js';
 import {MessageMarkdown} from './MessageMarkdown.js';
 
 async function copyText(text:string){
@@ -18,6 +20,7 @@ async function copyText(text:string){
 }
 
 export interface ChatState {
+  hasMoreHistory?:boolean;loadingHistory?:boolean;historyError?:string;loadOlder?:()=>Promise<boolean|void>;loadMention?:()=>Promise<void>;
   collaborative?:boolean;
   currentUserId?:string;
   mentionTarget?:string;
@@ -25,6 +28,7 @@ export interface ChatState {
   uploadAttachment?:AttachmentClient["upload"];
   removeAttachment?:AttachmentClient["remove"];
   downloadAttachment?:AttachmentClient["download"];
+  downloadWorkspaceFile?:AttachmentClient["downloadWorkspaceFile"];
   messages: ChatMessage[];
   sending: boolean;
   progress?:string;
@@ -42,6 +46,7 @@ export interface ChatState {
 }
 
 interface ChatPanelProps {
+  scrollToBottomOnSend?: boolean;
   readOnly?:boolean;
   unavailable?:{attachments?:string;history?:string};
   chat: ChatState;
@@ -90,8 +95,8 @@ function FloatingPopover({ anchor, align = "left", className = "", children }: {
   return createPortal(<div ref={floatingRef} style={style} className={`z-[100] overflow-y-auto overscroll-contain ${className}`}>{children}</div>, overlay);
 }
 
-export function ChatPanel({ readOnly,unavailable,chat, selection, comments, onEditComment, onRemoveComment, onCommentsSent, commentMode, onToggleCommentMode, onRestoreMessage }: ChatPanelProps) {
-  return <ChatView readOnly={readOnly} unavailable={unavailable} chat={chat} selection={selection} comments={comments} onEditComment={onEditComment} onRemoveComment={onRemoveComment} onCommentsSent={onCommentsSent} commentMode={commentMode} onToggleCommentMode={onToggleCommentMode} onRestoreMessage={onRestoreMessage} />;
+export function ChatPanel({ scrollToBottomOnSend,readOnly,unavailable,chat, selection, comments, onEditComment, onRemoveComment, onCommentsSent, commentMode, onToggleCommentMode, onRestoreMessage }: ChatPanelProps) {
+  return <ChatView scrollToBottomOnSend={scrollToBottomOnSend} readOnly={readOnly} unavailable={unavailable} chat={chat} selection={selection} comments={comments} onEditComment={onEditComment} onRemoveComment={onRemoveComment} onCommentsSent={onCommentsSent} commentMode={commentMode} onToggleCommentMode={onToggleCommentMode} onRestoreMessage={onRestoreMessage} />;
 }
 
 function formatSelectionContext(sel: ElementSelection): string {
@@ -273,7 +278,7 @@ function TestPromptTag({ verification, onStart }: { verification: NonNullable<Ch
         <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-foreground">{verification.proposedChecks.map((check) => <li key={check}>{check}</li>)}</ul>
       </div>}
       <div className="mt-3 flex justify-start gap-1.5">
-        <Button size="sm" className="h-7 px-3 text-xs" onClick={onStart}>开始</Button>
+        <Button size="sm" className="h-7 px-3 text-xs" onClick={()=>{setOpen(false);onStart();}}>开始</Button>
       </div>
     </div></FloatingPopover>}
   </div>;
@@ -297,7 +302,7 @@ function TestResultTag({ verification, run, onRetest }: { verification: NonNulla
       <div className="min-h-0 overflow-y-auto p-3">
         {verification.summary && <div className="mb-2 text-xs text-muted-foreground">{verification.summary}</div>}
         {verification.status === "failed" && verification.fixSuggestion && <div className="mb-2 rounded-md border border-destructive/20 bg-destructive/5 p-2 text-xs text-muted-foreground"><div className="font-medium text-foreground">建议修复</div><div className="mt-0.5">{verification.fixSuggestion}</div></div>}
-        {run ? <TestRunDetails run={run} onRetest={onRetest} /> : <><ul className="list-disc space-y-1 pl-4 text-xs text-muted-foreground">{verification.proposedChecks.map((check) => <li key={check}>{check}</li>)}</ul><div className="mt-3 flex justify-end"><Button size="sm" variant="outline" className="h-7 text-xs" onClick={onRetest}>重新测试</Button></div></>}
+        {run ? <TestRunDetails run={run} onRetest={()=>{setOpen(false);onRetest();}} /> : <><ul className="list-disc space-y-1 pl-4 text-xs text-muted-foreground">{verification.proposedChecks.map((check) => <li key={check}>{check}</li>)}</ul><div className="mt-3 flex justify-end"><Button size="sm" variant="outline" className="h-7 text-xs" onClick={()=>{setOpen(false);onRetest();}}>重新测试</Button></div></>}
       </div>
     </div></FloatingPopover>}
   </div>;
@@ -318,13 +323,13 @@ function EditPromptTag({ onEdit }: { onEdit: () => void }) {
     {open && <FloatingPopover anchor={anchorRef.current} className="w-[min(280px,calc(100vw-16px))] rounded-xl border bg-popover p-3 text-popover-foreground shadow-lg"><div onMouseEnter={cancelClose} onMouseLeave={() => { if (supportsHover()) scheduleClose(); }}>
       <div className="text-xs font-medium">是否允许修改代码？</div>
       <div className="mt-3 flex justify-end gap-1.5">
-        <Button size="sm" className="h-7 px-3 text-xs" onClick={onEdit}>修改</Button>
+        <Button size="sm" className="h-7 px-3 text-xs" onClick={()=>{setOpen(false);onEdit();}}>修改</Button>
       </div>
     </div></FloatingPopover>}
   </div>;
 }
 
-function ChatView({ readOnly,unavailable,chat, selection, comments, onEditComment, onRemoveComment, onCommentsSent, commentMode, onToggleCommentMode, onRestoreMessage }: ChatPanelProps) {
+function ChatView({ scrollToBottomOnSend,readOnly,unavailable,chat, selection, comments, onEditComment, onRemoveComment, onCommentsSent, commentMode, onToggleCommentMode, onRestoreMessage }: ChatPanelProps) {
   const { messages, sending, sendMessage, startVerification, cancelCurrent, clearHistory } = chat;
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
@@ -337,10 +342,13 @@ function ChatView({ readOnly,unavailable,chat, selection, comments, onEditCommen
   const [attachmentError,setAttachmentError]=useState("");
   useEffect(()=>()=>{for(const controller of uploads.current.values())controller.abort();uploads.current.clear();},[]);
   const followLatest = useRef(true);
+  const historyAnchor=useRef<ChatScrollAnchor|undefined>(undefined),historyRequested=useRef(false),pendingMention=useRef<string|undefined>(undefined);
 
   useLayoutEffect(() => {
     if (scrollRef.current) {
-      if (followLatest.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      if(historyAnchor.current){if(restoreChatAnchor(scrollRef.current,historyAnchor.current))historyAnchor.current=undefined;}
+      else if (followLatest.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      if(pendingMention.current&&Array.from(scrollRef.current.querySelectorAll<HTMLElement>('[data-message-id]')).some(message=>message.dataset.messageId===pendingMention.current)){scrollToMention(scrollRef.current,pendingMention.current,chat.currentUserId);pendingMention.current=undefined;}
       setScrollbarGutter(scrollRef.current.offsetWidth - scrollRef.current.clientWidth);
     }
   }, [messages, comments.length, attachments.length, contextOrder.length, chat.progress, chat.activity, chat.activityText]);
@@ -358,6 +366,17 @@ function ChatView({ readOnly,unavailable,chat, selection, comments, onEditCommen
     return observeMentionVisibility(scrollRef.current,chat.mentionTarget,chat.currentUserId,chat.onMentionRead);
   },[chat.mentionTarget,chat.onMentionRead,chat.currentUserId,messages]);
 
+  const loadHistory=async()=>{
+    if(!chat.loadOlder||chat.loadingHistory||historyRequested.current||historyAnchor.current||!scrollRef.current)return;
+    historyRequested.current=true;followLatest.current=false;historyAnchor.current=captureChatAnchor(scrollRef.current);
+    try{if(await chat.loadOlder()===false)historyAnchor.current=undefined;}finally{historyRequested.current=false;}
+  };
+  const jumpToMention=async()=>{
+    if(!scrollRef.current||!chat.mentionTarget)return;followLatest.current=false;
+    const id=chat.mentionTarget;
+    if(Array.from(scrollRef.current.querySelectorAll<HTMLElement>('[data-message-id]')).some(message=>message.dataset.messageId===id)){scrollToMention(scrollRef.current,id,chat.currentUserId);return;}
+    pendingMention.current=id;await chat.loadMention?.();
+  };
   const handleSend = async () => {
     if(readOnly||sending||chat.blocked)return;
     if (!input.trim() && !comments.length && !attachments.some((item) => !item.uploading && !item.error)) return;
@@ -369,6 +388,12 @@ function ChatView({ readOnly,unavailable,chat, selection, comments, onEditCommen
     const agentMessage = comments.length ? [formatCommentsForAgent(comments), message].filter(Boolean).join("\n\n") : message;
     const accepted=await sendMessage(message, readyAttachments, comments, agentMessage, contextOrder);
     if(accepted===false)return;
+    if (scrollToBottomOnSend) {
+      historyAnchor.current = undefined;
+      pendingMention.current = undefined;
+      followLatest.current = true;
+      if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
     setInput(current=>current===input?"":current);
     setAttachments([]);
     setContextOrder([]);
@@ -407,8 +432,14 @@ function ChatView({ readOnly,unavailable,chat, selection, comments, onEditCommen
     if(fileInputRef.current)fileInputRef.current.value="";
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleSend(); }
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key !== "Enter" || e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
+    e.preventDefault();
+    if (e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) {
+      const textarea = e.currentTarget;
+      textarea.setRangeText("\n", textarea.selectionStart, textarea.selectionEnd, "end");
+      setInput(textarea.value);
+    } else if (!e.repeat) handleSend();
   };
 
   const editMessage = (msg: ChatMessage) => {
@@ -421,10 +452,12 @@ function ChatView({ readOnly,unavailable,chat, selection, comments, onEditCommen
       <div data-chat-viewport className="relative flex-1 min-h-0 overflow-hidden">
       <div
         ref={scrollRef}
-        onScroll={(event) => { const el=event.currentTarget; followLatest.current=el.scrollHeight-el.clientHeight-el.scrollTop<48; }}
+        onScroll={(event) => { const el=event.currentTarget; followLatest.current=el.scrollHeight-el.clientHeight-el.scrollTop<48;if(el.scrollTop<40&&chat.hasMoreHistory&&!chat.historyError)void loadHistory(); }}
+        onWheel={event=>{if(event.deltaY<0&&event.currentTarget.scrollTop<40&&chat.hasMoreHistory&&!chat.historyError)void loadHistory();}}
         className="h-full overflow-x-hidden overflow-y-auto p-3 space-y-3"
         style={{ paddingRight: `calc(0.75rem - ${scrollbarGutter}px)` }}
       >
+        {(chat.hasMoreHistory||chat.loadingHistory||chat.historyError)&&<div className="flex min-h-8 items-center justify-center text-xs text-muted-foreground"><button type="button" disabled={chat.loadingHistory} className="px-2 py-1 hover:text-foreground disabled:opacity-60" onClick={()=>{void loadHistory();}}>{chat.loadingHistory?'正在加载更早消息…':chat.historyError?'历史消息加载失败，点击重试':'加载更早消息'}</button></div>}
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-xs gap-2 py-8">
             <MessageSquare className="h-8 w-8 text-primary" />
@@ -450,15 +483,13 @@ function ChatView({ readOnly,unavailable,chat, selection, comments, onEditCommen
                 {hasContext && <div className={`${hasContent ? (own?"absolute bottom-full right-0 mb-1":"absolute bottom-full left-0 mb-1") : ""} flex max-w-[calc(100vw-32px)] gap-1`}>{(msg.contextOrder?.length ? msg.contextOrder : ["comments", "attachments"]).map((kind) => kind === "comments" ? <CommentTag key={kind} comments={msg.comments || []} align={own?"right":"left"} /> : <AttachmentTag key={kind} files={msg.attachments || []} align={own?"right":"left"} onDownload={chat.downloadAttachment} />)}</div>}
                 {hasContent && (msg.content.startsWith("⏳") ? (
                   <div className="flex min-w-0 max-w-full items-start gap-1.5 overflow-hidden">
-                    <span className="flex h-[1.625em] shrink-0 items-center" aria-hidden="true">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-                    </span>
+                    <RunControl canStop={!readOnly&&!!msg.pending&&(msg.canCancel??chat.canCancel)!==false} onStop={cancelCurrent}/>
                     <span className="min-w-0 flex-1 whitespace-pre-wrap break-all text-muted-foreground">{msg.content.slice(2)}</span>
-                    {!readOnly&&msg.pending&&(msg.canCancel??chat.canCancel)!==false&&<button type="button" aria-label="取消运行" title="取消运行" className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" onClick={cancelCurrent}><Square className="h-3 w-3 fill-current" aria-hidden="true" /></button>}
+
                   </div>
                 ) : (
                   <div className="chat-markdown">
-                    <MessageMarkdown mentions={JSON.stringify(msg.mentions||[])} currentUserId={chat.currentUserId} content={["passed", "failed", "inconclusive"].includes(msg.verification?.status || "")
+                    <MessageMarkdown onWorkspaceDownload={chat.downloadWorkspaceFile?path=>{void chat.downloadWorkspaceFile!(path).catch(error=>setAttachmentError(error.message));}:undefined} mentions={JSON.stringify(msg.mentions||[])} currentUserId={chat.currentUserId} content={["passed", "failed", "inconclusive"].includes(msg.verification?.status || "")
                       ? msg.content.replace(/^\s*测试(?:通过|未通过|结果不确定)[。！!]?\s*/i, "")
                       : msg.content} />
                   </div>
@@ -484,7 +515,8 @@ function ChatView({ readOnly,unavailable,chat, selection, comments, onEditCommen
       </div>
 
       <div className="p-2 space-y-1.5">
-        {chat.mentionTarget&&<button type="button" className="w-full rounded border bg-amber-50 px-2 py-1.5 text-left text-xs text-amber-900" onClick={()=>{const target=Array.from(scrollRef.current?.querySelectorAll<HTMLElement>('[data-message-id]')||[]).find(el=>el.dataset.messageId===chat.mentionTarget);if(target){followLatest.current=false;target.scrollIntoView({block:'center'});}}}>有人 @ 了你 · 查看消息</button>}
+        {chat.collaborative&&chat.progress&&!messages.some(message=>message.pending)&&<div className="flex items-start gap-2 px-1 text-xs text-muted-foreground"><RunControl canStop={!readOnly&&!!chat.canCancel} onStop={cancelCurrent}/><span>{chat.progress}</span></div>}
+        {chat.mentionTarget&&<button type="button" className="w-full rounded border bg-amber-50 px-2 py-1.5 text-left text-xs text-amber-900" onClick={()=>{void jumpToMention();}}>有人 @ 了你 · 查看消息</button>}
         {attachmentError&&<p role="alert" className="text-xs text-destructive">{attachmentError}</p>}
         {chat.blockedReason && !sending && <p role="status" className="text-xs leading-relaxed text-muted-foreground">{chat.blockedReason}</p>}
         {(comments.length > 0 || attachments.length > 0) && <div className="flex flex-wrap gap-1">{contextOrder.map((kind) => kind === "comments" ? <CommentTag key={kind} comments={comments} editable onEdit={onEditComment} onRemove={onRemoveComment} /> : <AttachmentTag key={kind} files={attachments} editable onRemove={removeAttachment} onRetry={id=>{const item=attachments.find(file=>file.id===id);if(item)queueUpload(item);}} onDownload={chat.downloadAttachment} />)}</div>}
@@ -529,7 +561,7 @@ function millisecondsLabel(milliseconds: number) {
   return milliseconds < 1000 ? `${Math.round(milliseconds)} ms` : `${(milliseconds / 1000).toFixed(milliseconds < 10_000 ? 1 : 0)} s`;
 }
 
-function TestRunDetails({ run, onRetest }: { run: TestRunInfo; onRetest: () => void }) {
+export function TestRunDetails({ run, onRetest }: { run: TestRunInfo; onRetest?: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const [evidenceExpanded, setEvidenceExpanded] = useState(false);
   const terminal = terminalRunStatuses.includes(run.status);
@@ -629,7 +661,7 @@ function TestRunDetails({ run, onRetest }: { run: TestRunInfo; onRetest: () => v
       </div>}
       <div className="flex flex-wrap gap-1.5">
         {terminal
-          ? <Button size="sm" variant="outline" className="h-7 text-xs" onClick={onRetest}>重新测试</Button>
+          ? onRetest&&<Button size="sm" variant="outline" className="h-7 text-xs" onClick={onRetest}>重新测试</Button>
           : <div className="inline-flex items-center text-xs text-muted-foreground"><Loader2 className="mr-1 h-3 w-3 animate-spin text-primary" />测试运行中…</div>}
       </div>
     </div>

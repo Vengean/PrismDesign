@@ -22,15 +22,15 @@ legacy.exec(`
 `);
 legacy.close();
 const {getDb} = await import("../src/services/db.js");
-after(() => {getDb().close();rmSync(directory,{recursive:true,force:true});});
-test("retirement drops legacy tables while preserving accounts and unrelated data",() => {
+after(async () => {(await getDb().close());rmSync(directory,{recursive:true,force:true});});
+test("retirement drops legacy tables while preserving accounts and unrelated data",async () => {
   const db = getDb();
-  assert.equal(db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type='table' AND name IN ('workspaces','workspace_shares')").get().n,0);
-  assert.equal(db.prepare("SELECT count(*) AS n FROM users WHERE id='existing-user'").get().n,1);
-  assert.equal(db.prepare("SELECT id FROM preserved_project_data").get().id,"keep-me");
-  const queue = db.prepare("SELECT workspace_id,container_id FROM legacy_resource_cleanup").all();
+  assert.equal((await db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type='table' AND name IN ('workspaces','workspace_shares')").get()).n,0);
+  assert.equal((await db.prepare("SELECT count(*) AS n FROM users WHERE id='existing-user'").get()).n,1);
+  assert.equal((await db.prepare("SELECT id FROM preserved_project_data").get()).id,"keep-me");
+  const queue = (await db.prepare("SELECT workspace_id,container_id FROM legacy_resource_cleanup").all());
   assert.equal(queue.length,1);
   assert.equal((queue[0] as {workspace_id:string}).workspace_id,"8730bb79-f489-42f1-a364-4b63cd66502d");
-  assert.ok(!JSON.stringify(db.prepare("SELECT * FROM legacy_resource_cleanup").all()).includes("retired-secret"));
-  assert.equal(db.pragma("foreign_key_check").length,0);
+  assert.ok(!JSON.stringify((await db.prepare("SELECT * FROM legacy_resource_cleanup").all())).includes("retired-secret"));
+  assert.equal((await db.pragma("foreign_key_check")).length,0);
 });

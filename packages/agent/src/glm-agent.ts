@@ -1,4 +1,5 @@
 import {ReplyBuffer} from './core/reply-buffer.js';
+import {prismBrowserMcp} from './browser-mcp.js';
 import { spawn, type ChildProcess } from "node:child_process";
 import { Writable, Readable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
@@ -16,6 +17,7 @@ export type ProgressCallback = (text: string) => void;
 // ---- ACP Client implementation ----
 
 class PrismAcpClient implements acp.Client {
+  constructor(private readonly readOnly=false){}
   onProgress?: ProgressCallback;
   onText?: (text:string) => void;
   filesModified = new Set<string>();
@@ -29,6 +31,7 @@ class PrismAcpClient implements acp.Client {
   async requestPermission(
     params: acp.RequestPermissionRequest,
   ): Promise<acp.RequestPermissionResponse> {
+    if(this.readOnly&&['edit','delete','move','execute'].includes(params.toolCall.kind||''))return {outcome:{outcome:'cancelled'}};
     const approveOption = params.options.find((o) => o.kind === "allow_once" || o.kind === "allow_always");
     return {
       outcome: {
@@ -78,6 +81,7 @@ class PrismAcpClient implements acp.Client {
   async writeTextFile(
     params: acp.WriteTextFileRequest,
   ): Promise<acp.WriteTextFileResponse> {
+    if(this.readOnly)throw Error('测试回合不能修改源码，请在修复回合处理');
     // glm-acp-agent handles file writes internally; this is for client-side fs
     console.log(`[GLM] writeTextFile: ${params.path}`);
     this.filesModified.add(params.path);
@@ -155,7 +159,8 @@ async function createSession(clientId: string): Promise<GlmSession> {
   const input = Writable.toWeb(agentProcess.stdin!);
   const output = Readable.toWeb(agentProcess.stdout!) as ReadableStream<Uint8Array>;
 
-  const client = new PrismAcpClient();
+  const readonly=clientId.startsWith('platform-browser-test-');
+  const client = new PrismAcpClient(readonly);
   const stream = acp.ndJsonStream(input, output);
   const connection = new acp.ClientSideConnection((_agent) => client, stream);
 
@@ -175,7 +180,7 @@ async function createSession(clientId: string): Promise<GlmSession> {
   // Set mode to bypass_permissions for non-interactive use
   const sessionResult = await connection.newSession({
     cwd: projectRoot,
-    mcpServers: [],
+    mcpServers: clientId.startsWith('platform-browser-')?[{name:'prism_browser',...prismBrowserMcp(),env:Object.entries(prismBrowserMcp().env).map(([name,value])=>({name,value}))}]:[],
   });
 
   const sessionId = sessionResult.sessionId;
@@ -185,7 +190,7 @@ async function createSession(clientId: string): Promise<GlmSession> {
   const bypassMode = sessionResult.modes?.availableModes.find(
     (mode) => mode.id === "bypass_permissions",
   );
-  const bypassAllowed = process.env.PRISM_PERMISSION_FILESYSTEM === "workspace-write"
+  const bypassAllowed = !readonly&&process.env.PRISM_PERMISSION_FILESYSTEM === "workspace-write"
     && process.env.PRISM_PERMISSION_COMMANDS === "workspace";
   if (bypassMode && bypassAllowed) {
     try {

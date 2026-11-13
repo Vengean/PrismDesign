@@ -1,3 +1,4 @@
+import "./notifications.js";
 import "./platform.js";
 import { inspectElement, getComponentChain } from "./inspector.js";
 import {

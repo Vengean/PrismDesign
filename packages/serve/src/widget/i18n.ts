@@ -1,7 +1,7 @@
 const zh: Record<string, string> = {
   "panel.title": "棱镜",
   "chat.empty": "发送消息与 AI 对话，描述你想要的修改",
-  "chat.placeholder": "描述你想要的修改...",
+  "chat.placeholder": "描述你想要的修改…（Enter 发送）",
   "chat.send": "发送",
   "chat.thinking": "AI 思考中...",
   "chat.done": "完成",
@@ -17,7 +17,7 @@ const zh: Record<string, string> = {
 const en: Record<string, string> = {
   "panel.title": "棱镜",
   "chat.empty": "Send a message to chat with AI about design changes",
-  "chat.placeholder": "Describe the changes you want...",
+  "chat.placeholder": "Describe the changes you want… (Enter to send)",
   "chat.send": "Send",
   "chat.thinking": "AI is thinking...",
   "chat.done": "Done",

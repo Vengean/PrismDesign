@@ -1,3 +1,4 @@
+import type {PlatformConversation,PlatformMessage} from '../../../../packages/ui/src/studio/platform-client';
 import {loginLocation} from "./auth-redirect";
 const BASE_URL = "/api";
 
@@ -34,10 +35,17 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  getRequirementGit(projectId:string,requirementId:string){return request<{repos:{name:string}[];branch:string}>(`/projects/${projectId}/requirements/${requirementId}/environment/git`);},
+  listWorkspaceFiles(projectId:string,requirementId:string,path=''){return request<WorkspaceFileList>(`/projects/${projectId}/requirements/${requirementId}/environment/files?path=${encodeURIComponent(path)}`);},
+  async downloadWorkspaceFile(projectId:string,requirementId:string,path:string){
+    const token=localStorage.getItem('token');
+    const response=await fetch(`${BASE_URL}/projects/${projectId}/requirements/${requirementId}/environment/files/download?path=${encodeURIComponent(path)}`,{headers:token?{Authorization:`Bearer ${token}`}:{},signal:AbortSignal.timeout(60000)});
+    if(!response.ok){if(response.status===401){localStorage.removeItem('token');localStorage.removeItem('user');window.location.href=loginLocation(window.location.pathname+window.location.search);}throw Error((await response.json()).error||'文件下载失败');}
+    return response.blob();
+  },
+  getRequirementGit(projectId:string,requirementId:string){return request<{repos:{name:string}[];branch:string;release?:{name:string;branch:string}}>(`/projects/${projectId}/requirements/${requirementId}/environment/git`);},
   getRequirementGitStatus(projectId:string,requirementId:string,repo:string){return request<{dirty:boolean}>(`/projects/${projectId}/requirements/${requirementId}/environment/git/status?repo=${encodeURIComponent(repo)}`);},
   operateRequirementGit(projectId:string,requirementId:string,repo:string,action:'pull'|'push'|'commit',message?:string){return request<{success:boolean;message:string;commit:string}>(`/projects/${projectId}/requirements/${requirementId}/environment/git/${action}`,{method:'POST',body:JSON.stringify({repo,message})});},
-  getConversation(projectId:string,requirementId:string,after=0,eventAfter=0,wait=false,liveAfter=''){return request<Conversation>(`/projects/${projectId}/requirements/${requirementId}/conversation?after=${after}&eventAfter=${eventAfter}&liveAfter=${encodeURIComponent(liveAfter)}${wait?'&wait=1':''}`);},
+  getConversation(projectId:string,requirementId:string,after=0,eventAfter=0,wait=false,liveAfter='',page?:{latest?:boolean;before?:number;sessionId?:string}){return request<Conversation>(`/projects/${projectId}/requirements/${requirementId}/conversation?after=${after}&eventAfter=${eventAfter}&liveAfter=${encodeURIComponent(liveAfter)}${wait?'&wait=1':''}${page?.latest?'&latest=1':''}${page?.before===undefined?'':'&before='+page.before}${page?.sessionId?'&sessionId='+encodeURIComponent(page.sessionId):''}`);},
   sendConversation(projectId:string,requirementId:string,message:string,requestId:string){return request<{id:string}>(`/projects/${projectId}/requirements/${requirementId}/conversation/messages`,{method:'POST',body:JSON.stringify({message,requestId})});},
   cancelConversation(projectId:string,requirementId:string,runId:string){return request(`/projects/${projectId}/requirements/${requirementId}/conversation/runs/${runId}/cancel`,{method:'POST'});},
   getEnvironment(projectId:string,requirementId:string) {
@@ -58,6 +66,7 @@ export const api = {
     if(options.cursor)params.set("cursor",options.cursor);
     return request<{items:Project[];nextCursor:string|null}>(`/projects?${params}`,{signal});
   },
+  getProjectMemberCandidates() { return request<{id:string}[]>("/projects/member-candidates"); },
   getProject(id: string) { return request<ProjectDetail>(`/projects/${encodeURIComponent(id)}`); },
   createProject(data: { name: string; description: string; members: { userId: string; role: ProjectRole }[]; config: ProjectConfig }) {
     return request<{ id: string }>("/projects", { method: "POST", body: JSON.stringify(data) });
@@ -71,12 +80,19 @@ export const api = {
   removeProjectMember(id: string, userId: string) {
     return request(`/projects/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`, { method: "DELETE" });
   },
-  createRequirement(id: string, data: { title: string; description: string; acceptance: string }) {
-    return request(`/projects/${encodeURIComponent(id)}/requirements`, { method: "POST", body: JSON.stringify(data) });
+  createRequirement(id: string, releaseId:string, data: { title: string; description: string }) {
+    return request(`/projects/${encodeURIComponent(id)}/releases/${encodeURIComponent(releaseId)}/requirements`, { method: "POST", body: JSON.stringify(data) });
   },
-  createRelease(id: string, data: { name: string; description: string }) {
+  getRepositoryBranches(id:string,repo:string){return request<{branches:string[]}>(`/projects/${encodeURIComponent(id)}/repository-branches?repo=${encodeURIComponent(repo)}`);},
+  createRelease(id: string, data: { name: string; description: string; baseRefs?:Record<string,string> }) {
     return request(`/projects/${encodeURIComponent(id)}/releases`, { method: "POST", body: JSON.stringify(data) });
   },
+  getRelease(projectId:string,releaseId:string){return request<ReleaseDetail>(`/projects/${projectId}/releases/${releaseId}`);},
+  deleteRelease(projectId:string,releaseId:string){return request<{message:string}>(`/projects/${encodeURIComponent(projectId)}/releases/${encodeURIComponent(releaseId)}`,{method:'DELETE'});},
+  deleteRequirement(projectId:string,requirementId:string){return request<{message:string}>(`/projects/${encodeURIComponent(projectId)}/requirements/${encodeURIComponent(requirementId)}`,{method:'DELETE'});},
+  releaseAction(projectId:string,releaseId:string,action:'retry'|'sync'|'freeze'|'unfreeze'){return request<{message:string}>(`/projects/${projectId}/releases/${releaseId}/${action}`,{method:'POST'});},
+  requirementAction(projectId:string,id:string,action:'apply'|'sync-release'|'branches/retry'|'adopt',data?:unknown){return request<{id?:string;message?:string;changed?:boolean;releaseBranch?:string;results?:{repo:string;releaseCommit:string;commit:string;changed:boolean}[]}>(`/projects/${projectId}/requirements/${id}/${action}`,{method:'POST',body:JSON.stringify(data||{})});},
+  mergeAction(projectId:string,id:string,action:'approve'|'reject'|'confirm-external'|'sync',reason?:string){return request<{message?:string}>(`/projects/${projectId}/merge-requests/${id}/${action}`,{method:'POST',body:JSON.stringify({reason})});},
   login(username: string, password: string) {
     return request<{ token: string; user: { id: string; role: string } }>("/auth/login", {
       method: "POST",
@@ -136,18 +152,19 @@ export interface Project {
   agent_sdk?: string;
 }
 export interface ProjectDetail extends Project {
+  release_repositories?: {name:string;branch:string}[];
   config?: ProjectConfig;
   members: { user_id: string; role: ProjectRole; permission_source: "creator" | "platform_admin" | "explicit" }[];
   member_candidates?: { id: string }[];
-  requirements: { id: string; title: string; description: string; acceptance: string; status: string; environment_status: string; session_id: string; created_by: string }[];
-  releases: { id: string; name: string; description: string; status: string; environment_status: string; created_by: string }[];
+  requirements: RequirementSummary[];
+  releases: ReleaseSummary[];
 }
 
-export interface ConversationMessage {id:string;seq:number;role:'user'|'assistant';body:string;user_id:string|null;run_id:string|null;mentions?:string;created_at?:string;}
-export interface Conversation {
- session_id:string;restricted:boolean;messages:ConversationMessage[];current_messages:ConversationMessage[];
- runs:{id:string;status:string;title?:string;user_id:string;error?:string;cancel_supported?:number}[];
- active_run:{id:string;status:string;user_id:string}|null;
- events:{seq:number;transient?:boolean;type:string;data:Record<string,unknown>}[];
- next_message_cursor:number;next_event_cursor:number;next_live_cursor?:string;
-}
+export type ConversationMessage=PlatformMessage;
+export type Conversation=PlatformConversation;
+
+export interface RequirementSummary {id:string;title:string;description:string;status:string;environment_status:string;session_id:string;created_by:string;release_id:string|null;branch_name:string;branch_status:string;branch_error:string}
+export interface WorkspaceFileList {path:string;items:{name:string;path:string;kind:'file'|'directory';size:number;modifiedAt:string}[];truncated:boolean}
+export interface ReleaseSummary {id:string;name:string;description:string;status:string;environment_status:string;created_by:string;branch_name:string;branch_status:string;branch_error:string}
+export interface MergeRequest {id:string;requirement_id:string;submitted_by:string;approved_by:string|null;status:string;manifest:string;results:string;reason:string;created_at:string}
+export interface ReleaseDetail extends ReleaseSummary {requirements:RequirementSummary[];requests:MergeRequest[];repositories:{repo_name:string;source_ref:string;base_sha:string;head_sha:string;branch_status:string;error:string}[];operation_kind:string;frozen_manifest:string}

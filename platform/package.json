@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "node --import tsx --test tests/*.test.ts",
-    "dev": "concurrently --kill-others \"pnpm dev:server\" \"pnpm dev:web\"",
+    "dev": "node scripts/run-mode.mjs dev",
     "dev:server": "node scripts/build-widget.mjs && tsx watch src/server.ts",
     "dev:web": "node scripts/dev-web.mjs",
     "build": "pnpm build:server && pnpm build:web",
@@ -13,7 +13,10 @@
     "build:web": "node scripts/build-widget.mjs && cd web && npx vite build",
     "start": "node dist/server.js",
     "build:image": "bash scripts/build-workspace-image.sh",
-    "build:widget": "node scripts/build-widget.mjs"
+    "build:widget": "node scripts/build-widget.mjs",
+    "sit": "node scripts/run-mode.mjs sit",
+    "migrate:sit": "node --import tsx scripts/migrate-sit.ts",
+    "build:sit": "node scripts/sit-release.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -22,6 +25,7 @@
     "dockerode": "^5.0.0",
     "express": "^4.21.0",
     "jsonwebtoken": "^9.0.2",
+    "mysql2": "^3.24.6",
     "ws": "^8.21.0"
   },
   "devDependencies": {

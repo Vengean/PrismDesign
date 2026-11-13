@@ -1,3 +1,4 @@
+import {progressSummary} from './display-text.js';
 import type {PlatformConversation} from './platform-client.js';
 export interface ToolActivity {id:string;label:string;status:'running'|'completed'|'failed'|'reported';durationMs?:number}
 export function conversationProgress(value?:PlatformConversation):{label:string;tools:ToolActivity[]}{
@@ -18,8 +19,8 @@ export function conversationProgress(value?:PlatformConversation):{label:string;
   if(event.type==='tool.started'){
    responding=false;
    if(data.tool==='legacy')for(const tool of tools.values())if(tool.legacy&&tool.status==='running')tool.status='reported';
-   tools.set(id,{id,label:String(data.label || data.tool || '执行工具'),status:'running',legacy:data.tool==='legacy',startedAt:typeof data.at==='number'?data.at:undefined});
-  }else tools.set(id,{id,label:previous?.label || String(data.label || data.tool || '执行工具'),status:data.success===false||data.error?'failed':'completed',durationMs:typeof data.durationMs==='number'?data.durationMs:previous?.startedAt!==undefined&&typeof data.at==='number'?Math.max(0,data.at-previous.startedAt):undefined});
+   tools.set(id,{id,label:progressSummary(String(data.label || data.tool || '执行工具')),status:'running',legacy:data.tool==='legacy',startedAt:typeof data.at==='number'?data.at:undefined});
+  }else tools.set(id,{id,label:previous?.label || progressSummary(String(data.label || data.tool || '执行工具')),status:data.success===false||data.error?'failed':'completed',durationMs:typeof data.durationMs==='number'?data.durationMs:previous?.startedAt!==undefined&&typeof data.at==='number'?Math.max(0,data.at-previous.startedAt):undefined});
  }
  if(!working||finishing)for(const tool of tools.values())if(tool.status==='running')tool.status='reported';
  const all=[...tools.values()],running=all.filter(tool=>tool.status==='running');

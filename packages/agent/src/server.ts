@@ -323,7 +323,6 @@ export async function startServer(
   }
 
   async function detachVerificationBrowser(verification: { baseUrl: string; clientId: string }) {
-    if (provider.name !== "codex") return;
     try { await executeCurrentTab(verification.baseUrl, { action: "detach" }, verification.clientId); }
     catch (error) { console.warn(`[Verification] Browser detach skipped: ${error instanceof Error ? error.message : String(error)}`); }
   }
@@ -422,7 +421,7 @@ export async function startServer(
       status: "running",
       protocolVersion: 2,
       agentType: provider.name,
-      agent: { provider: provider.name, model: provider.model, capabilities: provider.capabilities },
+      agent: { provider: provider.name, model: provider.model, capabilities: {...provider.capabilities,browserTesting:browserEnabled} },
       project: { root: projectRoot },
       accessTokenRequired,
     });
@@ -434,7 +433,7 @@ export async function startServer(
       message: string;
       runId?: string;
       pageUrl?: string;
-      capabilities?: { browserInteraction?: boolean; automatedTesting?: boolean; alwaysAllowEdits?: boolean; alwaysAllowAutomatedTesting?: boolean };
+      capabilities?: { browserInteraction?: boolean; automatedTesting?: boolean; alwaysAllowEdits?: boolean; alwaysAllowAutomatedTesting?: boolean; currentTab?:boolean; verifyOnly?:boolean };
       attachmentIds?: string[];
     };
     const automatedTesting = capabilities?.automatedTesting === true;
@@ -470,6 +469,7 @@ export async function startServer(
       const workflowContext = automatedTesting ? [
         "[Prism workflow] Interpret the user's intent and sequence yourself; Prism does not classify development versus testing with keyword rules.",
         "For development requests, finish implementation and code-level checks before considering real browser testing.",
+        capabilities?.verifyOnly?"This is a verification-only turn. Never modify source files or run shell commands. Use the bound Chrome tab and prism_browser MCP. Report a fix suggestion rather than repairing code.":"",
         "Only start real browser testing when the current user message explicitly authorizes it now or explicitly asks for it after the requested development is complete.",
         "To test, first call verification_get_pending. Reuse a relevant pending verification, or call verification_propose only after implementation is ready. Then call verification_start before browser_start.",
         "After verification_start, use verification_define_cases to state business assertions separately from tool steps. Record every case with verification_update_case, attach relevant IDs returned by browser_evidence, then call verification_complete only when every case has a terminal result.",
@@ -504,6 +504,11 @@ export async function startServer(
       const contextualMessage = `${message}${attachmentSafety}\n\n${workflowContext}${pendingContext}`;
       const result = await provider.run(clientId, runId, contextualMessage, (event) => emitAgentEvent(clientId, event), controller.signal);
       let turnVerification = automatedTesting ? verifications.latestForRun(clientId, runId) : undefined;
+      if(capabilities?.verifyOnly&&!turnVerification){
+        turnVerification=verifications.create({clientId,developmentRunId:runId,goal:message.slice(0,2000),baseUrl:verificationPageUrl(pageUrl),changedFiles:[],proposedChecks:[]});
+        verifications.update(turnVerification.id,clientId,{status:'inconclusive',summary:'Agent 未提交结构化测试用例及结论，请重新测试。'});
+      }
+      if(capabilities?.verifyOnly&&result.filesModified.length)throw Error('测试回合修改了源码，不能作为有效测试结果');
       if (turnVerification && turnVerification.status !== "awaiting_confirmation") {
         if (turnVerification.status === "running") {
           turnVerification = verifications.update(turnVerification.id, clientId, {
@@ -534,6 +539,8 @@ export async function startServer(
           fixSuggestion: turnVerification.fixSuggestion,
         };
       }
+      const finalTestRun=turnVerification?testRuns.byVerification(turnVerification.id):undefined;
+      if(finalTestRun)result.testRun=testRuns.getOwned(finalTestRun.id,clientId);
       emitAgentEvent(clientId, { type: "run.completed", runId, result });
       res.json(result);
     } catch (error) {
@@ -545,6 +552,7 @@ export async function startServer(
         await finishVerificationRun(runningVerification.id, status, msg);
         broadcast("verification.updated", verifications.getOwned(runningVerification.id, clientId), clientId);
       }
+      const failedTestRun=runningVerification?testRuns.byVerification(runningVerification.id):undefined;
       if (controller.signal.aborted) {
         emitAgentEvent(clientId, { type: "run.cancelled", runId });
         res.json({
@@ -553,6 +561,7 @@ export async function startServer(
           runId,
           message: "运行已取消，相关浏览器资源已清理。",
           filesModified: [],
+          testRun:failedTestRun?testRuns.getOwned(failedTestRun.id,clientId):undefined,
           verification: runningVerification ? {
             id: runningVerification.id,
             status: "cancelled",
@@ -564,7 +573,7 @@ export async function startServer(
         return;
       }
       emitAgentEvent(clientId, { type: "run.failed", runId, error: { message: msg } });
-      res.status(500).json({ success: false, message: msg });
+      res.status(500).json({ success: false, message: msg,verification:runningVerification,testRun:failedTestRun?testRuns.getOwned(failedTestRun.id,clientId):undefined });
     } finally {
       activeRuns.delete(runId);
       activeRunClients.delete(runId);
@@ -778,7 +787,8 @@ export async function startServer(
       if (!turn.browserInteraction) throw new Error("Browser interaction is not supported by this client");
       const { pageUrl, ...command } = req.body as { pageUrl: string; [key: string]: unknown };
       if (!pageUrl) { res.status(400).json({ error: "pageUrl is required" }); return; }
-      const running = verifications.runningForPage(pageUrl).filter((verification) => verification.clientId === turn.clientId);
+      const activeTest=testRuns.byAgentRun(turn.runId);
+      const running = activeTest?[verifications.getOwned(activeTest.verificationId,turn.clientId)].filter(verification=>verification.status==='running'):verifications.runningForPage(pageUrl).filter((verification) => verification.clientId === turn.clientId);
       const clientIds = [turn.clientId];
       if (clientIds.length > 1) throw new Error(`Multiple active verifications target ${pageUrl}; cancel the other runs first`);
       if (command.action === "responseBody") {
@@ -788,7 +798,7 @@ export async function startServer(
         if (!evidenceId || !reason) throw new Error("evidenceId and reason are required");
         if (reason.length > 500) throw new Error("Response inspection reason is too long");
         const { responseHandle } = testRuns.resolveResponseHandle(running[0].id, evidenceId);
-        const raw = await executeCurrentTab(pageUrl, { action: "responseBody", requestId: responseHandle }, clientIds[0]) as any;
+        const raw = await executeCurrentTab(pageUrl, { action: "responseBody", responseRequestId: responseHandle }, clientIds[0]) as any;
         const sanitized = sanitizeJsonPreview(raw?.preview);
         const evidence = testRuns.attachResponsePreview(running[0].id, evidenceId, {
           preview: sanitized.preview,

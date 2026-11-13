@@ -1,3 +1,4 @@
+import {progressSummary,truncateDisplayText} from '../../packages/ui/src/studio/display-text.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {PlatformClient,type PlatformContext,type PlatformConversation,type PlatformRequest} from '../../packages/ui/src/studio/platform-client.js';
@@ -31,4 +32,12 @@ test('completed/failed/interrupted history never revives transient progress',()=
   const active_run=status==='interrupted'?{id:'run',status,user_id:'u'}:null;
   assert.deepEqual(conversationProgress({...base,active_run,runs:[{id:'run',status}],events}),{label:'',tools:[]});
  }
+});
+
+test('progress summaries use ellipses for cut-off text and preserve complete labels',()=>{
+ const long='检查文件'.repeat(25);
+ const view=conversationProgress({...base,events:[event(1,'tool.started',{toolCallId:'a',label:long})]});
+ assert.ok(view.label.endsWith('…'));assert.ok(Array.from(view.label).length<=80);assert.equal(view.tools[0].label,view.label);
+ assert.equal(progressSummary('正在读取文件，'),'正在读取文件…');assert.equal(progressSummary('正在读取文件...'),'正在读取文件…');assert.equal(progressSummary('读取文件完成。'),'读取文件完成。');
+ assert.equal(truncateDisplayText('abcdefgh,后续内容',10),'abcdefgh…');assert.equal(truncateDisplayText('😀😀😀😀',3),'😀😀…');assert.equal(long,'检查文件'.repeat(25));
 });

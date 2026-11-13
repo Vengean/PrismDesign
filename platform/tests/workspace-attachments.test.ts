@@ -11,9 +11,9 @@ const {attachmentFileProgram,attachmentArchive,readAttachmentArchive,createWorks
 const {getDb,createUser}=await import('../src/services/db.js');
 const {initProjectTables,createProject,emptyConfig}=await import('../src/services/projects.js');
 const {initConversationTables,createConversationService,readConversation,messageContext}=await import('../src/services/conversations.js');
-initProjectTables();initConversationTables();for(const user of ['editor','viewer','other'])createUser(user,'unused');
-const project=createProject('Files','','owner',[{userId:'editor',role:'editor'},{userId:'viewer',role:'viewer'}],emptyConfig);
-function demand(){const id=crypto.randomUUID(),sessionId=crypto.randomUUID();getDb().prepare('INSERT INTO requirements(id,project_id,title,description,acceptance,created_by) VALUES(?,?,?,?,?,?)').run(id,project,'Files','','','owner');getDb().prepare('INSERT INTO project_sessions(id,requirement_id) VALUES(?,?)').run(sessionId,id);return {id,sessionId};}
+(await initProjectTables());(await initConversationTables());for(const user of ['editor','viewer','other'])(await createUser(user,'unused'));
+const project=(await createProject('Files','','owner',[{userId:'editor',role:'editor'},{userId:'viewer',role:'viewer'}],emptyConfig));
+async function demand(){const id=crypto.randomUUID(),sessionId=crypto.randomUUID();(await getDb().prepare('INSERT INTO requirements(id,project_id,title,description,acceptance,created_by) VALUES(?,?,?,?,?,?)').run(id,project,'Files','','','owner'));(await getDb().prepare('INSERT INTO project_sessions(id,requirement_id) VALUES(?,?)').run(sessionId,id));return {id,sessionId};}
 const roots=new Map<string,string>();let operations=0;
 const localRun=async(id:string,input:Record<string,unknown>,content?:Buffer)=>{
  operations++;let root=roots.get(id);if(!root){root=mkdtempSync(path.join(dir,'workspace-'));roots.set(id,root);}
@@ -21,10 +21,10 @@ const localRun=async(id:string,input:Record<string,unknown>,content?:Buffer)=>{
  try{const result=spawnSync(process.execPath,['-e',attachmentFileProgram,JSON.stringify({...input,root,payload})],{encoding:'utf8'});if(result.status)throw new AttachmentError(JSON.parse(result.stderr).error,404);return {value:JSON.parse(result.stdout),...(input.action==='download'?{content:readFileSync(payload)}:{})};}finally{rmSync(payload,{force:true});}
 };
 const files=createWorkspaceAttachments(localRun);
-after(()=>{getDb().close();rmSync(dir,{recursive:true,force:true});});
+after(async ()=>{(await getDb().close());rmSync(dir,{recursive:true,force:true});});
 
 test('workspace stores original binary files and manifests; authorized download returns identical bytes',async()=>{
- const {id}=demand(),bytes=Buffer.from([0,255,128,13,10,0,42]);
+ const {id}=(await demand()),bytes=Buffer.from([0,255,128,13,10,0,42]);
  const file=await files.upload(id,'owner','资源.png','image/png',bytes);
  assert.equal(file.size,bytes.length);assert.match(file.workspacePath,/^\.prism\/attachments\//);
  assert.deepEqual(readFileSync(path.join(roots.get(id)!,file.workspacePath)),bytes);
@@ -33,24 +33,24 @@ test('workspace stores original binary files and manifests; authorized download 
 });
 
 test('attachments bind to messages, appear in Agent file context and follow-up context, and replay after cleanup',async()=>{
- const {id}=demand(),file=await files.upload(id,'owner','需求说明.md','text/markdown',Buffer.from('# 需求\n新增一个保存按钮'));
+ const {id}=(await demand()),file=await files.upload(id,'owner','需求说明.md','text/markdown',Buffer.from('# 需求\n新增一个保存按钮'));
  const prompts:string[]=[];const service=createConversationService({async run(_id,input,emit){prompts.push(input.message);emit({type:'bridge.result',data:{success:true,message:'done'}});},async cancel(){}});
  const prepared=await files.resolve(id,'owner',[file.id]);
  const context={text:'',comments:[],contextOrder:['attachments']};
- const run=service.submit(id,'owner','','attachments-0001',context,prepared);await service.wait(run.id);
- const stored=(readConversation(id).messages as any[]).find(message=>message.role==='user');
+ const run=(await service.submit(id,'owner','','attachments-0001',context,prepared));await service.wait(run.id);
+ const stored=((await readConversation(id)).messages as any[]).find(message=>message.role==='user');
  assert.equal(JSON.parse(stored.client_context).attachments[0].name,'需求说明.md');assert.ok(prompts[0].includes('/workspace/'+file.workspacePath));
  assert.ok(prompts[0].includes('保留附件原件'));
- const next=service.submit(id,'owner','把刚才附件中的按钮改为蓝色','attachments-0002');await service.wait(next.id);assert.ok(prompts[1].includes(file.workspacePath));
+ const next=(await service.submit(id,'owner','把刚才附件中的按钮改为蓝色','attachments-0002'));await service.wait(next.id);assert.ok(prompts[1].includes(file.workspacePath));
  await assert.rejects(files.remove(id,'owner',file.id),/不能单独删除/);
  assert.deepEqual((await files.download(id,'editor',file.id)).content,Buffer.from('# 需求\n新增一个保存按钮'));
  rmSync(roots.get(id)!,{recursive:true,force:true});
- assert.equal(service.submit(id,'owner','','attachments-0001',context,await files.resolve(id,'owner',[file.id],'attachments-0001')).replayed,true);
+ assert.equal((await service.submit(id,'owner','','attachments-0001',context,await files.resolve(id,'owner',[file.id],'attachments-0001'))).replayed,true);
  await assert.rejects(files.download(id,'owner',file.id),/清理|不存在/);
 });
 
 test('draft ownership, viewer permissions and cross-requirement identifiers are enforced',async()=>{
- const a=demand(),b=demand(),file=await files.upload(a.id,'owner','draft.txt','text/plain',Buffer.from('draft'));
+ const a=(await demand()),b=(await demand()),file=await files.upload(a.id,'owner','draft.txt','text/plain',Buffer.from('draft'));
  const before=operations;await assert.rejects(files.download(a.id,'viewer',file.id),/编辑成员/);await assert.rejects(files.upload(a.id,'other','x','',Buffer.from('x')),/编辑成员/);assert.equal(operations,before);
  await assert.rejects(files.download(a.id,'editor',file.id),/无权访问/);await assert.rejects(files.remove(a.id,'editor',file.id),/其他成员/);
  await assert.rejects(files.resolve(b.id,'owner',[file.id]),/清理|不存在/);
@@ -60,7 +60,7 @@ test('draft ownership, viewer permissions and cross-requirement identifiers are 
 });
 
 test('same-name uploads stay isolated and file limits and missing/modified files report useful errors',async()=>{
- const {id}=demand();const a=await files.upload(id,'owner','asset.svg','image/svg+xml',Buffer.from('<svg/>')),b=await files.upload(id,'owner','asset.svg','image/svg+xml',Buffer.from('<svg>new</svg>'));
+ const {id}=(await demand());const a=await files.upload(id,'owner','asset.svg','image/svg+xml',Buffer.from('<svg/>')),b=await files.upload(id,'owner','asset.svg','image/svg+xml',Buffer.from('<svg>new</svg>'));
  assert.notEqual(a.workspacePath,b.workspacePath);
  await assert.rejects(files.upload(id,'owner','x','',Buffer.alloc(MAX_ATTACHMENT_SIZE+1)),/5 MB/);
  writeFileSync(path.join(roots.get(id)!,a.workspacePath),Buffer.from('edited'));await assert.rejects(files.download(id,'owner',a.id),/更改|修改/);
@@ -92,8 +92,8 @@ test('HTTP upload, attachment-only send, authorized historical downloads and cle
  const original={...workspaceAttachments},originalSubmit=conversations.submit;
  Object.assign(workspaceAttachments,files);
  let delivered='';const service=createConversationService({async run(_id,input,emit){delivered=input.message;emit({type:'bridge.result',data:{success:true,message:'文件已读取'}});},async cancel(){}});conversations.submit=service.submit;
- const {id,sessionId}=demand(),app=express();app.use(express.json());app.use('/api/projects/:id/requirements/:requirementId/conversation',routes);
- const server=http.createServer((req,res)=>{if(req.url?.startsWith('/__prism_platform__/'))void handlePreviewClient(req,res,id,'owner');else app(req,res);});
+ const {id,sessionId}=(await demand()),app=express();app.use(express.json());app.use('/api/projects/:id/requirements/:requirementId/conversation',routes);
+ const server=http.createServer(async (req,res)=>{if(req.url?.startsWith('/__prism_platform__/'))void (await handlePreviewClient(req,res,id,'owner'));else app(req,res);});
  await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));const base=`http://127.0.0.1:${(server.address() as {port:number}).port}`,prefix=`/api/projects/${project}/requirements/${id}/conversation`;
  const headers=(user:string)=>({Authorization:`Bearer ${signToken({userId:user,role:'user'})}`});
  try{

@@ -3,6 +3,7 @@ export interface AttachmentClient {
  upload:(file:File,signal:AbortSignal,onProgress:(percent:number)=>void)=>Promise<AttachmentMeta>;
  remove:(id:string)=>Promise<void>;
  download:(file:AttachmentMeta)=>Promise<void>;
+ downloadWorkspaceFile?:(path:string)=>Promise<void>;
 }
 export const MAX_ATTACHMENT_SIZE=5*1024*1024,MAX_ATTACHMENT_TOTAL=20*1024*1024,MAX_ATTACHMENTS=5;
 export function bytesToBase64(bytes:Uint8Array){let text='';for(let i=0;i<bytes.length;i+=8192)text+=String.fromCharCode(...bytes.subarray(i,i+8192));return btoa(text);}
@@ -25,5 +26,6 @@ export function pageAttachmentClient(sessionId:string):AttachmentClient{
   });},
   async remove(id){const response=await fetch(attachmentUrl(sessionId,id),{method:'DELETE',credentials:'same-origin',signal:AbortSignal.timeout(15000)});if(!response.ok)throw Error(await errorMessage(response));},
   async download(file){saveAttachment(await fetchAttachment(sessionId,file.id),file.name);},
+  async downloadWorkspaceFile(path){const response=await fetch('/__prism_platform__/files/download?sessionId='+encodeURIComponent(sessionId)+'&path='+encodeURIComponent(path),{credentials:'same-origin',signal:AbortSignal.timeout(60000)});if(!response.ok)throw Error(await errorMessage(response));saveAttachment(await response.blob(),path.split('/').at(-1)||'download');},
  };
 }

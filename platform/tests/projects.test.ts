@@ -13,8 +13,8 @@ const { getDb, createUser } = await import("../src/services/db.js");
 const { initProjectTables, emptyConfig, resolveProjectGitCredential, resolveProjectModelCredential, resolveProjectAgentRuntime, createProject } = await import("../src/services/projects.js");
 const { signToken } = await import("../src/middleware/auth.js");
 const { default: routes } = await import("../src/routes/projects.js");
-initProjectTables(); initProjectTables(); // Existing databases can initialize repeatedly.
-for (const id of ["editor","viewer","outsider","second-admin"]) createUser(id,"unused-test-hash");
+(await initProjectTables()); (await initProjectTables()); // Existing databases can initialize repeatedly.
+for (const id of ["editor","viewer","outsider","second-admin"]) (await createUser(id,"unused-test-hash"));
 const app = express(); app.use(express.json()); app.use("/api/projects",routes);
 const server = app.listen(0,"127.0.0.1");
 await new Promise<void>((resolve,reject) => { server.once("listening",resolve); server.once("error",reject); });
@@ -28,13 +28,13 @@ async function call(user: string | null, method: string, suffix = "", body?: unk
   }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   return { status: response.status, data: await response.json() };
 }
-after(async () => { await new Promise<void>(resolve => server.close(() => resolve())); getDb().close(); rmSync(dataDir,{ recursive:true,force:true }); });
+after(async () => { await new Promise<void>(resolve => server.close(() => resolve())); (await getDb().close()); rmSync(dataDir,{ recursive:true,force:true }); });
 
 test("project access, settings and persistent default sessions",async t => {
   let projectId: string;
-  await t.test("requires authentication and developer identity for project creation",async () => {
+  await t.test("requires authentication for project creation",async () => {
     assert.equal((await call(null,"GET")).status,401);
-    assert.equal((await call("editor","POST","",{ name:"Denied" })).status,403);
+    assert.equal((await call(null,"POST","",{ name:"Denied" })).status,401);
   });
   await t.test("creates project, members and configuration atomically",async () => {
     const result = await call("test-admin","POST","",{ name:"Platform test",members:[
@@ -48,7 +48,7 @@ test("project access, settings and persistent default sessions",async t => {
   await t.test("outsiders are hidden but platform administrators have default project access",async () => {
     assert.deepEqual((await call("outsider","GET")).data,{items:[],nextCursor:null});
     assert.equal((await call("outsider","GET",`/${projectId}`)).status,404);
-    getDb().prepare("UPDATE users SET role='admin' WHERE id='outsider'").run();
+    (await getDb().prepare("UPDATE users SET role='admin' WHERE id='outsider'").run());
     const p = await call("outsider","GET",`/${projectId}`);
     assert.equal(p.status,200);
     assert.equal(p.data.access_role,"admin");
@@ -58,18 +58,30 @@ test("project access, settings and persistent default sessions",async t => {
     assert.equal((await call("outsider","GET","/missing-project")).status,404);
     assert.equal((await call("test-admin","PUT",`/${projectId}/members/outsider`,{role:"viewer"})).status,409);
     assert.equal((await call("test-admin","DELETE",`/${projectId}/members/outsider`)).status,409);
-    getDb().prepare("UPDATE users SET role='user' WHERE id='outsider'").run();
+    (await getDb().prepare("UPDATE users SET role='user' WHERE id='outsider'").run());
     assert.equal((await call("outsider","GET",`/${projectId}`)).status,404);
   });
   await t.test("creator access survives missing or stale membership and platform role changes",async () => {
-    getDb().prepare("DELETE FROM project_members WHERE project_id=? AND user_id='test-admin'").run(projectId);
-    getDb().prepare("UPDATE users SET role='user' WHERE id='test-admin'").run();
+    (await getDb().prepare("DELETE FROM project_members WHERE project_id=? AND user_id='test-admin'").run(projectId));
+    (await getDb().prepare("UPDATE users SET role='user' WHERE id='test-admin'").run());
     const p = await call("test-admin","GET",`/${projectId}`);
     assert.equal(p.status,200); assert.equal(p.data.access_role,"admin");
     assert.equal((await call("test-admin","GET")).data.items[0].access_role,"admin");
     assert.ok(p.data.members.some((m: {user_id:string;permission_source:string}) => m.user_id === "test-admin" && m.permission_source === "creator"));
     assert.equal((await call("test-admin","DELETE",`/${projectId}/members/test-admin`)).status,409);
-    getDb().prepare("UPDATE users SET role='admin' WHERE id='test-admin'").run();
+    (await getDb().prepare("UPDATE users SET role='admin' WHERE id='test-admin'").run());
+  });
+  await t.test("developers create projects with owner access and receive only candidate IDs",async () => {
+    assert.equal((await call(null,"GET","/member-candidates")).status,401);
+    const candidates=await call("editor","GET","/member-candidates");assert.equal(candidates.status,200);
+    assert.ok(candidates.data.some((u:{id:string})=>u.id==='viewer'));
+    assert.ok(candidates.data.every((u:{id:string})=>u.id!=='editor'&&u.id!=='test-admin'&&Object.keys(u).join(',')==='id'));
+    const created=await call("editor","POST","",{name:"Developer owned",members:[{userId:"viewer",role:"viewer"}]});assert.equal(created.status,201);
+    const detail=await call("editor","GET",`/${created.data.id}`);assert.equal(detail.data.access_role,'admin');assert.ok(detail.data.config);
+    assert.ok(detail.data.members.some((m:{user_id:string;permission_source:string})=>m.user_id==='editor'&&m.permission_source==='creator'));
+    assert.equal((await call("outsider","GET",`/${created.data.id}`)).status,404);
+    assert.equal((await call("editor","PUT",`/${created.data.id}/config`,emptyConfig)).status,200);
+    assert.equal((await call("viewer","GET",`/${created.data.id}`)).data.config,undefined);
   });
   await t.test("viewers cannot read configuration, create requirements or edit membership",async () => {
     const p = await call("viewer","GET",`/${projectId}`);
@@ -79,9 +91,11 @@ test("project access, settings and persistent default sessions",async t => {
     assert.equal((await call("editor","PUT",`/${projectId}/config`,emptyConfig)).status,403);
   });
   await t.test("requirements retain sessions while project settings are overwritten",async () => {
-    const requirement = await call("editor","POST",`/${projectId}/requirements`,{ title:"First",acceptance:"Must work" });
-    assert.equal(requirement.status,201); assert.ok(requirement.data.session_id);
-    assert.equal(requirement.data.environment_status,"pending");
+    assert.equal((await call("editor","POST",`/${projectId}/requirements`,{title:"First"})).status,409);
+    // Existing unassigned requirements and their sessions survive the workflow migration.
+    await getDb().prepare("INSERT INTO requirements(id,project_id,title,created_by,description,acceptance) VALUES(?,?,?,?,'','')").run('legacy-fixture',projectId,'First','editor');
+    await getDb().prepare("INSERT INTO project_sessions(id,requirement_id) VALUES(?,?)").run('legacy-session','legacy-fixture');
+    const requirement={data:{session_id:'legacy-session'}};
     assert.equal((await call("test-admin","PUT",`/${projectId}/config`,{ ...emptyConfig,guidance:"new version" })).status,200);
     const project = (await call("editor","GET",`/${projectId}`)).data;
     assert.equal(project.config_version,undefined);
@@ -89,10 +103,11 @@ test("project access, settings and persistent default sessions",async t => {
     assert.equal(project.requirements[0].session_id,requirement.data.session_id);
     assert.equal((await call("viewer","GET",`/${projectId}`)).data.requirements[0].session_id,requirement.data.session_id);
   });
-  await t.test("releases are administrator-only and do not create Agent sessions",async () => {
-    assert.equal((await call("editor","POST",`/${projectId}/releases`,{ name:"Denied" })).status,403);
-    assert.equal((await call("test-admin","POST",`/${projectId}/releases`,{ name:"Release 1" })).status,201);
-    assert.equal((getDb().prepare("SELECT count(*) AS n FROM project_sessions").get() as {n:number}).n,1);
+  await t.test("developers can request releases while viewers cannot; no Agent sessions are created",async () => {
+    assert.equal((await call("editor","POST",`/${projectId}/releases`,{ name:"Missing repositories" })).status,409);
+    assert.equal((await call("viewer","POST",`/${projectId}/releases`,{ name:"Denied" })).status,403);
+    assert.equal((await call("test-admin","POST",`/${projectId}/releases`,{ name:"Release 1" })).status,409);
+    assert.equal(((await getDb().prepare("SELECT count(*) AS n FROM project_sessions").get()) as {n:number}).n,1);
   });
   await t.test("rejects invalid configuration and inline credentials",async () => {
     for (const config of [
@@ -115,7 +130,7 @@ test("project access, settings and persistent default sessions",async t => {
     assert.equal((await call("editor","POST",`/${projectId}/requirements`,{title:"Denied"})).status,404);
   });
   await t.test("deleted users cannot use otherwise valid JWTs",async () => {
-    getDb().prepare("DELETE FROM users WHERE id='viewer'").run();
+    (await getDb().prepare("DELETE FROM users WHERE id='viewer'").run());
     assert.equal((await call("viewer","GET")).status,401);
   });
   await t.test("project Git credentials are shared, encrypted, redacted and overwritten",async () => {
@@ -126,31 +141,36 @@ test("project access, settings and persistent default sessions",async t => {
     const created = await call("test-admin","POST","",{name:"Private repos",config});
     assert.equal(created.status,201);
     const id = created.data.id;
+    await call("test-admin","PUT",`/${id}/members/editor`,{role:"editor"});
+    const editorDetail=(await call("editor","GET",`/${id}`)).data;
+    assert.equal(editorDetail.config,undefined);assert.equal(editorDetail.member_candidates,undefined);
+    assert.deepEqual(editorDetail.release_repositories,[{name:'web',branch:'main'},{name:'api',branch:'main'}]);
+    assert.ok(!JSON.stringify(editorDetail).includes('fixture-token-original'));assert.ok(!JSON.stringify(editorDetail).includes('https://example.com/'));
     const detail = (await call("test-admin","GET",`/${id}`)).data;
     assert.ok(!JSON.stringify(detail).includes("fixture-token-original"));
     assert.equal(detail.config.repos[0].gitAuth,undefined);
-    const rawConfig = getDb().prepare("SELECT config FROM project_configs WHERE project_id=?").get(id) as {config:string};
+    const rawConfig = (await getDb().prepare("SELECT config FROM project_configs WHERE project_id=?").get(id)) as {config:string};
     assert.ok(!rawConfig.config.includes("fixture-token-original"));
-    const encrypted = getDb().prepare("SELECT encrypted_value FROM project_git_credentials WHERE project_id=?").all(id);
+    const encrypted = (await getDb().prepare("SELECT encrypted_value FROM project_git_credentials WHERE project_id=?").all(id));
     assert.equal(encrypted.length,1);
     assert.ok(!JSON.stringify(encrypted).includes("fixture-token-original"));
     const ref = detail.config.gitAuth.credentialRef;
     assert.equal(detail.config.gitAuth.hasToken,true);
-    assert.equal(resolveProjectGitCredential(id,ref).secret,"fixture-token-original");
-    assert.throws(() => resolveProjectGitCredential(projectId,ref));
+    assert.equal((await resolveProjectGitCredential(id,ref)).secret,"fixture-token-original");
+    await assert.rejects(async () => (await resolveProjectGitCredential(projectId,ref)));
     assert.equal((await call("test-admin","PUT",`/${id}/config`,detail.config)).status,200);
     const updated = structuredClone(detail.config);
     updated.gitAuth.token = "fixture-token-rotated";
     assert.equal((await call("test-admin","PUT",`/${id}/config`,updated)).status,200);
     const newConfig = (await call("test-admin","GET",`/${id}`)).data.config;
     assert.equal(newConfig.gitAuth.credentialRef,ref);
-    assert.equal(resolveProjectGitCredential(id,ref).secret,"fixture-token-rotated");
-    assert.equal(resolveProjectGitCredential(id,newConfig.gitAuth.credentialRef).secret,"fixture-token-rotated");
+    assert.equal((await resolveProjectGitCredential(id,ref)).secret,"fixture-token-rotated");
+    assert.equal((await resolveProjectGitCredential(id,newConfig.gitAuth.credentialRef)).secret,"fixture-token-rotated");
     const sshConfig = {...config,repos:config.repos.map(r => ({...r,url:`git@example.com:${r.name}.git`})),gitAuth:{mode:"ssh",sshPort:36000,sshKey:"fixture-private-key"}};
     assert.equal((await call("test-admin","PUT",`/${id}/config`,sshConfig)).status,200);
     const ssh = (await call("test-admin","GET",`/${id}`)).data.config.gitAuth;
     assert.equal(ssh.sshPort,36000); assert.equal(ssh.sshKey,undefined);
-    assert.equal(resolveProjectGitCredential(id,ssh.credentialRef).secret,"fixture-private-key");
+    assert.equal((await resolveProjectGitCredential(id,ssh.credentialRef)).secret,"fixture-private-key");
     assert.equal((await call("test-admin","POST","",{name:"Missing token",config:{...config,gitAuth:{mode:"token",sshPort:22}}})).status,400);
     assert.equal((await call("test-admin","POST","",{name:"Invalid port",config:{...sshConfig,gitAuth:{...sshConfig.gitAuth,sshPort:65536}}})).status,400);
     assert.equal((await call("test-admin","POST","",{name:"Invalid transport",config:{...sshConfig,gitAuth:config.gitAuth}})).status,400);
@@ -166,7 +186,7 @@ test("project access, settings and persistent default sessions",async t => {
       {name:"api",directory:"backend",command:"pnpm start",port:3000},
     ]};
     const row = {id:projectId};
-    getDb().prepare("UPDATE project_configs SET config=? WHERE project_id=?").run(JSON.stringify(legacy),row.id);
+    (await getDb().prepare("UPDATE project_configs SET config=? WHERE project_id=?").run(JSON.stringify(legacy),row.id));
     const config = (await call("test-admin","GET",`/${projectId}`)).data.config;
     assert.equal(config.initScript,"pnpm install");
     assert.equal(config.previewPort,undefined); assert.equal(config.additionalPorts,undefined);
@@ -175,7 +195,7 @@ test("project access, settings and persistent default sessions",async t => {
     assert.ok(config.startupScript.includes("cd '/workspace/backend' && pnpm start"));
     assert.ok(config.startupScript.endsWith("wait -n"));
     assert.equal(config.services,undefined); assert.equal(config.installCommand,undefined);
-    assert.equal((getDb().prepare("SELECT config FROM project_configs WHERE project_id=?").get(row.id) as {config:string}).config,JSON.stringify(legacy));
+    assert.equal(((await getDb().prepare("SELECT config FROM project_configs WHERE project_id=?").get(row.id)) as {config:string}).config,JSON.stringify(legacy));
     assert.equal((await call("test-admin","PUT",`/${projectId}/config`,config)).status,200);
   });  await t.test("different legacy repository credentials require an explicit shared replacement",async () => {
     const legacy = {...emptyConfig,gitAuth:undefined,repos:[
@@ -183,7 +203,7 @@ test("project access, settings and persistent default sessions",async t => {
       {name:"api",url:"https://example.com/api.git",branch:"main",credentialRef:"old-b",gitAuth:{mode:"token",sshPort:22,hasToken:true}},
     ]};
     const row = {id:projectId};
-    getDb().prepare("UPDATE project_configs SET config=? WHERE project_id=?").run(JSON.stringify(legacy),row.id);
+    (await getDb().prepare("UPDATE project_configs SET config=? WHERE project_id=?").run(JSON.stringify(legacy),row.id));
     const config = (await call("test-admin","GET",`/${projectId}`)).data.config;
     assert.equal(config.gitAuth.requiresUpdate,true);
     assert.equal(config.gitAuth.credentialRef,undefined);
@@ -206,11 +226,11 @@ test("project access, settings and persistent default sessions",async t => {
     assert.equal(detail.config.model.hasApiKey,true);
     assert.ok(!JSON.stringify(detail).includes("project-model-secret"));
     const ref = detail.config.model.credentialRef;
-    assert.equal(resolveProjectModelCredential(id,ref),"project-model-secret");
-    assert.deepEqual(resolveProjectAgentRuntime(id),{provider:"glm",apiKey:"project-model-secret",baseUrl:config.model.baseUrl,model:config.model.model});
-    assert.throws(() => resolveProjectModelCredential(projectId,ref));
-    assert.ok(!JSON.stringify(getDb().prepare("SELECT * FROM project_configs WHERE project_id=?").all(id)).includes("project-model-secret"));
-    assert.ok(!JSON.stringify(getDb().prepare("SELECT * FROM project_model_credentials WHERE project_id=?").all(id)).includes("project-model-secret"));
+    assert.equal((await resolveProjectModelCredential(id,ref)),"project-model-secret");
+    assert.deepEqual((await resolveProjectAgentRuntime(id)),{provider:"glm",apiKey:"project-model-secret",baseUrl:config.model.baseUrl,model:config.model.model});
+    await assert.rejects(async () => (await resolveProjectModelCredential(projectId,ref)));
+    assert.ok(!JSON.stringify((await getDb().prepare("SELECT * FROM project_configs WHERE project_id=?").all(id))).includes("project-model-secret"));
+    assert.ok(!JSON.stringify((await getDb().prepare("SELECT * FROM project_model_credentials WHERE project_id=?").all(id))).includes("project-model-secret"));
     assert.equal((await call("test-admin","PUT",`/${id}/config`,detail.config)).status,200);
     const changed = {...detail.config,model:{...detail.config.model,model:"another-glm"}};
     assert.equal((await call("test-admin","PUT",`/${id}/config`,changed)).status,200);
@@ -222,7 +242,7 @@ test("project access, settings and persistent default sessions",async t => {
     assert.equal((await call("test-admin","PUT",`/${id}/config`,{...detail.config,model:{...detail.config.model,baseUrl:"https://new.example.com"}})).status,400);
     // Old catalog-backed settings retain their settings and keys, but no longer need a catalog lookup.
     const row = {id:id};
-    getDb().prepare("UPDATE project_configs SET config=? WHERE project_id=?").run(JSON.stringify({...refreshed,model:{...refreshed.model,provider:"zhipu",supplierId:"old-catalog-id"}}),row.id);
+    (await getDb().prepare("UPDATE project_configs SET config=? WHERE project_id=?").run(JSON.stringify({...refreshed,model:{...refreshed.model,provider:"zhipu",supplierId:"old-catalog-id"}}),row.id));
     const migrated = (await call("test-admin","GET",`/${id}`)).data.config;
     assert.equal(migrated.model.supplierId,undefined);
     assert.equal(migrated.model.provider,"glm");
@@ -231,14 +251,14 @@ test("project access, settings and persistent default sessions",async t => {
     assert.equal((await call("test-admin","PUT",`/${id}/config`,migrated)).status,200);
     const claude = await call("test-admin","POST","",{name:"Claude SDK project",config:{...config,model:{...config.model,provider:"claude",apiKey:"claude-fixture-key"}}});
     assert.equal(claude.status,201);
-    assert.equal(resolveProjectAgentRuntime(claude.data.id).provider,"claude");
-    assert.equal(resolveProjectAgentRuntime(id).model,"another-glm");
+    assert.equal((await resolveProjectAgentRuntime(claude.data.id)).provider,"claude");
+    assert.equal((await resolveProjectAgentRuntime(id)).model,"another-glm");
     assert.equal((await fetch(base.replace(/projects$/,"model-suppliers"),{headers:{Authorization:`Bearer ${signToken({userId:"test-admin",role:"admin"})}`}})).status,404);
   });
   await t.test("cursor pagination searches authorized projects without duplicates",async () => {
     const expected = new Set<string>();
-    for(let i=0;i<13;i++)expected.add(createProject(`paging-fixture-${i}`,"Paged project","test-admin",[{userId:"second-admin",role:"viewer"}],emptyConfig));
-    createProject("paging-fixture-private","Hidden","outsider",[],emptyConfig);
+    for(let i=0;i<13;i++)expected.add((await createProject(`paging-fixture-${i}`,"Paged project","test-admin",[{userId:"second-admin",role:"viewer"}],emptyConfig)));
+    (await createProject("paging-fixture-private","Hidden","outsider",[],emptyConfig));
     const seen:string[]=[];let cursor:string|null=null;
     do {
       const result = await call("second-admin","GET",`?q=paging-fixture&limit=5${cursor?`&cursor=${encodeURIComponent(cursor)}`:""}`);
@@ -249,7 +269,7 @@ test("project access, settings and persistent default sessions",async t => {
     assert.equal(seen.length,13);assert.equal(new Set(seen).size,13);
     assert.deepEqual((await call("second-admin","GET","?q=does-not-exist&limit=5")).data,{items:[],nextCursor:null});
     for(const suffix of ["?limit=0","?limit=61","?limit=bad","?cursor=bad"]){assert.equal((await call("second-admin","GET",suffix)).status,400);}
-    createProject("literal_%_query","Search literal symbols","test-admin",[{userId:"second-admin",role:"viewer"}],emptyConfig);
+    (await createProject("literal_%_query","Search literal symbols","test-admin",[{userId:"second-admin",role:"viewer"}],emptyConfig));
     assert.equal((await call("second-admin","GET","?q="+encodeURIComponent("_%_"))).data.items.length,1);
   });
 

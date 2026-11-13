@@ -130,9 +130,12 @@ export function createChat(
   textarea.placeholder = t("chat.placeholder");
   textarea.rows = 1;
   textarea.onkeydown = (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+    if (e.key === "Enter" && !e.isComposing && e.keyCode !== 229) {
       e.preventDefault();
-      sendMessage();
+      if (e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) {
+        textarea.setRangeText("\n", textarea.selectionStart, textarea.selectionEnd, "end");
+        autoResize();
+      } else if (!e.repeat) sendMessage();
       return;
     }
     if (e.key === "Backspace" && textarea.selectionStart === 0 && textarea.selectionEnd === 0 && commentTags.length > 0) {

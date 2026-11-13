@@ -28,6 +28,9 @@ const app=http.createServer(async(req,res)=>{
   if(contextFailure){res.writeHead(401);res.end(JSON.stringify({error:'登录状态已过期'}));return;}
   res.end(JSON.stringify(contextData));return;
  }
+ if(url.pathname==='/__prism_platform__/browser/register'){res.end(JSON.stringify({id:'browser-fixture-binding'}));return;}
+ if(url.pathname==='/__prism_platform__/browser/commands'){await new Promise(resolve=>setTimeout(resolve,1000));res.end(JSON.stringify({commands:[]}));return;}
+ if(url.pathname==='/__prism_platform__/browser/result'||url.pathname==='/__prism_platform__/browser/unregister'){res.end('{"success":true}');return;}
  if(url.pathname==='/__prism_platform__/attachments'&&req.method==='POST'){
   uploadRequests++;const name=decodeURIComponent(req.headers['x-attachment-name']);const chunks=[];for await(const chunk of req)chunks.push(chunk);const content=Buffer.concat(chunks);
   if(name==='retry.txt'&&failUpload){failUpload=false;res.writeHead(503);res.end(JSON.stringify({error:'测试上传失败，请重试'}));return;}
@@ -54,7 +57,7 @@ const app=http.createServer(async(req,res)=>{
   res.writeHead(202);res.end(JSON.stringify({id:run}));setTimeout(()=>{for(const ws of sockets.keys())ws.push();},20);return;
  }
  if(url.pathname==='/__prism_platform__/conversation'){
-  reads++;assert.equal(url.searchParams.get('wait'),null,'Conversation HTTP requests must never long poll');
+  if(!url.searchParams.has('notification'))reads++;assert.equal(url.searchParams.get('wait'),null,'Conversation HTTP requests must never long poll');
   res.end(JSON.stringify(snapshot(Number(url.searchParams.get('after')||0))));return;
  }
  res.setHeader('Content-Type','text/html; charset=utf-8');res.setHeader('Set-Cookie','prism_fixture=ok; HttpOnly; SameSite=Lax; Path=/');
@@ -67,7 +70,7 @@ app.on('upgrade',(req,socket,head)=>{
  if(req.headers.origin!==base||!req.headers.cookie?.includes('prism_fixture=ok')){socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');return;}
  const url=new URL(req.url,base);assert.equal(url.pathname,'/__prism_platform__/conversation/live');
  wss.handleUpgrade(req,socket,head,ws=>{
-  connections++;sockets.set(ws,Number(url.searchParams.get('after')||0));
+  ws.notification=url.searchParams.has('notification');if(!ws.notification)connections++;sockets.set(ws,Number(url.searchParams.get('after')||0));
   const push=()=>{if(ws.readyState!==WebSocket.OPEN)return;const value=snapshot(sockets.get(ws));ws.send(JSON.stringify({type:'snapshot',value}));sockets.set(ws,value.next_message_cursor);};
   ws.push=push;ws.once('close',()=>sockets.delete(ws));push();
  });
@@ -94,7 +97,7 @@ try {
   messages.push({id:'group-task',seq:messages.at(-1).seq+1,run_id:activeRun.id,role:'assistant',body:'正在修改按钮',user_id:null});
   messages.push({id:'group-alice',seq:messages.at(-1).seq+1,run_id:null,role:'user',body:'补充：按钮保持蓝色',user_id:'alice'});push();
   const task=page.locator('[data-message-id="group-task"]');await task.getByRole('button',{name:'取消运行',exact:true}).waitFor();await task.getByText('调整按钮样式',{exact:true}).waitFor();await page.screenshot({path:'/tmp/prism-group-running.png'});
-  assert.equal(await page.locator('[data-message-id="group-alice"] .message-author').innerText(),'alice');assert.equal(await page.locator('[data-message-id] img, [data-message-id] time').count(),0);assert.equal(await page.locator('[data-message-id="m38"] .message-author').count(),0);assert.equal(await task.getByRole('button',{name:'取消运行',exact:true}).innerText(),'');const titleSize=await task.locator('.message-task-title').evaluate(el=>getComputedStyle(el).fontSize);assert.equal(titleSize,await page.locator('[data-message-id="group-alice"] .chat-markdown').evaluate(el=>getComputedStyle(el).fontSize));
+  assert.equal(await page.locator('[data-message-id="group-alice"] .message-author').innerText(),'alice');assert.equal(await page.locator('[data-message-id] img, [data-message-id] time').count(),0);assert.equal(await page.locator('[data-message-id="m38"] .message-author').count(),0);assert.equal(await task.getByRole('button',{name:'取消运行',exact:true}).innerText(),'');assert.equal(await task.locator('[data-run-control]').count(),1);assert.equal(await task.locator('button[data-run-control] [data-run-spinner]').count(),1);assert.equal(await task.locator('button[data-run-control] [data-stop-square]').count(),1);const titleSize=await task.locator('.message-task-title').evaluate(el=>getComputedStyle(el).fontSize);assert.equal(titleSize,await page.locator('[data-message-id="group-alice"] .chat-markdown').evaluate(el=>getComputedStyle(el).fontSize));
   const input=page.locator('textarea');await input.fill('运行中继续发消息');const send=page.getByRole('button',{name:/^(发送|Send)$/});assert.equal(await send.isEnabled(),true);await send.click();await page.waitForFunction(()=>!document.querySelector('textarea').value);
   await page.waitForTimeout(100);assert.equal(messages.filter(m=>m.body==='运行中继续发消息').length,1);assert.equal(await page.getByRole('button',{name:'取消运行',exact:true}).count(),1);
   await page.evaluate(()=>{window.taskNode=document.querySelector('[data-message-id="group-task"]');const list=document.querySelector('[data-chat-viewport]>div');list.scrollTop=300;window.groupScroll=list.scrollTop;});await page.waitForTimeout(100);
@@ -110,6 +113,21 @@ try {
   await page.evaluate(()=>{const list=document.querySelector('[data-chat-viewport]>div');list.scrollTop=list.scrollHeight;});await page.waitForTimeout(100);
   const visibleMention={id:'visible-mention',seq:messages.at(-1).seq+1,run_id:'visible',role:'assistant',body:'@u 已经在可视区域的新消息。',mentions:JSON.stringify(['u']),user_id:null};messages.push(visibleMention);push();
   await page.waitForFunction(seq=>Number(localStorage.getItem('prism-mention-seen:s:u'))===seq,visibleMention.seq);assert.equal(await reminder.count(),0);
+
+  // Long replies are read at the message tail or latest chat position, even
+  // when the @ itself is above the viewport. Reading history stays unread.
+  await page.evaluate(()=>{const list=document.querySelector('[data-chat-viewport]>div');list.scrollTop=300;});await page.waitForTimeout(100);
+  const longMention={id:'long-mention',seq:messages.at(-1).seq+1,run_id:'long',role:'assistant',body:'@u 请查看长消息。\n\n'+Array.from({length:75},(_,i)=>`第 ${i+1} 段说明内容。`).join('\n\n'),mentions:JSON.stringify(['u']),user_id:null};messages.push(longMention);push();await page.locator('[data-message-id="long-mention"]').waitFor();await reminder.waitFor();assert.ok(await page.evaluate(seq=>Number(localStorage.getItem('prism-mention-seen:s:u'))<seq,longMention.seq));
+  await page.evaluate(()=>{const list=document.querySelector('[data-chat-viewport]>div');list.scrollTop=list.scrollHeight;});await reminder.waitFor({state:'hidden'});assert.equal(await page.evaluate(seq=>Number(localStorage.getItem('prism-mention-seen:s:u'))===seq,longMention.seq),true);assert.ok(await page.locator('[data-message-id="long-mention"] [data-mention-user="u"]').evaluate(element=>element.getBoundingClientRect().bottom<0));
+  await page.evaluate(()=>{const list=document.querySelector('[data-chat-viewport]>div');list.scrollTop=300;});await page.waitForTimeout(100);
+  const tailMention={...longMention,id:'tail-mention',seq:messages.at(-1).seq+1,run_id:'tail'};messages.push(tailMention,{id:'after-tail',seq:tailMention.seq+1,run_id:null,role:'assistant',body:Array.from({length:40},()=> '后续普通消息。').join('\n\n'),mentions:'[]',user_id:null});push();await page.locator('[data-message-id="tail-mention"]').waitFor();await reminder.waitFor();
+  await page.evaluate(()=>{const list=document.querySelector('[data-chat-viewport]>div'),message=document.querySelector('[data-message-id="tail-mention"]');list.scrollTop+=message.getBoundingClientRect().bottom-list.getBoundingClientRect().bottom;});await reminder.waitFor({state:'hidden'});assert.equal(await page.evaluate(seq=>Number(localStorage.getItem('prism-mention-seen:s:u'))===seq,tailMention.seq),true);
+  await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,get:()=> 'hidden'});document.dispatchEvent(new Event('visibilitychange'));const list=document.querySelector('[data-chat-viewport]>div');list.scrollTop=list.scrollHeight;});
+  const backgroundMention={id:'background-mention',seq:messages.at(-1).seq+1,run_id:'background',role:'assistant',body:'@u 后台页面收到的提醒。',mentions:JSON.stringify(['u']),user_id:null};messages.push(backgroundMention);push();await page.locator('[data-message-id="background-mention"]').waitFor();await reminder.waitFor();assert.ok(await page.evaluate(seq=>Number(localStorage.getItem('prism-mention-seen:s:u'))<seq,backgroundMention.seq));
+  await page.evaluate(()=>{delete document.visibilityState;document.dispatchEvent(new Event('visibilitychange'));const list=document.querySelector('[data-chat-viewport]>div');list.scrollTop=list.scrollHeight;});await reminder.waitFor({state:'hidden'});
+
+  await page.evaluate(()=>{const list=document.querySelector('[data-chat-viewport]>div');list.scrollTop=300;});await page.waitForTimeout(100);
+  const jumpMention={...longMention,id:'jump-mention',seq:messages.at(-1).seq+1,run_id:'jump'};messages.push(jumpMention);push();await page.locator('[data-message-id="jump-mention"]').waitFor();await reminder.waitFor();await reminder.click();await reminder.waitFor({state:'hidden'});assert.equal(await page.evaluate(seq=>Number(localStorage.getItem('prism-mention-seen:s:u'))===seq,jumpMention.seq),true);
   // The next running turn owns its cancellation control; cancelling keeps sending enabled.
   activeRun={id:'collaboration-run',status:'running',user_id:'bob'};runRows=[{...activeRun,title:'调整按钮样式',cancel_supported:1}];row.body='正在执行下一轮';push();await task.getByRole('button',{name:'取消运行',exact:true}).click();await page.waitForTimeout(100);assert.equal(activeRun.status,'cancelling');assert.equal(await task.getByRole('button',{name:'取消运行',exact:true}).count(),0);await input.fill('取消期间也能继续讨论');assert.equal(await send.isEnabled(),true);await input.fill('');
   activeRun=null;runRows=[{id:'collaboration-run',status:'cancelled',user_id:'bob'}];row.body='任务已取消。';push();await task.getByText('任务已取消。',{exact:true}).waitFor();
@@ -120,7 +138,7 @@ try {
   await root.locator('.prism-fab').click();await widget.waitForFunction(seq=>Number(localStorage.getItem('prism-mention-seen:s:u'))===seq,hiddenMention.seq);
   await widget.reload();await root.locator('[data-message-id="hidden-mention"]').waitFor();assert.equal(await root.getByRole('button',{name:'有人 @ 了你 · 查看消息'}).count(),0);
   contextData.role='viewer';await widget.reload();await widget.waitForTimeout(300);assert.equal(await widget.locator('#prism-studio-widget').count(),0);await page.reload();await page.getByText('当前账号仅可预览页面，群聊仅向编辑成员开放。',{exact:true}).waitFor();assert.equal(await page.locator('textarea').count(),0);
-  assert.deepEqual(errors,[]);console.log('PASS: real extension and widget nickname-only headers, consistent task font, stop icons, sending during runs, inline cancellation, in-place completion, stable scroll, visibility-based mention read receipts, hidden-panel unread state, reload persistence and viewer exclusion.');
+  assert.deepEqual(errors,[]);console.log('PASS: real extension and widget nickname-only headers, consistent task font, stop icons, sending during runs, inline cancellation, in-place completion, stable scroll, mention read receipts for long-reply tails and chat bottom, history/background unread state, hidden-panel unread state, reload persistence and viewer exclusion.');
  }else if(process.argv.includes('--attachments')){
   const input=page.locator('input[type="file"]'),popover=page.locator('.attachment-popover');
   const doc=Buffer.from('# 需求文档\n请实现一个保存按钮。'),resource=Buffer.from([0,255,1,2,13,10,0]);
@@ -233,7 +251,7 @@ try {
  // The embedded widget uses the same stream controller directly, without the
  // extension port. Exercise its built artifact as a second real browser entry.
  contextFailure=false;await page.close();
- const socketDeadline=Date.now()+5000;while(sockets.size){assert.ok(Date.now()<socketDeadline,'Panel socket was not cleaned up');await new Promise(resolve=>setTimeout(resolve,10));}
+ const socketDeadline=Date.now()+5000;while([...sockets.keys()].some(ws=>!ws.notification)){assert.ok(Date.now()<socketDeadline,'Panel socket was not cleaned up');await new Promise(resolve=>setTimeout(resolve,10));}
  const widget=await browser.newPage();await widget.goto(base+'/?widget=1');
  const history=widget.locator('#prism-studio-widget').locator('[data-message-id="m0"]');await history.waitFor({state:'attached'});
  const expectedReads=reads,expectedConnections=connections;

@@ -1,5 +1,6 @@
 export interface CurrentTabCommand {
   requestId: string;
+  responseRequestId?:string;
   action: "attach" | "detach" | "navigate" | "observe" | "scroll" | "click" | "fill" | "press" | "wait" | "screenshot" | "evidence" | "responseBody";
   target?: { ref?: string; role?: string; name?: string; label?: string; selector?: string };
   value?: string;
@@ -132,6 +133,7 @@ chrome.debugger.onEvent.addListener((source, method, raw) => {
     log.pageErrors.push(params.exceptionDetails?.exception?.description || params.exceptionDetails?.text || "Page exception");
   } else if (method === "Log.entryAdded") {
     const entry = params.entry || {};
+    if(String(entry.url||'').includes('/__prism_platform__/'))return;
     if (entry.level === "error") log.pageErrors.push(entry.text || "Page error");
     else log.console.push({ type: entry.level || "log", text: entry.text || "", timestamp: entry.timestamp });
   } else if (method === "Network.requestWillBeSent") {
@@ -239,13 +241,15 @@ async function pressKey(tabId: number, key: string, modifiers = 0) {
 
 async function waitForNavigation(tabId: number, requestedUrl: string, timeoutMs = 15_000) {
   const expected = new URL(requestedUrl, (await chrome.tabs.get(tabId)).url).href;
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const tab = await chrome.tabs.get(tabId);
-    if (tab.status === "complete" && tab.url === expected) return;
-    await delay(100);
-  }
-  throw new Error(`Navigation timed out: ${expected}`);
+  await new Promise<void>((resolve, reject) => {
+    const cleanup = () => { clearTimeout(timer); chrome.tabs.onUpdated.removeListener(updated); };
+    const updated = (id: number, info: chrome.tabs.TabChangeInfo, tab: chrome.tabs.Tab) => {
+      if (id === tabId && info.status === "complete" && tab.url === expected) { cleanup(); resolve(); }
+    };
+    const timer = setTimeout(() => { cleanup(); reject(new Error(`Navigation timed out: ${expected}`)); }, timeoutMs);
+    chrome.tabs.onUpdated.addListener(updated);
+    void chrome.tabs.update(tabId, { url: expected }).catch(error => { cleanup(); reject(error); });
+  });
 }
 
 export async function executeCurrentTabCommand(tabId: number, input: CurrentTabCommand): Promise<unknown> {
@@ -260,7 +264,6 @@ export async function executeCurrentTabCommand(tabId: number, input: CurrentTabC
     await attach(tabId);
     if (input.action === "navigate") {
       if (!input.url) throw new Error("url is required");
-      await chrome.tabs.update(tabId, { url: input.url });
       await waitForNavigation(tabId, input.url);
       return { success: true, url: input.url };
     }
@@ -295,16 +298,17 @@ export async function executeCurrentTabCommand(tabId: number, input: CurrentTabC
       return {
         console: snapshot.console.slice(-100).map((item) => ({ ...item, text: redactText(item.text) })),
         pageErrors: snapshot.pageErrors.slice(-100).map(redactText),
-        network: snapshot.network.slice(-200).map(({ requestId, ...item }) => ({ ...item, requestHandle: requestId, url: redactUrl(item.url), errorText: item.errorText ? redactText(item.errorText) : undefined })),
+        network: snapshot.network.filter(item=>{try{return !new URL(item.url||'').pathname.startsWith('/__prism_platform__/');}catch{return true;}}).slice(-200).map(({ requestId, ...item }) => ({ ...item, requestHandle: requestId, url: redactUrl(item.url), errorText: item.errorText ? redactText(item.errorText) : undefined })),
       };
     }
     if (input.action === "screenshot") return command(tabId, "Page.captureScreenshot", { format: "png", fromSurface: true });
     if (input.action === "responseBody") {
-      if (!input.requestId) throw new Error("requestId is required");
-      const item = evidence.get(tabId)?.network.find((entry) => entry.requestId === input.requestId);
+      const responseRequestId=input.responseRequestId||input.requestId;
+      if (!responseRequestId) throw new Error("responseRequestId is required");
+      const item = evidence.get(tabId)?.network.find((entry) => entry.requestId === responseRequestId);
       if (!item) throw new Error("The selected network response is no longer available");
       if (!/(?:^|[+/])json(?:$|;)/i.test(item.mimeType || "")) throw new Error(`Response body inspection only supports JSON, received ${item.mimeType || "unknown content type"}`);
-      const body = await command<{ body: string; base64Encoded?: boolean }>(tabId, "Network.getResponseBody", { requestId: input.requestId });
+      const body = await command<{ body: string; base64Encoded?: boolean }>(tabId, "Network.getResponseBody", { requestId: responseRequestId });
       const text = body.base64Encoded
         ? new TextDecoder().decode(Uint8Array.from(atob(body.body), (character) => character.charCodeAt(0)))
         : body.body;

@@ -1,3 +1,4 @@
+import {useId} from 'react';
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -33,21 +34,23 @@ export default function GitAuthFields({
   hideModeSelector = false,
   requireCredentials = false,
 }: GitAuthFieldsProps) {
+  const fieldId=useId();
   return (
     <Tabs value={authMode} onValueChange={mode => {
       if (mode === "token" || mode === "ssh") onAuthModeChange(mode);
-    }} className="space-y-3">
+    }} className="form-stack">
       {!hideModeSelector && <>
         <TabsList aria-label="Git 认证方式">
           <TabsTrigger value="token">Token</TabsTrigger>
           <TabsTrigger value="ssh">SSH</TabsTrigger>
         </TabsList>
       </>}
-      <TabsContent value="token" className="space-y-2">
-          <Label>访问令牌{requireCredentials && !hasSavedToken && <span className="text-destructive"> *</span>}</Label>
+      <TabsContent value="token" className="form-field mt-0">
+          <Label htmlFor={`${fieldId}-token`}>访问令牌{requireCredentials && !hasSavedToken && <span className="text-destructive"> *</span>}</Label>
           <Input
             type="password"
             required={requireCredentials && !hasSavedToken}
+            id={`${fieldId}-token`}
             aria-label="Git Access Token"
             autoComplete="new-password"
             value={gitAccessToken}
@@ -58,27 +61,29 @@ export default function GitAuthFields({
             仓库地址需使用 HTTPS 格式，支持 GitHub / GitLab Token
           </p>
       </TabsContent>
-      <TabsContent value="ssh" className="space-y-3">
-          <div className="space-y-2">
-            <Label>SSH 私钥{requireCredentials && !hasSavedSshKey && <span className="text-destructive"> *</span>}</Label>
+      <TabsContent value="ssh" className="form-stack mt-0">
+          <div className="form-field">
+            <Label htmlFor={`${fieldId}-key`}>SSH 私钥{requireCredentials && !hasSavedSshKey && <span className="text-destructive"> *</span>}</Label>
             <textarea
               required={requireCredentials && !hasSavedSshKey}
+              id={`${fieldId}-key`}
               aria-label="Git SSH 私钥"
               value={gitSshKey}
               onChange={(e) => onGitSshKeyChange(e.target.value)}
               placeholder={hasSavedSshKey ? "已保存，留空保留原私钥" : "-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----"}
               rows={4}
-              className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 resize-y font-mono"
+              className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-xs shadow-none placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 resize-y font-mono"
             />
             <p className="text-xs text-muted-foreground">
               仓库地址需使用 SSH 格式（git@...），粘贴完整的私钥内容
             </p>
           </div>
-          <div className="space-y-2">
-            <Label className="text-xs">SSH 端口{requireCredentials && <span className="text-destructive"> *</span>}</Label>
+          <div className="form-field">
+            <Label htmlFor={`${fieldId}-port`}>SSH 端口{requireCredentials && <span className="text-destructive"> *</span>}</Label>
             <Input
               type="number"
               required={requireCredentials}
+              id={`${fieldId}-port`}
               aria-label="Git SSH 端口"
               min={1}
               max={65535}

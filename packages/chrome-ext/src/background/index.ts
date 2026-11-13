@@ -1,3 +1,5 @@
+import {installNotifications} from './notifications.js';
+import './platform-browser.js';
 // Platform-only extension: authentication stays in the preview page's HttpOnly
 // cookie. The service worker never connects to an Agent or stores Agent tokens.
 const visitedTabs=new Set<number>();
@@ -45,3 +47,5 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
  const opening=chrome.sidePanel.open({tabId});visitedTabs.add(tabId);
  opening.then(()=>respond({success:true})).catch(()=>respond({success:false}));return true;
 });
+
+installNotifications();

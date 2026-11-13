@@ -17,7 +17,9 @@
     "dev:platform": "cd platform && pnpm dev",
     "build:platform": "cd platform && pnpm build",
     "start:platform": "cd platform && pnpm start",
-    "docker:platform": "cd platform && docker compose up --build"
+    "docker:platform": "cd platform && docker compose up --build",
+    "sit:platform": "cd platform && pnpm sit",
+    "build:sit:platform": "cd platform && pnpm build:sit"
   },
   "engines": {
     "node": ">=18",

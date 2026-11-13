@@ -4,8 +4,18 @@
   "version": "0.6.7",
   "description": "__MSG_extDescription__",
   "default_locale": "en",
-  "permissions": ["sidePanel", "activeTab", "tabs", "scripting", "storage", "debugger"],
-  "host_permissions": ["<all_urls>"],
+  "permissions": [
+    "sidePanel",
+    "activeTab",
+    "tabs",
+    "scripting",
+    "storage",
+    "debugger",
+    "notifications"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "side_panel": {
     "default_path": "sidepanel.html"
   },
@@ -15,14 +25,30 @@
   },
   "content_scripts": [
     {
-      "matches": ["http://localhost:*/*", "http://127.0.0.1:*/*", "http://*/*", "https://*/*", "file:///*"],
-      "js": ["page-bridge.js"],
+      "matches": [
+        "http://localhost:*/*",
+        "http://127.0.0.1:*/*",
+        "http://*/*",
+        "https://*/*",
+        "file:///*"
+      ],
+      "js": [
+        "page-bridge.js"
+      ],
       "world": "MAIN",
       "run_at": "document_start"
     },
     {
-      "matches": ["http://localhost:*/*", "http://127.0.0.1:*/*", "http://*/*", "https://*/*", "file:///*"],
-      "js": ["content.js"]
+      "matches": [
+        "http://localhost:*/*",
+        "http://127.0.0.1:*/*",
+        "http://*/*",
+        "https://*/*",
+        "file:///*"
+      ],
+      "js": [
+        "content.js"
+      ]
     }
   ],
   "icons": {
@@ -38,5 +64,6 @@
       "32": "icons/icon-32.png",
       "48": "icons/icon-48.png"
     }
-  }
+  },
+  "minimum_chrome_version": "116"
 }

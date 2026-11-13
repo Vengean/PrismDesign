@@ -1,6 +1,8 @@
 import {ReplyBuffer} from './core/reply-buffer.js';
+import {prismBrowserMcp} from './browser-mcp.js';
 import {
   unstable_v2_createSession,
+  query,
   type SDKSession,
 } from "@anthropic-ai/claude-agent-sdk";
 
@@ -15,7 +17,7 @@ export type ProgressCallback = (text: string) => void;
 // ---- Multi-user session management ----
 
 interface UserSession {
-  session: SDKSession;
+  session: Pick<SDKSession,'send'|'stream'|'close'>;
   lastActive: number;
 }
 
@@ -79,7 +81,15 @@ function getSession(clientId: string): UserSession {
   console.log(`[Claude] 创建会话, model=${sessionOptions.model}`);
   console.log(`[Claude] 环境变量: BASE_URL=${process.env.ANTHROPIC_BASE_URL || "(default)"}, KEY=${(process.env.ANTHROPIC_API_KEY ? "(configured)" : "(unset)")}...`);
 
-  const session = unstable_v2_createSession(sessionOptions as any);
+  let session:UserSession['session'];
+  if(clientId.startsWith('platform-browser-')){
+    const controller=new AbortController();let prompt='';
+    const readonly=clientId.startsWith('platform-browser-test-');
+    const options={...sessionOptions,mcpServers:{prism_browser:prismBrowserMcp()},abortController:controller,
+      allowedTools:readonly?['Read','Glob','Grep','mcp__prism_browser__*']:[...allowedTools,'mcp__prism_browser__*'],
+      disallowedTools:[...(sessionOptions.disallowedTools as string[]),...(readonly?['Write','Edit','Bash']:[])]};
+    session={async send(value){prompt=typeof value==='string'?value:JSON.stringify(value);},stream(){return query({prompt,options:options as any});},close(){controller.abort();}};
+  }else session=unstable_v2_createSession(sessionOptions as any);
 
   userSession = { session, lastActive: Date.now() };
   sessions.set(clientId, userSession);

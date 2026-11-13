@@ -1,5 +1,6 @@
+import {getDb} from './db.js';
 import {projectConfig} from './projects.js';
-import {requirement,execRuntime,redactRuntimeText,withGitOperation} from './requirement-runtime.js';
+import {requirement,execRuntime,redactRuntimeText,withGitOperation,ensureWorkspaceRuntimeLocked} from './requirement-runtime.js';
 
 // Arguments are passed as JSON and argv; repository names never become shell code.
 export const gitOperationScript=String.raw`
@@ -15,7 +16,7 @@ function git(args){return execFileSync('git',['-c','core.hooksPath=/dev/null','-
 try{
  if(git(['branch','--show-current'])!==input.branch)throw Error('当前工作区不在需求分支，操作已取消');
  const dirty=git(['status','--porcelain','-z']);
- if(input.action==='status'){console.log(JSON.stringify({success:true,message:'仓库状态已更新',dirty:!!dirty}));return;}
+ if(input.action==='status'){console.log(JSON.stringify({success:true,message:'仓库状态已更新',dirty:!!dirty,commit:git(['rev-parse','HEAD'])}));return;}
  if(input.action==='commit'){
   if(typeof input.message!=='string'||!input.message.trim()||input.message.trim().length>500)throw Error('请填写 1–500 字的提交说明');
   if(!dirty)throw Error('当前仓库没有需要提交的修改');
@@ -27,6 +28,14 @@ try{
  if(input.action==='pull'){
   git(['fetch','--no-tags','origin',input.branch]);
   git(['merge','--ff-only','FETCH_HEAD']);message='Pull 完成，需求分支已同步';
+ }else if(input.action==='sync-release'){
+  if(typeof input.releaseBranch!=='string'||!/^prism\/(sit\/)?release-[a-zA-Z0-9-]+$/.test(input.releaseBranch))throw Error('所属发布分支无效');
+  const beforeSha=git(['rev-parse','HEAD']);
+  git(['fetch','--no-tags','origin','refs/heads/'+input.releaseBranch]);
+  const baseSha=git(['rev-parse','FETCH_HEAD']);
+  try{git(['merge','--no-edit',baseSha]);}catch(error){if(git(['diff','--name-only','--diff-filter=U']))throw Error('同步发布分支存在冲突，请在需求环境处理并提交后再申请合入');throw error;}
+  const commit=git(['rev-parse','HEAD']);git(['merge-base','--is-ancestor',baseSha,commit]);const changed=commit!==beforeSha;
+  console.log(JSON.stringify({success:true,message:changed?'已将发布分支更新合入工作区，尚未 Push':'当前需求已包含发布分支的全部提交，无需更新',commit,baseSha,beforeSha,changed}));return;
  }else if(input.action==='push'){
   git(['push','--porcelain','origin','HEAD:refs/heads/'+input.branch]);message='Push 完成，需求分支已推送';
  }else throw Error('不支持的 Git 操作');
@@ -44,13 +53,17 @@ try{
 }
 })();
 `;
-export async function operateRequirementGit(id:string,repo:string,action:'pull'|'push'|'commit'|'status',message?:string){
- const r=requirement(id),config=projectConfig(r.project_id);
- if(!/^[a-zA-Z0-9_-]+$/.test(repo)||!config.repos.some(item=>item.name===repo))throw Error('仓库不存在');
+export async function operateRequirementGit(id:string,repo:string,action:'pull'|'push'|'commit'|'status'|'sync-release',message?:string,releaseBranch?:string,alreadyLocked=false){
+ const r=(await requirement(id)),config=(await projectConfig(r.project_id));
+ const record=await getDb().prepare('SELECT * FROM requirements WHERE id=?').get(id);
+ if(action!=='status'&&['merged','closed'].includes(record.status))throw Error('已合入或关闭的需求只读');
+ const allowed=record.release_id?await getDb().prepare('SELECT repo_name AS name FROM requirement_repositories WHERE requirement_id=?').all(id):config.repos;
+ if(!/^[a-zA-Z0-9_-]+$/.test(repo)||!allowed.some(item=>item.name===repo))throw Error('仓库不存在');
  if(action==='commit'&&(typeof message!=='string'||!message.trim()||message.trim().length>500))throw Error('请填写 1–500 字的提交说明');
  const execute=async()=>{
-  const result=await execRuntime(id,['node','-e',gitOperationScript,JSON.stringify({repo,branch:`prism/requirement-${id}`,action,message})],0);
-  try{const value=JSON.parse(redactRuntimeText(id,result.text));if(typeof value.success!=='boolean'||typeof value.message!=='string')throw Error();return value as {success:boolean;message:string;commit?:string;dirty?:boolean};}catch{throw Error('无法获取 Git 操作结果，请确认需求环境正在运行');}
+  await ensureWorkspaceRuntimeLocked(id);
+  const result=await execRuntime(id,['node','-e',gitOperationScript,JSON.stringify({repo,branch:record.branch_name||`prism/requirement-${id}`,action,message,releaseBranch})],0);
+  try{const value=JSON.parse((await redactRuntimeText(id,result.text)));if(typeof value.success!=='boolean'||typeof value.message!=='string')throw Error();return value as {success:boolean;message:string;commit?:string;dirty?:boolean;baseSha?:string;beforeSha?:string;changed?:boolean};}catch{throw Error('无法获取 Git 操作结果，请确认需求环境正在运行');}
  };
- return action==='status'?execute():withGitOperation(id,execute);
+ return alreadyLocked?(await execute()):(await withGitOperation(id,execute));
 }

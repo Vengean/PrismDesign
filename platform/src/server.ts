@@ -1,3 +1,4 @@
+import {releaseWorkflow} from './services/release-workflow.js';
 import {previewHostConfig} from './services/preview-host.js';
 import express from "express";
 import cors from "cors";
@@ -29,13 +30,14 @@ if (!fs.existsSync(dataDir)) {
 }
 
 // Initialize database
-getDb();
-console.log(`Platform database: ${path.resolve(dataDir,"platform.db")}`);
-initProjectTables();
-initRuntimeTables();
-initConversationTables();
-interruptPreviousRuns();
-conversations.resume();
+await getDb().ready();
+console.log(`Platform database: ${getDb().dialect} (${process.env.PRISM_MODE||"dev"})`);
+(await initProjectTables());
+(await initRuntimeTables());
+(await initConversationTables());
+(await interruptPreviousRuns());
+await releaseWorkflow.recover();
+(await conversations.resume());
 
 // Middleware
 app.use(cors({ origin: true, credentials: true }));

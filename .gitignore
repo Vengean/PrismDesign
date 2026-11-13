@@ -6,3 +6,7 @@ dist/
 .DS_Store
 .design-agent-profile.json
 .pnpm-store/
+.env.*.local
+
+# Immutable local SIT build snapshots
+platform/.sit/

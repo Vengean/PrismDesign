@@ -27,7 +27,7 @@ test('platform-only background opens panels without Agent connections and cleans
   action:{onClicked:event('click')},sidePanel:{open:async(input:any)=>{calls.push({open:input});}},scripting:{executeScript:async()=>{throw Error('already injected');}},
  };
  const source=fs.readFileSync(new URL('../../packages/chrome-ext/src/background/index.ts',import.meta.url),'utf8');
- vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:{},chrome,fetch:()=>{throw Error('must never connect directly to Agent');}});
+ vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:{},require:(name:string)=>{if(name==='./notifications.js')return {installNotifications(){}};assert.equal(name,'./platform-browser.js');return {};},chrome,fetch:()=>{throw Error('must never connect directly to Agent');}});
  await listeners.get('installed')!();assert.ok(calls.some(call=>call.remove?.includes('agentToken')));
  listeners.get('click')!({id:7,url:'https://ordinary.fixture'});assert.equal(calls.find(call=>call.open)?.open.tabId,7);
  let disconnected:Function|undefined;const port={name:'prism-sidepanel',onDisconnect:{addListener:(handler:Function)=>disconnected=handler}};

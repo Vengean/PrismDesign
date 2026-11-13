@@ -38,7 +38,7 @@ const zh: Record<string, string> = {
 
   // ── Chat ──
   "chat.empty": "描述你想开发、调整或验证的内容，\nAI 会按需修改源码，并协助验证页面。",
-  "chat.placeholder": "描述你想开发、调整或验证的内容…（Ctrl+Enter 发送）",
+  "chat.placeholder": "描述你想开发、调整或验证的内容…（Enter 发送）",
   "chat.clearHistory": "清空",
   "chat.thinking": "思考中...",
   "chat.processing": "Agent 正在处理…",
@@ -140,7 +140,7 @@ const en: Record<string, string> = {
 
   // ── Chat ──
   "chat.empty": "Describe what you want to build, refine, or verify.\nAI will update the source as needed and help verify the page.",
-  "chat.placeholder": "Describe what you want to build, refine, or verify… (Ctrl+Enter to send)",
+  "chat.placeholder": "Describe what you want to build, refine, or verify… (Enter to send)",
   "chat.clearHistory": "Clear",
   "chat.thinking": "Thinking...",
   "chat.processing": "Agent is working…",
