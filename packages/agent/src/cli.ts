@@ -5,6 +5,7 @@ import path from "node:path";
 import os from "node:os";
 import { startServer } from "./server.js";
 import { loadConfig, applyConfigToEnv } from "./config.js";
+import { applyModelProxy } from './model-proxy.js';
 
 // ── .env loader (lightweight, no dependency) ──
 
@@ -66,7 +67,7 @@ Options:
   --port <number>        服务端口 (default: 9527)
   --project <path>       项目根目录 (default: 当前目录)
   --provider <type>      Agent Provider: claude | claude-sub | openai | codex | glm
-  --api-key <key>        Provider API Key（Codex 登录模式不需要）
+  --api-key <key>        Provider API Key（Codex 订阅模式不需要）
   --api-base-url <url>   Provider API Base URL
   --model <name>         模型名称
 `);
@@ -86,6 +87,7 @@ Options:
   // Load .env files (lowest priority), then apply prism.config over them.
   loadEnvFile(projectRoot);
   applyConfigToEnv(config, true);
+  applyModelProxy();
 
   process.env.PRISM_PERMISSION_FILESYSTEM ||= "workspace-write";
   process.env.PRISM_PERMISSION_COMMANDS ||= "none";
@@ -103,10 +105,10 @@ Options:
   const agentType = process.env.PRISM_AGENT_PROVIDER || process.env.AGENT_TYPE || "claude";
 
   const apiKey = getArg(args, "--api-key") || config.apiKey;
-  if (apiKey && agentType !== "codex") process.env[agentType === "openai" ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY"] = apiKey;
+  if (apiKey) process.env[agentType === "codex" ? "CODEX_API_KEY" : agentType === "openai" ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY"] = apiKey;
 
   const baseUrl = getArg(args, "--api-base-url") || config.apiBaseUrl;
-  if (baseUrl) process.env[agentType === "openai" ? "OPENAI_BASE_URL" : "ANTHROPIC_BASE_URL"] = baseUrl;
+  if (baseUrl) process.env[agentType === "openai" || agentType === "codex" ? "OPENAI_BASE_URL" : "ANTHROPIC_BASE_URL"] = baseUrl;
 
   const model = getArg(args, "--model") || config.model;
   if (model) process.env[agentType === "openai" ? "OPENAI_MODEL" : agentType === "codex" ? "CODEX_MODEL" : "ANTHROPIC_MODEL"] = model;
@@ -136,10 +138,10 @@ Options:
 
   console.log(`\n  服务地址:  http://${localIP}:${actualPort}`);
   console.log(`  项目目录:  ${projectRoot}`);
-  console.log(`  Agent:     ${agentType === "codex" ? "Codex SDK (ChatGPT login)" : agentType === "openai" ? "OpenAI Agents SDK" : agentType === "glm" ? "GLM (glm-acp-agent)" : "Claude Agent SDK"}`);
+  console.log(`  Agent:     ${agentType === "codex" ? `Codex SDK (${process.env.CODEX_AUTH_MODE || (process.env.CODEX_API_KEY || process.env.OPENAI_API_KEY ? 'api-key' : 'subscription')})` : agentType === "openai" ? "OpenAI Agents SDK" : agentType === "glm" ? "GLM (glm-acp-agent)" : "Claude Agent SDK"}`);
   console.log(`  模型:      ${modelName}`);
   console.log(`  Token 鉴权: ${accessTokenRequired ? "启用" : "关闭"}`);
-  const configuredBaseUrl = agentType === "openai" ? process.env.OPENAI_BASE_URL : process.env.ANTHROPIC_BASE_URL;
+  const configuredBaseUrl = agentType === "openai" || agentType === "codex" ? process.env.OPENAI_BASE_URL : process.env.ANTHROPIC_BASE_URL;
   if (configuredBaseUrl) {
     console.log(`  API 代理:  ${configuredBaseUrl}`);
   }

@@ -42,6 +42,8 @@ export default defineConfig(async ({command}) => ({
       "/api": {
         target: `http://127.0.0.1:${process.env.PORT || 3001}`,
         changeOrigin: true,
+        ws:true,
+        configure(proxy){proxy.on('proxyReqWs',request=>{request.setHeader('origin',`http://${request.getHeader('host')}`);});},
       },
     },
   },

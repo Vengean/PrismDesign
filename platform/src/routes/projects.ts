@@ -6,6 +6,7 @@ import { authenticate } from "../middleware/auth.js";
 import { getDb, findUserById } from "../services/db.js";
 import { createProject, defaultProjectAccess, emptyConfig, projectConfig, projectMembers, projectRole, storeProjectConfig, type ProjectConfig, type ProjectRole } from "../services/projects.js";
 import type { AuthRequest } from "../types.js";
+import {projectAuth} from '../services/project-auth.js';
 
 const router: RouterType = Router();
 router.use(authenticate);
@@ -37,11 +38,16 @@ function validConfig(value: unknown): value is ProjectConfig {
     if (a.mode === "ssh" && !/^(ssh:\/\/|[^\s@/]+@[^\s:/]+:)/i.test(r.url)) return false;
     names.add(r.name);
   }
-  if (!c.model || Object.keys(c.model).some(k => !["provider","baseUrl","model","credentialRef","apiKey","hasApiKey"].includes(k)) ||
-    !["","claude","glm"].includes(c.model.provider) || !text(c.model.baseUrl,2000) || !text(c.model.model,200) ||
+  if (!c.model || Object.keys(c.model).some(k => !["provider","baseUrl","model","authMode","proxyUrl","credentialRef","apiKey","hasApiKey"].includes(k)) ||
+    !["","claude","glm","codex"].includes(c.model.provider) || !text(c.model.baseUrl,2000) || !text(c.model.model,200) ||
+    (c.model.authMode !== undefined && !['api-key','subscription'].includes(c.model.authMode)) ||
+    (c.model.proxyUrl !== undefined && !text(c.model.proxyUrl,2000)) ||
     (c.model.apiKey !== undefined && !text(c.model.apiKey,10000)) ||
     (c.model.credentialRef !== undefined && !text(c.model.credentialRef,200))) return false;
-  if (c.model.provider && (!c.model.baseUrl.trim() || !c.model.model.trim())) return false;
+  if (c.model.provider && c.model.provider!=='codex' && c.model.authMode!=='subscription' && (!c.model.baseUrl.trim() || !c.model.model.trim())) return false;
+  if(c.model.proxyUrl){
+    try{const u=new URL(c.model.proxyUrl);if(!['http:','https:'].includes(u.protocol)||u.username||u.password||u.search||u.hash||u.pathname!=='/')return false;}catch{return false;}
+  }
   if (c.model.baseUrl) {
     try { const u = new URL(c.model.baseUrl); if (!["http:","https:"].includes(u.protocol) || u.username || u.password || u.search || u.hash) return false; } catch { return false; }
   }
@@ -131,6 +137,7 @@ router.put("/:id/config", asyncHandler(async (req: AuthRequest, res) => {
   if (!(await access(req,res,"admin"))) return;
   if (!validConfig(req.body)) { res.status(400).json({ error: "配置无效，请检查仓库地址、认证方式和端口" }); return; }
   const id = String(req.params.id);
+  if(projectAuth.isBusy(id)){res.status(409).json({error:'请先关闭项目登录终端，再保存配置'});return;}
   try {
   (await getDb().transaction(async () => {
     const config = (await storeProjectConfig(id,req.body,(await projectConfig(id))));

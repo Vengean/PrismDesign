@@ -2,6 +2,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { Codex, type Thread, type ThreadItem } from "@openai/codex-sdk";
+import { codexAuthentication } from './codex-auth.js';
 import type { AgentProvider, AgentResult, EventCallback } from "../core/types.js";
 
 const SESSION_TIMEOUT = 30 * 60 * 1000;
@@ -36,27 +37,15 @@ function loadProjectMcpServers(): Record<string, Record<string, unknown>> {
   }
 }
 
-export class CodexProvider implements AgentProvider {
-  readonly name = "codex" as const;
-  readonly model = process.env.CODEX_MODEL || "Codex CLI default";
-  readonly capabilities = { streaming: true, sessions: true, cancel: true, rollback: false };
-  private codex: Codex | null = null;
-  private readonly sessions = new Map<string, SessionEntry>();
-  private readonly cleanupTimer: ReturnType<typeof setInterval>;
-
-  constructor(private readonly projectRoot: string) {
-    this.cleanupTimer = setInterval(() => this.cleanupSessions(), 5 * 60 * 1000);
-  }
-
-  private getCodex(): Codex {
-    if (this.codex) return this.codex;
-
-    // With no apiKey option the spawned official CLI reuses its own login state
-    // (normally stored under CODEX_HOME). Never read or copy auth.json here.
+export function codexClientOptions() {
+    // Subscription mode reuses the official CLI login state under CODEX_HOME.
+    // API mode supplies a key explicitly; neither mode reads auth.json here.
+    const auth=codexAuthentication();
     const useWebSocket = process.env.CODEX_TRANSPORT === "websocket";
     const mcpServerPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "testing", "mcp-browser-server.js");
     const browserEnabled = process.env.PRISM_PERMISSION_BROWSER !== "false";
     const commonConfig = {
+      ...auth.config,
       // Prism verification must use its own Chrome-extension MCP. The desktop
       // Codex installation may globally enable the bundled Browser plugin and
       // node_repl browser backends; disable them only for this SDK child so the
@@ -66,7 +55,9 @@ export class CodexProvider implements AgentProvider {
       },
       mcp_servers: {
         ...loadProjectMcpServers(),
-        node_repl: { enabled: false },
+        // Codex validates transport even for disabled servers. A complete,
+        // inert stdio definition also works in clean container profiles.
+        node_repl: { enabled: false, command: process.execPath, args: ['--version'] },
         ...(browserEnabled ? { prism_browser: {
           command: process.execPath,
           args: [mcpServerPath],
@@ -80,7 +71,8 @@ export class CodexProvider implements AgentProvider {
         } } : {}),
       },
     };
-    this.codex = new Codex(useWebSocket ? { config: commonConfig } : {
+    return auth.apiKey || useWebSocket ? {...auth,config:commonConfig} : {
+      ...auth,
       // ChatGPT-login Codex currently retries WebSocket connections for roughly
       // 75 seconds before falling back on networks where WS is unavailable.
       // Use the same authenticated Codex endpoint over HTTPS/SSE directly.
@@ -97,8 +89,23 @@ export class CodexProvider implements AgentProvider {
           },
         },
       },
-    });
-    return this.codex;
+    };
+}
+
+export class CodexProvider implements AgentProvider {
+  readonly name = "codex" as const;
+  readonly model = process.env.CODEX_MODEL || "Codex CLI default";
+  readonly capabilities = { streaming: true, sessions: true, cancel: true, rollback: false };
+  private codex: Codex | null = null;
+  private readonly sessions = new Map<string, SessionEntry>();
+  private readonly cleanupTimer: ReturnType<typeof setInterval>;
+
+  constructor(private readonly projectRoot: string) {
+    this.cleanupTimer = setInterval(() => this.cleanupSessions(), 5 * 60 * 1000);
+  }
+
+  private getCodex(): Codex {
+    return this.codex ||= new Codex(codexClientOptions());
   }
 
   private getThread(clientId: string): Thread {

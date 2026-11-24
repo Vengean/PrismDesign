@@ -1,0 +1,22 @@
+; Load together with the host's /usr/share/udica/templates/base_container.cil.
+; Opt in only Codex requirement containers using:
+;   --security-opt label=type:prism_codex.process
+; Keep SELinux enforcing, MCS labels, seccomp, no-new-privileges and CapDrop=ALL.
+(block prism_codex
+    (blockinherit container)
+    (typeattributeset sandbox_net_domain (process))
+    (typeattributeset container_net_domain (process))
+    ; Match container_domain_template's private file management and tmpfs labels.
+    (allow process container_file_t (dir (create open read write getattr setattr search add_name remove_name rmdir rename reparent ioctl lock mounton)))
+    (allow process container_file_t (file (create open read write getattr setattr append unlink rename link ioctl lock map execute execute_no_trans entrypoint mounton)))
+    (allow process container_file_t (lnk_file (create read write getattr setattr unlink rename link)))
+    (allow process container_file_t (filesystem (mount remount unmount associate)))
+    (typetransition process tmpfs_t dir container_file_t)
+    (typetransition process tmpfs_t file container_file_t)
+    (typetransition process tmpfs_t lnk_file container_file_t)
+    (allow process devpts_t (filesystem (mount)))
+    (allow process process (filesystem (mount remount unmount)))
+    (allow process tmpfs_t (filesystem (remount)))
+    ; Bubblewrap configures loopback only inside its new network namespace.
+    (allow process process (netlink_route_socket (create bind read write getattr getopt setopt nlmsg_read nlmsg_write)))
+)

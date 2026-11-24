@@ -69,7 +69,11 @@ function getSession(clientId: string): UserSession {
   // Pass env vars explicitly so the spawned claude CLI inherits them
   // For claude-sub (subscription mode), skip API key/base_url — SDK uses ~/.claude/ credentials
   const isSubscription = process.env.AGENT_TYPE === "claude-sub";
-  if (!isSubscription && (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_BASE_URL)) {
+  if(isSubscription){
+    const env={...process.env};
+    delete env.ANTHROPIC_API_KEY;delete env.ANTHROPIC_AUTH_TOKEN;delete env.ANTHROPIC_BASE_URL;
+    sessionOptions.env=env;
+  }else if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_BASE_URL) {
     sessionOptions.env = {
       ...process.env,
       ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || "",

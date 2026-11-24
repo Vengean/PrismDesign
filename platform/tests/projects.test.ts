@@ -255,6 +255,45 @@ test("project access, settings and persistent default sessions",async t => {
     assert.equal((await resolveProjectAgentRuntime(id)).model,"another-glm");
     assert.equal((await fetch(base.replace(/projects$/,"model-suppliers"),{headers:{Authorization:`Bearer ${signToken({userId:"test-admin",role:"admin"})}`}})).status,404);
   });
+  await t.test('Codex authentication modes, encrypted keys and proxy configuration round-trip',async()=>{
+    const config={...emptyConfig,model:{provider:'codex',authMode:'subscription',baseUrl:'',model:'',proxyUrl:'http://proxy.example.com:7890'}};
+    const created=await call('test-admin','POST','',{name:'Codex subscription',config});assert.equal(created.status,201);
+    const id=created.data.id;
+    let saved=(await call('test-admin','GET',`/${id}`)).data.config;
+    assert.equal(saved.model.authMode,'subscription');assert.equal(saved.model.hasApiKey,undefined);
+    assert.deepEqual(await resolveProjectAgentRuntime(id),{provider:'codex',authMode:'subscription',apiKey:'',baseUrl:'',model:'',proxyUrl:config.model.proxyUrl});
+    assert.equal((await call('test-admin','PUT',`/${id}/config`,saved)).status,200);
+    const keyConfig={...saved,model:{...saved.model,authMode:'api-key'}};
+    assert.equal((await call('test-admin','PUT',`/${id}/config`,keyConfig)).status,400);
+    assert.equal((await call('test-admin','PUT',`/${id}/config`,{...keyConfig,model:{...keyConfig.model,apiKey:'codex-secret-fixture'}})).status,200);
+    saved=(await call('test-admin','GET',`/${id}`)).data.config;
+    assert.equal(saved.model.hasApiKey,true);assert.ok(!JSON.stringify(saved).includes('codex-secret-fixture'));
+    assert.equal((await resolveProjectAgentRuntime(id)).apiKey,'codex-secret-fixture');
+    assert.equal((await call('test-admin','PUT',`/${id}/config`,saved)).status,200);
+    for(const proxyUrl of ['socks5://proxy:7890','http://user:secret@proxy:7890','http://proxy:7890/path','http://proxy:7890?secret=value','invalid']){
+      assert.equal((await call('test-admin','PUT',`/${id}/config`,{...saved,model:{...saved.model,proxyUrl}})).status,400);
+    }
+    for(const model of [{...saved.model,authMode:'invalid'}]){
+      assert.equal((await call('test-admin','PUT',`/${id}/config`,{...saved,model})).status,400);
+    }
+    assert.equal((await call('test-admin','PUT',`/${id}/config`,config)).status,200);
+    saved=(await call('test-admin','GET',`/${id}`)).data.config;
+    assert.equal(saved.model.credentialRef,undefined);assert.equal(saved.model.hasApiKey,undefined);
+    assert.equal((await getDb().prepare('SELECT * FROM project_model_credentials WHERE project_id=?').all(id)).length,0);
+    assert.equal((await call('test-admin','PUT',`/${id}/config`,{...saved,model:{...saved.model,authMode:'api-key',hasApiKey:true}})).status,400);
+  });
+  await t.test('every SDK accepts an authentication mode and enforces its credential requirements',async()=>{
+    for(const provider of ['claude','glm','codex'])for(const authMode of ['api-key','subscription']){
+      const login=authMode==='subscription';
+      const model={provider,authMode,baseUrl:authMode==='api-key'?'https://models.example.com/v1':'',model:authMode==='api-key'?'fixture-model':'',...(login?{}:{apiKey:'fixture-plan-key'})};
+      const response=await call('test-admin','POST','',{name:`${provider} ${authMode}`,config:{...emptyConfig,model}});
+      assert.equal(response.status,201,JSON.stringify(response.data));
+      const runtime=await resolveProjectAgentRuntime(response.data.id);
+      assert.equal(runtime.provider,provider);assert.equal(runtime.authMode,authMode);
+      assert.equal(runtime.apiKey,login?'':'fixture-plan-key');
+      if(!login)assert.equal((await call('test-admin','POST','',{name:'Missing key',config:{...emptyConfig,model:{...model,apiKey:undefined}}})).status,400);
+    }
+  });
   await t.test("cursor pagination searches authorized projects without duplicates",async () => {
     const expected = new Set<string>();
     for(let i=0;i<13;i++)expected.add((await createProject(`paging-fixture-${i}`,"Paged project","test-admin",[{userId:"second-admin",role:"viewer"}],emptyConfig)));

@@ -10,6 +10,8 @@ import {dockerAgentTransport,type AgentTransport,type RuntimeEvent} from './agen
 import {projectRole} from './projects.js';
 import {collaborationInstructions,collaborationReply,messageMentions,type PendingQuestion} from './collaboration.js';
 import type {WorkspaceAttachment} from './workspace-attachments.js';
+import {projectAuth} from './project-auth.js';
+import {withProjectAuthGate} from './project-auth-storage.js';
 
 export function messageContext(value:unknown,attachments:WorkspaceAttachment[]=[]):string{
  if(value===undefined&&!attachments.length)return '';
@@ -142,6 +144,7 @@ export function createConversationService(transport:AgentTransport=dockerAgentTr
   timers.set(id,setTimeout(()=>{timers.delete(id);void kick(id).catch(error=>console.error("[Conversation scheduler]",error.code||"failed"));},delay));
  }
  async function submit(id:string,userId:string,message:string,requestId:string,clientContext?:unknown,attachments:WorkspaceAttachment[]=[],browser?:{bindingId:string;verifyOnly?:boolean}){
+  if(projectAuth.isBusy((await requirement(id)).project_id))throw Error('项目登录操作正在进行，请先关闭登录终端再发送任务');
   if(['merged','closed'].includes((await requirement(id)).status))throw Error('已合入或关闭的需求只读');
   const role=(await projectRole((await requirement(id)).project_id,userId));if(!role||role==='viewer')throw Error('只有项目编辑成员可以参与群聊');
   let metadata=messageContext(clientContext,attachments);const sessionId=await conversationSession(id);await state(sessionId);
@@ -171,9 +174,11 @@ export function createConversationService(transport:AgentTransport=dockerAgentTr
  }
  async function performKick(id:string){
   const sessionId=await conversationSession(id);
-  const created=await withWorkspaceGate(id,()=>getDb().transaction(async()=>{
+  const created=await withProjectAuthGate((await requirement(id)).project_id,()=>withWorkspaceGate(id,()=>getDb().transaction(async()=>{
    if(getDb().dialect==='mysql')await getDb().prepare('SELECT id FROM project_sessions WHERE id=? FOR UPDATE').get(sessionId);
-   if(['merged','closed'].includes((await requirement(id)).status)||await activeWorkspaceRun(id)||runtimeOperationActive(id))return;
+   const workspace=await requirement(id);
+   if(projectAuth.isBusy(workspace.project_id)){await schedule(id,1000);return;}
+   if(['merged','closed'].includes(workspace.status)||await activeWorkspaceRun(id)||runtimeOperationActive(id))return;
    const current=await state(sessionId);if(current.paused)return;
    const rows=await getDb().prepare("SELECT * FROM conversation_messages WHERE session_id=? AND role='user' AND seq>? ORDER BY seq").all(sessionId,current.read_cursor) as Post[];
    if(!rows.length)return;
@@ -191,7 +196,7 @@ export function createConversationService(transport:AgentTransport=dockerAgentTr
    await getDb().prepare("INSERT INTO conversation_messages(id,session_id,run_id,role,body) VALUES(?,?,?,'assistant','')").run(crypto.randomUUID(),sessionId,runId);
    await appendEvent(sessionId,runId,'run.queued',{userId:batch[0].user_id,messageIds:batch.map(post=>post.id),throughSeq:to});
    return {runId,batch,to,members,current};
-  })());
+  })()));
   if(!created)return;
   const {runId,batch,to,members,current}=created;workspaceEvents.emit('locked',id);
   const work=Promise.resolve().then(()=>execute(id,sessionId,runId,batch,to,members.map(member=>member.id),JSON.parse(current.pending_questions))).finally(async()=>{
@@ -240,12 +245,13 @@ export function createConversationService(transport:AgentTransport=dockerAgentTr
    const raw=typeof result.message==='string'?(await safe(result.message)):'';
    const reply=collaborationReply(raw,members,batch.map(post=>post.id),questions);
    const body=status==='failed'?conversationError(raw,false):reply.body||(status==='cancelled'?'任务已取消。':reply.decision==='wait'?'已阅读消息，正在等待进一步信息。':'已完成。');
+   if(status==='failed')console.error(`[Conversation ${runId}] failed: ${raw.slice(0,4000)||body}`);
    if(browser){await platformBrowser.execute(browser.bindingId,id,batch[0].user_id!,{action:'detach'}).catch(()=>{});browserDetached=true;}
    clearLiveConversation(sessionId,runId);
    if(result.verification||result.testRun){const old=await getDb().prepare("SELECT client_context FROM conversation_messages WHERE run_id=? AND role='assistant'").get(runId);await getDb().prepare("UPDATE conversation_messages SET client_context=? WHERE run_id=? AND role='assistant'").run(JSON.stringify({...JSON.parse(old?.client_context||'{}'),...(result.verification?{verification:result.verification}:{}),...(result.testRun?{testRun:result.testRun}:{})}),runId);}
    (await getDb().transaction(async ()=>{
     (await getDb().prepare("UPDATE conversation_messages SET body=?,mentions=? WHERE run_id=? AND role='assistant'").run(body,JSON.stringify(reply.mentions),runId));
-    (await getDb().prepare("UPDATE conversation_runs SET status=?,decision=?,error=?,updated_at=datetime('now') WHERE id=?").run(status,reply.decision,status==='failed'?body:'',runId));
+    (await getDb().prepare("UPDATE conversation_runs SET status=?,decision=?,error=?,updated_at=datetime('now') WHERE id=?").run(status,reply.decision,status==='failed'?(raw.slice(0,8000)||body):'',runId));
     if(status==='failed')(await getDb().prepare('UPDATE conversation_agent_state SET paused=1 WHERE session_id=?').run(sessionId));
     else (await getDb().prepare('UPDATE conversation_agent_state SET read_cursor=MAX(read_cursor,?),pending_questions=? WHERE session_id=?').run(through,JSON.stringify(status==='cancelled'?questions:reply.questions),sessionId));
     (await appendEvent(sessionId,runId,'run.finished',{status}));

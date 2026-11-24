@@ -35,6 +35,10 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  subscriptionStatus(id:string){return request<SubscriptionStatus>(`/projects/${encodeURIComponent(id)}/subscription/status`);},
+  openSubscriptionTerminal(id:string){return request<SubscriptionSession>(`/projects/${encodeURIComponent(id)}/subscription/sessions`,{method:'POST'});},
+  closeSubscriptionTerminal(id:string,sessionId:string){return request(`/projects/${encodeURIComponent(id)}/subscription/sessions/${encodeURIComponent(sessionId)}`,{method:'DELETE'});},
+  logoutSubscription(id:string){return request<SubscriptionStatus>(`/projects/${encodeURIComponent(id)}/subscription/logout`,{method:'POST'});},
   listWorkspaceFiles(projectId:string,requirementId:string,path=''){return request<WorkspaceFileList>(`/projects/${projectId}/requirements/${requirementId}/environment/files?path=${encodeURIComponent(path)}`);},
   async downloadWorkspaceFile(projectId:string,requirementId:string,path:string){
     const token=localStorage.getItem('token');
@@ -135,13 +139,15 @@ export const api = {
 };
 
 export type ProjectRole = "viewer" | "editor" | "admin";
+export interface SubscriptionStatus {provider:'codex'|'claude'|'glm';status:'not_logged_in'|'logged_in'|'logging_in'}
+export interface SubscriptionSession {id:string;ticket:string;provider:string;command:string}
 export interface ProjectConfig {
   repos: { name: string; url: string; branch: string }[];
   gitAuth: {
     mode: "token" | "ssh"; sshPort: number; token?: string; sshKey?: string;
     hasToken?: boolean; hasSshKey?: boolean; credentialRef?: string; requiresUpdate?: boolean;
   };
-  model: { provider: string; baseUrl: string; model: string; credentialRef?: string; apiKey?: string; hasApiKey?: boolean };
+  model: { provider: string; baseUrl: string; model: string; authMode?: "api-key" | "subscription"; proxyUrl?: string; credentialRef?: string; apiKey?: string; hasApiKey?: boolean };
   initScript: string;
   startupScript: string;
   guidance: string;

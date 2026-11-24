@@ -87,9 +87,12 @@ export PRISM_AGENT_URL="http://localhost:9527"
 # Explicit CLI selection takes precedence over project-local prism.config.*.
 AGENT_PROVIDER="${PRISM_AGENT_PROVIDER:-${AGENT_TYPE:-claude}}"
 case "$AGENT_PROVIDER" in
-  claude|glm|claude-sub) ;;
+  claude|glm|claude-sub|codex) ;;
   *) echo "Unsupported Agent SDK: $AGENT_PROVIDER" >&2; exit 1 ;;
 esac
 export PRISM_AGENT_PROVIDER="$AGENT_PROVIDER"
+if [ "$AGENT_PROVIDER" = codex ]; then
+  node /verify-codex-sandbox.cjs
+fi
 echo "Starting agent server on port 9527 (SDK: $AGENT_PROVIDER)..." | log_main
 cd /workspace && node /prism-agent/dist/cli.js start --port 9527 --provider "$AGENT_PROVIDER" > >(tee -a "$LOG_DIR/agent.log") 2>&1

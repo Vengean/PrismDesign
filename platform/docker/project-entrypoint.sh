@@ -56,6 +56,11 @@ node /runtime-health.cjs starting
 printf 'starting' > /var/log/prism/state
 code-server --bind-addr 0.0.0.0:8080 --auth none --disable-telemetry /workspace > /var/log/prism/code-server.log 2>&1 &
 # SDK selection follows the latest project configuration on each environment start.
+if [ "$PRISM_AGENT_PROVIDER" = codex ]; then
+  if ! node /verify-codex-sandbox.cjs; then
+    fail 'Codex 沙箱或补丁工具检查失败，请查看环境日志中的具体原因，修复宿主机策略或更新镜像后重启环境。'; exit 1
+  fi
+fi
 node /prism-agent/dist/cli.js start --port 9527 --provider "$PRISM_AGENT_PROVIDER" > /var/log/prism/agent.log 2>&1 &
 agent_pid=$!
 printf '%s\n' "$STARTUP_SCRIPT" > /tmp/prism-start.sh

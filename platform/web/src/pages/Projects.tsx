@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import {FormField} from '@/components/ui/form-field';
 import GitAuthFields from "@/components/GitAuthFields";
 import { Folder, Plus, Search, Sparkles, X } from "lucide-react";
+import SubscriptionLogin from '@/components/SubscriptionLogin';
 
 export const roleLabels: Record<ProjectRole,string> = { viewer: "查看者", editor: "开发者", admin: "项目管理员" };
 export const initialConfig: ProjectConfig = {
@@ -65,8 +66,10 @@ export default function Projects() {
   </div>;
 }
 
-export function ConfigFields({ value, onChange }: { value: ProjectConfig; onChange: (v: ProjectConfig) => void }) {
+export function ConfigFields({ value, onChange,projectId,savedModel }: { value: ProjectConfig; onChange: (v: ProjectConfig) => void;projectId?:string;savedModel?:ProjectConfig['model'] }) {
   const patch = (v: Partial<ProjectConfig>) => onChange({ ...value,...v });
+  const codex=value.model.provider==='codex',glm=value.model.provider==='glm',subscription=value.model.authMode==='subscription';
+  const loginSubscription=subscription;
   const patchAuth = (changes: Partial<ProjectConfig['gitAuth']>) => patch({gitAuth: {...value.gitAuth,...changes}});
   return <div className="settings-form">
     <section id="repositories" className="form-section"><div className="form-section-header"><div className="flex items-center justify-between"><h3 className="font-medium">代码仓库</h3><Button type="button" variant="outline" size="sm" onClick={() => patch({ repos: [...value.repos,{ name: "",url: "",branch: "main" }] })}>添加仓库</Button></div>
@@ -90,11 +93,16 @@ export function ConfigFields({ value, onChange }: { value: ProjectConfig; onChan
       />
     </section>
     <section id="agent-settings" className="form-section"><h3 className="font-medium">Agent 配置</h3><div className="grid gap-4 sm:grid-cols-2">
-      <Field label="Agent SDK"><select required className={fieldClass} value={value.model.provider || "claude"} onChange={e => patch({model:{...value.model,provider:e.target.value,hasApiKey:false,apiKey:""}})}><option value="claude">Claude Agent SDK</option><option value="glm">GLM SDK</option></select></Field>
-      <Field label="服务地址"><Input required type="url" value={value.model.baseUrl} placeholder="填写所选 SDK 对应的服务地址或企业代理地址" onChange={e => patch({model:{...value.model,baseUrl:e.target.value,hasApiKey:false}})} /></Field>
-      <Field label="模型名称"><Input required value={value.model.model} placeholder="填写服务端提供的模型名称" onChange={e => patch({model:{...value.model,model:e.target.value}})} /></Field>
-      <Field label="模型凭证"><Input type="password" autoComplete="new-password" required={!value.model.hasApiKey} value={value.model.apiKey || ""} placeholder={value.model.hasApiKey ? "已保存，留空保留原凭证" : "填写本项目的 API Key"} onChange={e => patch({model:{...value.model,apiKey:e.target.value}})} /></Field>
+      <Field label="认证模式"><select className={fieldClass} value={value.model.authMode||'api-key'} onChange={e=>patch({model:{...value.model,authMode:e.target.value as 'api-key'|'subscription',baseUrl:'',apiKey:'',hasApiKey:false}})}><option value="api-key">API Key 模式</option><option value="subscription">订阅模式</option></select></Field>
+      <Field label="Agent SDK"><select required className={fieldClass} value={value.model.provider || "claude"} onChange={e => patch({model:{...value.model,provider:e.target.value,baseUrl:'',model:'',hasApiKey:false,apiKey:""}})}><option value="claude">Claude Agent SDK</option><option value="glm">GLM SDK</option><option value="codex">Codex SDK</option></select></Field>
+      {(!loginSubscription||glm)&&<Field label="服务地址"><Input required={!codex&&!subscription} type="url" value={value.model.baseUrl} placeholder={codex?'留空使用 https://api.openai.com/v1':subscription?'留空使用 GLM Coding Plan 默认地址':'填写所选 SDK 对应的服务地址'} onChange={e => patch({model:{...value.model,baseUrl:e.target.value,hasApiKey:false}})} /></Field>}
+      <Field label="模型名称"><Input required={!codex&&!subscription} value={value.model.model} placeholder={codex||subscription?'留空使用 SDK 默认模型':'填写服务端提供的模型名称'} onChange={e => patch({model:{...value.model,model:e.target.value}})} /></Field>
+      {!loginSubscription&&<Field label={subscription?'Coding Plan Key':'模型凭证'}><Input type="password" autoComplete="new-password" required={!value.model.hasApiKey} value={value.model.apiKey || ""} placeholder={value.model.hasApiKey ? "已保存，留空保留原凭证" : subscription?'填写 GLM Coding Plan Key':"填写本项目的 API Key"} onChange={e => patch({model:{...value.model,apiKey:e.target.value}})} /></Field>}
+      <Field label="代理地址（可选）" hint="HTTP / HTTPS 网络代理，例如 http://host.containers.internal:7890。地址需能从容器内访问。"><Input type="url" value={value.model.proxyUrl||''} placeholder="留空使用直连" onChange={e=>patch({model:{...value.model,proxyUrl:e.target.value}})} /></Field>
       </div>
+      {subscription&&(projectId?<SubscriptionLogin key={`${projectId}:${value.model.provider}`} projectId={projectId} dirty={JSON.stringify(value.model)!==JSON.stringify(savedModel)}/>:<p className="text-sm text-muted-foreground">先创建并保存项目，再到项目设置打开订阅登录终端。本项目的需求将共享登录态。</p>)}
+      {subscription&&glm&&<p className="mt-2 text-xs text-muted-foreground">GLM 登录终端会运行官方配置命令，请在终端输入 Coding Plan Key；国内账号可填写对应区域的服务地址。</p>}
+      <p className="text-xs text-muted-foreground">修改 Agent 配置后，重启需求环境生效。</p>
     </section>
     <section id="environment" className="form-section"><div className="form-section-header"><h3 className="font-medium">环境启动</h3>
       <p className="text-sm text-muted-foreground">每个仓库按仓库目录名称放入当前需求的 /workspace 下。脚本在 /workspace 执行，使用 cd 或 --dir 进入对应仓库，无需单独配置工作目录。</p></div>

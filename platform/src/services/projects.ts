@@ -19,7 +19,7 @@ export interface GitAuthConfig {
 export interface ProjectConfig {
   repos: { name: string; url: string; branch: string }[];
   gitAuth: GitAuthConfig;
-  model: { provider: string; baseUrl: string; model: string; credentialRef?: string; apiKey?: string; hasApiKey?: boolean };
+  model: { provider: string; baseUrl: string; model: string; authMode?: "api-key" | "subscription"; proxyUrl?: string; credentialRef?: string; apiKey?: string; hasApiKey?: boolean };
   initScript: string;
   startupScript: string;
   guidance: string;
@@ -175,9 +175,10 @@ function credentialKey(): Buffer {
 /** Call inside the project configuration transaction. */
 export async function storeProjectConfig(projectId: string, config: ProjectConfig, previous?: ProjectConfig): Promise<ProjectConfig> {
   const { apiKey, credentialRef: _requestedRef, hasApiKey: _hasApiKey, ...model } = config.model;
-  const sameSupplier = model.provider === previous?.model.provider && model.baseUrl === previous?.model.baseUrl;
-  let modelRef = sameSupplier ? previous?.model.credentialRef : undefined;
-  if (apiKey) {
+  const subscription = model.authMode==='subscription';
+  const sameSupplier = model.provider === previous?.model.provider && model.baseUrl === previous?.model.baseUrl && (model.authMode||'api-key')===(previous?.model.authMode||'api-key');
+  let modelRef = !subscription&&sameSupplier ? previous?.model.credentialRef : undefined;
+  if (apiKey && !subscription) {
     modelRef = previous?.model.credentialRef || crypto.randomUUID();
     const iv = crypto.randomBytes(12);
     const cipher = crypto.createCipheriv("aes-256-gcm",credentialKey(),iv);
@@ -187,7 +188,7 @@ export async function storeProjectConfig(projectId: string, config: ProjectConfi
       .run(modelRef,projectId,Buffer.concat([iv,cipher.getAuthTag(),encrypted]).toString("base64")));
   }
   const savedModelKey = modelRef && (await getDb().prepare("SELECT 1 FROM project_model_credentials WHERE id=? AND project_id=?").get(modelRef,projectId));
-  if (model.provider && !savedModelKey) throw new Error("请填写项目模型凭证");
+  if (model.provider && !subscription && !savedModelKey) throw new Error("请填写项目模型凭证");
   config = {...config,model:{...model,...(modelRef ? {credentialRef:modelRef,hasApiKey:!!savedModelKey} : {})}};
   const auth = config.gitAuth;
   if (auth.mode === "none") throw new Error("请选择 Token 或 SSH 认证");
@@ -229,10 +230,12 @@ export async function resolveProjectModelCredential(projectId: string, ref: stri
 export async function resolveProjectAgentRuntime(projectId: string): Promise<AgentRuntimeConfig> {
   const config = (await projectConfig(projectId));
   const provider = config.model.provider || "claude";
-  if (provider !== "claude" && provider !== "glm") throw new Error("不支持的 Agent SDK");
-  if (!config.model.credentialRef) throw new Error("请先配置 Agent SDK 凭证");
-  return { provider,apiKey:(await resolveProjectModelCredential(projectId,config.model.credentialRef)),
-    baseUrl:config.model.baseUrl,model:config.model.model };
+  if (provider !== "claude" && provider !== "glm" && provider !== "codex") throw new Error("不支持的 Agent SDK");
+  const subscription=config.model.authMode==='subscription';
+  if (!subscription&&!config.model.credentialRef) throw new Error("请先配置 Agent SDK 凭证");
+  return { provider,apiKey:subscription?'':(await resolveProjectModelCredential(projectId,config.model.credentialRef!)),
+    baseUrl:subscription&&provider!=='glm'?'':config.model.baseUrl,model:config.model.model,
+    ...(config.model.authMode||provider==='codex'?{authMode:config.model.authMode||'api-key'}:{}),...(config.model.proxyUrl?{proxyUrl:config.model.proxyUrl}:{}) };
 }
 
 /** Internal runtime use only; never expose decrypted credentials in HTTP responses. */

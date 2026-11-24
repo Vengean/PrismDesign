@@ -57,6 +57,18 @@ test('early transport failure is durable and does not strand a lock',async()=>{
  assert.equal((await activeWorkspaceRun(id)),undefined);assert.equal(((await readConversation(id)).runs as {status:string}[])[0].status,'failed');
  assert.ok((await readConversation(id)).next_event_cursor>0);const cursor=(await readConversation(id)).next_event_cursor;assert.equal((await readConversation(id,0,cursor)).events.length,0);
 });
+test('model failures retain the diagnostic while conversation reads show an actionable message',async()=>{
+ const id=await demand(),raw=JSON.stringify({error:{code:'model_not_found',message:"The 'GPT-6.2-Sol' model is not supported when using Codex with a ChatGPT account."}});
+ const failing=createConversationService({async run(_id,input,event){await event({type:'run.started',data:{runId:input.runId}});await event({type:'bridge.result',data:{success:false,message:raw}});},async cancel(){}},{debounceMs:0,autowake:false});
+ try{
+  const post=await failing.submit(id,'owner','hello','model-error-0001');await failing.wait(post.id);
+  const snapshot=await readConversation(id),stored=await getDb().prepare('SELECT error FROM conversation_runs WHERE id=?').get(snapshot.runs[0].id);
+  assert.equal(stored?.error,raw);
+  assert.match(snapshot.runs[0].error,/区分大小写/);
+  const body=(snapshot.messages as {role:string;body:string}[]).find(message=>message.role==='assistant')!.body;
+  assert.match(body,/GPT-6.2-Sol/);assert.ok(!body.includes('model_not_found'));
+ }finally{failing.close();}
+});
 
 test('element comments persist with UI text, retain idempotency and stay private from viewers',async()=>{
  const id=(await demand());const metadata={text:'修改颜色',comments:[{element:{domPath:'body > button',tagName:'BUTTON',textContent:'提交',component:{name:'Submit',sourceFile:'src/Button.tsx',sourceLine:12}},comment:'改成蓝色'}],contextOrder:['comments']};

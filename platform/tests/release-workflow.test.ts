@@ -104,7 +104,7 @@ test('workspace destruction uses exact mode-specific resources and is retryable'
  const {runtimeResourceNames}=await import('../src/services/runtime-identity.js');
  const names=runtimeResourceNames('fixture-id'),calls:unknown[]=[];
  const engine={getContainer:(name:string)=>({remove:async(options:unknown)=>{calls.push([name,options]);}}),getVolume:(name:string)=>({remove:async()=>{calls.push([name]);}})};
- await removeWorkspaceResources('fixture-id',engine as any);assert.deepEqual(calls,[[names.container,{force:true}],[names.volume]]);
+ await removeWorkspaceResources('fixture-id',engine as any);assert.deepEqual(calls,[[names.container,{force:true}],[names.volume],[`${names.volume}-codex`],[`${names.volume}-claude`]]);
  const missing={getContainer:()=>({remove:async()=>{throw {statusCode:404};}}),getVolume:()=>({remove:async()=>{throw {statusCode:404};}})};
  await removeWorkspaceResources('fixture-id',missing as any);
  let volumeTouched=false;

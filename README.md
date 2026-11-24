@@ -80,6 +80,14 @@ The default address is `http://127.0.0.1:9527`. The terminal prints the access t
 
 For persistent provider, model, permission, proxy, browser, and MCP settings, create `prism.config.ts` in the target project. See the [Agent documentation](./packages/agent/README.md) for the complete configuration schema.
 
+Platform project settings first select API key or subscription authentication, then Claude, GLM, or Codex SDK. API mode stores the key encrypted; Codex defaults to the official OpenAI API when the service URL is empty. In subscription mode, save the project, then open the administrator-only login terminal. An isolated helper runs `claude auth login`, `codex login --device-auth`, or `glm-acp-agent --setup`; GLM keys are entered in the terminal. Subscription mode accepts an empty model name to use the SDK default.
+
+Each project has one auth volume mounted at `/project-auth`, with `codex/`, `claude/`, and `glm/` subdirectories and separate DEV/SIT names. Requirements keep independent containers and source volumes, while subscription containers share project authorization. Deleting a requirement retains the project auth volume. Existing requirement logins are not automatically migrated: log in once at project level, then recreate existing requirement containers. Terminal sessions support input, resizing, authorization links, and login results; closing them removes helpers without deleting credentials, and terminal content is not logged. Reauthentication and logout are blocked while Agent tasks remain active. Members with requirement terminal access can access shared credentials and must be trusted account users.
+
+The optional proxy URL configures an HTTP / HTTPS forward proxy reachable from the container, separately from the model service URL. It applies to the Agent process and subscription login helper; repository cloning, initialization scripts, and business startup scripts use the container's own network settings. Proxy URLs containing credentials are not supported. Restart environments after configuration changes. Before first use, rebuild the workspace image with `pnpm --dir platform build:image`. Login status reflects locally stored CLI authorization; account entitlements and validity are confirmed by actual model requests.
+
+The image includes `codex`, `claude`, and `glm-acp-agent`. Check them with `codex --version`, `claude --version`, and `glm-acp-agent --help`. User-level npm global installs use `/home/prism/.local`, already on PATH. Image builds verify these CLIs, Codex MCP config parsing, and every Agent provider's startup and authentication without making model calls. Restart requirement environments through the platform to recreate containers using the updated image.
+
 ### 2. Choose an interface
 
 #### Chrome Extension — recommended

@@ -1,6 +1,20 @@
 import crypto from 'node:crypto';
 export interface PendingQuestion {id:string;userId:string;question:string;messageIds:string[]}
 export function messageMentions(text:string,members:string[]){return members.filter(id=>new RegExp('@'+id.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(?=$|[\\s，。！？、:：;；,!?()（）])','u').test(text));}
+// Keep the first mention of each member; later references retain their name.
+// Code and Markdown links are literal content and must not be rewritten.
+function deduplicateMentions(body:string,members:string[]){
+ if(!members.length)return body;
+ const ids=[...members].sort((a,b)=>b.length-a.length).map(id=>id.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|');
+ const pattern=new RegExp('@('+ids+')(?=$|[\\s，。！？、:：;；,!?()（）])','gu'),seen=new Set<string>();
+ const protectedContent=/(^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?^ {0,3}\2[ \t]*(?=\n|$)|(`+)[\s\S]*?\3(?!`)|!?\[[^\]\n]*\]\([^\n]*?\)|<[^>\n]+>)/gm;
+ let result='',cursor=0;
+ const normalize=(text:string)=>text.replace(pattern,(mention,id:string)=>{if(seen.has(id))return id;seen.add(id);return mention;});
+ for(const match of body.matchAll(protectedContent)){
+  result+=normalize(body.slice(cursor,match.index))+match[0];cursor=match.index!+match[0].length;
+ }
+ return result+normalize(body.slice(cursor));
+}
 export function collaborationReply(raw:string,members:string[],inputIds:string[],previous:PendingQuestion[]){
  const match=raw.match(/<prism-collaboration>\s*([\s\S]*?)\s*<\/prism-collaboration>/);
  let body=raw.replace(/<prism-collaboration>[\s\S]*?(?:<\/prism-collaboration>|$)/g,'').trim(),decision='reply';
@@ -21,11 +35,12 @@ export function collaborationReply(raw:string,members:string[],inputIds:string[]
  mentions=[...new Set(mentions)];questions=questions.filter(item=>members.includes(item.userId));
  const missing=mentions.filter(id=>!messageMentions(body,[id]).length);
  if(missing.length)body=missing.map(id=>'@'+id).join(' ')+'\n\n'+body;
+ body=deduplicateMentions(body,members);
  return {body,decision,mentions,questions};
 }
 export function collaborationInstructions(members:string[],questions:PendingQuestion[]){return `你正在一个多人协作群聊中。以下用户 ID 均为当前有编辑权限的成员：${JSON.stringify(members)}。
 每轮先完整阅读本批未读消息及未解决问题，自主判断是否需要执行修改、合并需求、回复、询问或等待。不要把每句话当作任务，也不要逐条机械执行。若只是讨论/确认，无需调用修改工具；信息明确时可直接执行。相互矛盾的要求须先澄清。某事项缺信息时可以先处理其他独立、明确的事项。
-需要具体成员确认时，在回复中使用 @用户ID 并提出具体问题；不要编造成员。被指定成员以外的转述不能自动代替其明确确认。取消的任务不能自行重启。历史记录仅作上下文，当前执行依据是本批消息和已确认的未解决事项。运行期间新增消息不属于本批，由下一轮处理。
+需要具体成员确认时，在回复中使用 @用户ID 并提出具体问题；不要编造成员。同一条回复中每位成员只 @ 一次，将需要该成员回答的问题集中列出，后续称呼使用普通用户ID。被指定成员以外的转述不能自动代替其明确确认。取消的任务不能自行重启。历史记录仅作上下文，当前执行依据是本批消息和已确认的未解决事项。运行期间新增消息不属于本批，由下一轮处理。
 未解决的问题：${JSON.stringify(questions)}
 完成后正常输出给群聊看的 Markdown 回复，并在末尾附一个隐藏控制块（不可省略）：
 <prism-collaboration>{"action":"execute或ask或reply或wait","mentions":["真实用户ID"],"questions":[{"userId":"需要答复的人","question":"具体问题","messageIds":["对应输入消息ID"]}],"resolvedQuestionIds":["已解决问题ID"]}</prism-collaboration>

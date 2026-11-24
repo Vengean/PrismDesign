@@ -72,3 +72,21 @@ test('control blocks validate members, keep code readable and hide malformed pro
  assert.deepEqual(reply.mentions,['bob']);assert.deepEqual(reply.questions[0].messageIds,['a']);assert.match(reply.body,/@bob 哪个文件？/);
  assert.equal(collaborationReply('正常内容<prism-collaboration>{bad',['bob'],[],[]).body,'正常内容');
 });
+test('assistant replies mention each member once while retaining every question and recipient',()=>{
+ const raw='@bob 请确认颜色。\n\n@alice 请检查布局。\n\n@bob 还有尺寸。\n<prism-collaboration>'+JSON.stringify({action:'ask',mentions:['bob','alice','bob'],questions:[{userId:'bob',question:'请确认圆角？'},{userId:'bob',question:'请确认间距？'},{userId:'alice',question:'移动端是否通过？'}]})+'</prism-collaboration>';
+ const reply=collaborationReply(raw,['alice','bob'],[],[]);
+ assert.equal(reply.body,'@bob 请确认颜色。\n\n@alice 请检查布局。\n\nbob 还有尺寸。\n\nbob 请确认圆角？\n\nbob 请确认间距？\n\nalice 移动端是否通过？');
+ assert.deepEqual(reply.mentions,['alice','bob']);
+ assert.deepEqual(reply.questions.map(item=>[item.userId,item.question]),[['bob','请确认圆角？'],['bob','请确认间距？'],['alice','移动端是否通过？']]);
+});
+test('mention deduplication preserves code, links, non-members and exact member IDs',()=>{
+ const literal='```text\n@bob 示例\n```\n\n~~~text\n@bob 示例\n~~~\n\n`@bob 示例`\n\n[文档](https://example.com/@bob)';
+ const reply=collaborationReply(literal+'\n\n@bob 请确认。@bob 谢谢。\n@bobcat 保留。@viewer 保留。\n@a.b 请确认。@a.b 谢谢。',['bob','a.b'],[],[]);
+ assert.equal(reply.body,literal+'\n\n@bob 请确认。bob 谢谢。\n@bobcat 保留。@viewer 保留。\n@a.b 请确认。a.b 谢谢。');
+ assert.deepEqual(reply.mentions,['bob','a.b']);
+});
+test('metadata-only questions and mentions still add one visible mention per member',()=>{
+ const reply=collaborationReply('请确认。<prism-collaboration>'+JSON.stringify({mentions:['alice','alice'],questions:[{userId:'bob',question:'颜色？'},{userId:'bob',question:'尺寸？'}]})+'</prism-collaboration>',['alice','bob'],[],[]);
+ assert.equal(reply.body,'@alice\n\n请确认。\n\n@bob 颜色？\n\nbob 尺寸？');
+ assert.deepEqual(reply.mentions,['bob','alice']);
+});

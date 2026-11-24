@@ -1,19 +1,25 @@
 import {workspaceEditorEntrypoint,editorReadyProgram} from './workspace-editor.js';
 import {runtimeResourceNames} from './runtime-identity.js';
 import {assertRuntimeChangeAllowed,assertWorkspaceIdle,workspaceEvents,releaseInterruptedRun,withWorkspaceGate} from './workspace-lock.js';
-import Docker from 'dockerode';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
+import {containerEngine} from './container-engine.js';
+export {containerEngine} from './container-engine.js';
+import {projectAuthVolume} from './project-auth-storage.js';
+import {projectAuth} from './project-auth.js';
 import { PassThrough } from 'node:stream';
 import { getDb } from './db.js';
 import { projectConfig, resolveProjectAgentRuntime, resolveProjectGitCredential } from './projects.js';
 import { buildAgentEnvironment } from './agent-runtime.js';
 
-export function containerEngine(timeoutMs=15000) {
-  const candidates=[process.env.CONTAINER_SOCKET,path.join(os.homedir(),'.local/share/containers/podman/machine/podman.sock'),path.join(os.homedir(),'.config/containers/podman/machine/podman.sock'),process.env.XDG_RUNTIME_DIR && `${process.env.XDG_RUNTIME_DIR}/podman/podman.sock`,'/run/podman/podman.sock','/var/run/docker.sock'];
-  return new Docker({socketPath:candidates.find(p=>p && fs.existsSync(p)) || '/var/run/docker.sock',timeout:timeoutMs});
+export function workspaceSecurityOptions(provider?:string){
+ const options=['no-new-privileges'];
+ const type=process.env.PRISM_CODEX_SELINUX_TYPE?.trim();
+ if(provider==='codex'&&type){
+  if(!/^[a-zA-Z_][a-zA-Z0-9_.]*$/.test(type))throw Error('PRISM_CODEX_SELINUX_TYPE 无效');
+  options.push(`label=type:${type}`);
+ }
+ return options;
 }
+
 export async function initRuntimeTables() {
  if(getDb().dialect==='mysql'){await getDb().ready();return;}
   (await getDb().exec(`CREATE TABLE IF NOT EXISTS requirement_environments (
@@ -63,6 +69,8 @@ export async function removeWorkspaceResources(id:string,engine=containerEngine(
  const names=runtimeResourceNames(id);
  try{await engine.getContainer(names.container).remove({force:true});}catch(error){if((error as {statusCode?:number}).statusCode!==404)throw Error('清理需求容器失败，请检查容器引擎后重试');}
  try{await engine.getVolume(names.volume).remove();}catch(error){if((error as {statusCode?:number}).statusCode!==404)throw Error('清理需求源码卷失败，请检查是否被占用后重试');}
+ try{await engine.getVolume(`${names.volume}-codex`).remove();}catch(error){if((error as {statusCode?:number}).statusCode!==404)throw Error('清理 Codex 登录卷失败，请检查是否被占用后重试');}
+ try{await engine.getVolume(`${names.volume}-claude`).remove();}catch(error){if((error as {statusCode?:number}).statusCode!==404)throw Error('清理 Claude 登录卷失败，请检查是否被占用后重试');}
 }
 export async function startRuntime(id:string):Promise<void> {
   const {work}=await withWorkspaceGate(id,async()=>{
@@ -74,6 +82,7 @@ export async function startRuntime(id:string):Promise<void> {
 }
 async function prepareRuntime(id:string,editing=false) {
   const {r,config}=(await configFor(id));
+  if(projectAuth.isBusy(r.project_id))throw Error('项目登录操作正在进行，请先关闭登录终端');
   const sourceRepos=r.release_id?(await getDb().prepare('SELECT repo_name AS name,url FROM requirement_repositories WHERE requirement_id=?').all(id)).map(item=>({...item,branch:r.branch_name})):config.repos;
   try {
     if(!sourceRepos.length)throw new Error('需求环境配置未包含仓库，请先在项目设置中配置仓库');
@@ -82,6 +91,7 @@ async function prepareRuntime(id:string,editing=false) {
     if(sourceRepos.some(repo=>!/^[a-zA-Z0-9_-]+$/.test(repo.name)||/[\r\n]/.test(repo.url+repo.branch)||repo.branch.startsWith('-')))throw new Error('仓库配置无效');
     const git=(await resolveProjectGitCredential(r.project_id,config.gitAuth.credentialRef));
     let agent;try{agent=await resolveProjectAgentRuntime(r.project_id);}catch(error){if(!editing)throw error;}
+    const securityOptions=workspaceSecurityOptions(agent?.provider);
     (await state(id,editing?'stopped':'preparing'));
     const engine=containerEngine();const name=runtimeResourceNames(id).container;
     let container=engine.getContainer(name);
@@ -97,14 +107,20 @@ async function prepareRuntime(id:string,editing=false) {
     // Named volumes survive stop/start and platform restarts; unrelated resources are never removed.
     const volume=runtimeResourceNames(id).volume;
     await engine.createVolume({Name:volume,Labels:{'prism.requirement':id}});
+    const binds=[`${volume}:/workspace`];
+    if(agent?.authMode==='subscription'){
+      const authVolume=projectAuthVolume(r.project_id);
+      await engine.createVolume({Name:authVolume,Labels:{'prism.project':r.project_id,'prism.purpose':'project-auth','prism.mode':process.env.PRISM_MODE||'dev'}});
+      binds.push(`${authVolume}:/project-auth`);
+    }
     container=await engine.createContainer({name,Image:process.env.PRISM_WORKSPACE_IMAGE || 'prism-workspace:latest',
       Entrypoint:editing?['bash','-c',workspaceEditorEntrypoint]:['/project-entrypoint.sh'],WorkingDir:'/workspace',
-      Env:[...(agent?buildAgentEnvironment(agent):[]),'PRISM_PERMISSION_FILESYSTEM=workspace-write','PRISM_PERMISSION_COMMANDS=workspace','PRISM_PERMISSION_BROWSER=true',`PRISM_REPOS=${JSON.stringify(sourceRepos)}`,`PRISM_BRANCH=${r.branch_name||`prism/requirement-${id}`}`,
+      Env:[...(agent?buildAgentEnvironment(agent,{proxyScope:'agent'}):[]),'PRISM_PERMISSION_FILESYSTEM=workspace-write','PRISM_PERMISSION_COMMANDS=workspace','PRISM_PERMISSION_BROWSER=true',`PRISM_REPOS=${JSON.stringify(sourceRepos)}`,`PRISM_BRANCH=${r.branch_name||`prism/requirement-${id}`}`,
         `GIT_ACCESS_TOKEN=${git.mode==='token'?git.secret:''}`,`GIT_SSH_KEY=${git.mode==='ssh'?git.secret:''}`,`GIT_SSH_PORT=${config.gitAuth.sshPort}`,
         `INIT_SCRIPT=${config.initScript}`,`STARTUP_SCRIPT=${config.startupScript}`,`CLAUDE_MD=${config.guidance}`,`PRISM_PREPARE_TIMEOUT=${process.env.PRISM_PREPARE_TIMEOUT || 1800}`,`PRISM_STARTUP_TIMEOUT=${process.env.PRISM_STARTUP_TIMEOUT || 120}`],
       Labels:{'prism.requirement':id,'prism.project':r.project_id,'prism.runtime-mode':editing?'edit':'service'},ExposedPorts:{'8090/tcp':{},'8080/tcp':{}},
-      HostConfig:{Binds:[`${volume}:/workspace`],PortBindings:{'8090/tcp':[{HostIp:'127.0.0.1',HostPort:''}],'8080/tcp':[{HostIp:'127.0.0.1',HostPort:''}]},
-        Memory:4*1024*1024*1024,NanoCpus:2e9,PidsLimit:512,CapDrop:['ALL'],SecurityOpt:['no-new-privileges'],LogConfig:{Type:'json-file',Config:{'max-size':'10m','max-file':'3'}}}});
+      HostConfig:{Binds:binds,PortBindings:{'8090/tcp':[{HostIp:'127.0.0.1',HostPort:''}],'8080/tcp':[{HostIp:'127.0.0.1',HostPort:''}]},
+        Memory:4*1024*1024*1024,NanoCpus:2e9,PidsLimit:512,CapDrop:['ALL'],SecurityOpt:securityOptions,LogConfig:{Type:'json-file',Config:{'max-size':'10m','max-file':'3'}}}});
     (await getDb().prepare('UPDATE requirement_environments SET container_id=? WHERE requirement_id=?').run(container.id,id));
     await container.start();
   }catch(e){(await state(id,'failed',(await redactRuntimeText(id,(e as Error).message))));throw e;}

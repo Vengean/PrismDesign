@@ -8,6 +8,8 @@ RUN npm config set registry https://registry.npmmirror.com/
 RUN npm install -g pnpm@9
 RUN npm install -g @anthropic-ai/claude-code
 RUN npm install -g glm-acp-agent@latest
+ARG CODEX_CLI_VERSION=0.146.0
+RUN npm install -g @openai/codex@${CODEX_CLI_VERSION}
 # Install code-server (download deb from GitHub release)
 ARG CODE_SERVER_VERSION=4.100.3
 RUN ARCH=$(dpkg --print-architecture) && \
@@ -21,23 +23,34 @@ RUN node /fix-code-server-extensions.cjs
 # Install agent
 WORKDIR /prism-agent
 COPY agent-package.json ./package.json
-COPY agent-dist/ ./dist/
 RUN npm install --omit=dev
+COPY agent-dist/ ./dist/
 
 # Create non-root user (claude CLI refuses --dangerously-skip-permissions as root)
 RUN useradd -m -s /bin/bash prism && \
-    mkdir -p /workspace /var/log/prism && \
-    chown prism:prism /workspace /var/log/prism && \
+    mkdir -p /workspace /var/log/prism /home/prism/.codex /home/prism/.claude /home/prism/.local && \
+    chown prism:prism /workspace /var/log/prism /home/prism/.codex /home/prism/.claude /home/prism/.local && \
+    chmod 700 /home/prism/.codex /home/prism/.claude && \
+    mkdir -p /project-auth/codex /project-auth/claude /project-auth/glm && \
+    chown -R prism:prism /project-auth && chmod 700 /project-auth && \
     cp -a /home/prism /home/prism-skel
+
+# Codex normally exposes apply_patch via a per-session temporary PATH. Provide
+# the official native entry point for login shells and other SDKs as well.
+RUN CODEX_NATIVE=$(find /usr/local/lib/node_modules/@openai/codex -type f -path '*/bin/codex' -print -quit) && \
+    test -n "$CODEX_NATIVE" && ln -s "$CODEX_NATIVE" /usr/local/bin/apply_patch
 
 COPY entrypoint.sh /entrypoint.sh
 COPY project-entrypoint.sh /project-entrypoint.sh
 COPY preview-proxy.cjs /preview-proxy.cjs
 COPY runtime-health.cjs /runtime-health.cjs
+COPY verify-codex-sandbox.cjs /verify-codex-sandbox.cjs
 RUN chmod +x /entrypoint.sh /project-entrypoint.sh
 
 WORKDIR /workspace
 EXPOSE 5173 8080 9527
+ENV NPM_CONFIG_PREFIX=/home/prism/.local
+ENV PATH="/home/prism/.local/bin:${PATH}"
 USER prism
 COPY verify-agent-start.cjs /verify-agent-start.cjs
 RUN node /verify-agent-start.cjs

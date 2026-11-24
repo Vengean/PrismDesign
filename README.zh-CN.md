@@ -78,6 +78,14 @@ OPENAI_API_KEY=sk-xxx \
 
 需要持久化 Provider、模型、权限、代理、浏览器和 MCP 设置时，在目标项目根目录创建 `prism.config.ts`。完整配置见 [Agent 中文文档](./packages/agent/README.zh-CN.md)。
 
+平台项目设置的「Agent 配置」先选择 API Key 或订阅模式，再选择 Claude、GLM 或 Codex SDK。API Key 模式加密保存密钥，Codex 服务地址留空时使用 OpenAI 官方 API。订阅模式保存配置后，由项目管理员点击「打开登录终端」，平台启动独立授权容器，分别运行 `claude auth login`、`codex login --device-auth` 或 `glm-acp-agent --setup`。GLM 的 Coding Plan Key 在交互终端输入，不再填入项目表单。订阅模式的模型名称可留空，使用 SDK 默认模型。新项目需先创建，之后在项目设置登录。
+
+一个项目使用一个认证卷（SIT／DEV 隔离），挂载到 `/project-auth`，内部以 `codex/`、`claude/`、`glm/` 分开存放。需求仍各自运行独立容器和源码卷，订阅模式共享项目认证卷；删除需求不清理项目授权。旧需求级授权不会自动迁移：管理员需先完成一次项目登录，再重建已有需求容器。终端支持键盘输入、尺寸调整、授权链接和结果显示，关闭后清理辅助容器并保留登录态；终端内容不写入服务日志。项目有未结束的 Agent 任务时不能重新登录或退出。拥有需求终端权限的成员也能接触共享凭证，应将项目成员视作共享账号的可信使用者。
+
+可选的「代理地址」是 HTTP / HTTPS 网络代理，与模型服务地址分开，必须能从容器内访问，例如 `http://host.containers.internal:7890`。它仅应用于 Agent 进程和订阅登录辅助容器；仓库拉取、初始化脚本和业务启动脚本使用容器自身的网络配置。暂不支持带用户名和密码的代理 URL。配置修改后重启需求环境生效。首次使用此功能前需运行 `pnpm --dir platform build:image` 重建工作区镜像。登录状态检查的是 CLI 本地授权状态，账号额度和服务端授权是否有效以实际执行结果为准。
+
+工作区镜像预装 `codex`、`claude` 和 `glm-acp-agent`。可在 VSCode Web 终端用 `codex --version`、`claude --version`、`glm-acp-agent --help` 检查。普通用户的 npm 全局安装目录为 `/home/prism/.local`，已加入 PATH。镜像构建会检查这些 CLI、Codex MCP 配置解析以及全部 Agent Provider 的启动和鉴权，不调用模型。镜像更新后需从平台重启需求环境以重建容器。
+
 ### 2. 选择交互入口
 
 #### Chrome 扩展（推荐）

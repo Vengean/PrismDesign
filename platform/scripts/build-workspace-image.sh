@@ -21,15 +21,15 @@ echo "==> Using container CLI: $CONTAINER_CLI"
 echo "==> Building agent..."
 cd "$AGENT_DIR" && pnpm build
 
-echo "==> Copying agent dist to docker context..."
-rm -rf "$DOCKER_DIR/agent-dist"
-cp -r "$AGENT_DIR/dist" "$DOCKER_DIR/agent-dist"
-cp "$AGENT_DIR/package.json" "$DOCKER_DIR/agent-package.json"
+echo "==> Preparing isolated build context..."
+BUILD_CONTEXT=$(mktemp -d "${TMPDIR:-/tmp}/prism-workspace-build.XXXXXX")
+cleanup() { rm -rf "$BUILD_CONTEXT"; }
+trap cleanup EXIT
+cp -R "$DOCKER_DIR/." "$BUILD_CONTEXT/"
+cp -R "$AGENT_DIR/dist" "$BUILD_CONTEXT/agent-dist"
+cp "$AGENT_DIR/package.json" "$BUILD_CONTEXT/agent-package.json"
 
 echo "==> Building workspace image..."
-$CONTAINER_CLI build -t prism-workspace:latest -f "$DOCKER_DIR/Dockerfile.workspace" "$DOCKER_DIR"
-
-echo "==> Cleaning up..."
-rm -rf "$DOCKER_DIR/agent-dist" "$DOCKER_DIR/agent-package.json"
+$CONTAINER_CLI build -t prism-workspace:latest -f "$BUILD_CONTEXT/Dockerfile.workspace" "$BUILD_CONTEXT"
 
 echo "==> Done! Image: prism-workspace:latest"

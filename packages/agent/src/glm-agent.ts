@@ -1,6 +1,9 @@
 import {ReplyBuffer} from './core/reply-buffer.js';
 import {prismBrowserMcp} from './browser-mcp.js';
 import { spawn, type ChildProcess } from "node:child_process";
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 import { Writable, Readable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
 
@@ -129,13 +132,15 @@ export function initGlmAgent(root: string) {
 async function createSession(clientId: string): Promise<GlmSession> {
   console.log(`[GLM] 为客户端 ${clientId} 创建新会话`);
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("API Key 未配置");
+  const subscription=process.env.PRISM_AUTH_MODE==='subscription';
+  const apiKey = subscription?undefined:process.env.ANTHROPIC_API_KEY;
+  if (!apiKey && !(subscription&&fs.existsSync(path.join(process.env.XDG_CONFIG_HOME||path.join(os.homedir(),'.config'),'glm-acp-agent/credentials.json'))))throw new Error('请先在项目设置完成 GLM 订阅登录或配置 API Key');
 
   const env: Record<string, string> = {
     ...process.env as Record<string, string>,
-    Z_AI_API_KEY: apiKey,
+    ...(apiKey?{Z_AI_API_KEY:apiKey}:{}),
   };
+  if(subscription){delete env.Z_AI_API_KEY;delete env.ANTHROPIC_API_KEY;delete env.ANTHROPIC_AUTH_TOKEN;}
 
   // Map our env vars to glm-acp-agent env vars
   if (process.env.ANTHROPIC_BASE_URL) {
