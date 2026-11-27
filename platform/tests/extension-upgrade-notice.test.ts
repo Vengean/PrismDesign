@@ -6,7 +6,7 @@ function notice(storage=new Map<string,string>()){
  const jsx=(type:any,props:any)=>({type,props});
  const source=fs.readFileSync(new URL('../../packages/ui/src/studio/ExtensionUpgradeNotice.tsx',import.meta.url),'utf8');
  vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText,{exports,require:(name:string)=>name==='react'?react:name.includes('jsx-runtime')?{jsx,jsxs:jsx}:{extensionCompatibility},localStorage:{getItem:(key:string)=>storage.get(key),setItem:(key:string,value:string)=>storage.set(key,value)}});
- return {storage,render(release:any,version='0.7.2'){cursor=0;return exports.ExtensionUpgradeNotice({version,release,floating:true});}};
+ return {storage,render(release:any,version='0.7.2'){cursor=0;return exports.ExtensionUpgradeNotice({version,release});}};
 }
 function closeButton(tree:any):any{if(!tree)return;return tree.type==='button'?tree:(Array.isArray(tree.props?.children)?tree.props.children:[tree.props?.children]).map(closeButton).find(Boolean);}
 test('compatible upgrade floats, can be dismissed across remounts, and reappears for a new release',()=>{

@@ -31,5 +31,5 @@ export function PlatformPanel({tabId,context,contextError,onRefreshContext,fitCo
    if(message.type==='COMMENT_CANCELLED')listener({type:'cancelled'});
   };chrome.runtime.onMessage.addListener(handler);return()=>chrome.runtime.onMessage.removeListener(handler);},
  }),[tabId]);
- return <div className={fitContainer?'h-full':'h-screen'}><SharedPlatformPanel surface="extension" headerOverlay={context.extension?<ExtensionUpgradeNotice version={chrome.runtime.getManifest?.().version} release={context.extension} floating/>:undefined} actions={<NotificationToggle/>} context={context} contextError={contextError} request={request} live={live} files={files} browser={browser} annotations={annotations}/></div>;
+ return <div className={fitContainer?'h-full':'h-screen'}><SharedPlatformPanel surface="extension" headerOverlay={context.extension?<ExtensionUpgradeNotice onOpenExtensions={()=>{void chrome.tabs.create({url:'chrome://extensions/',active:true});}} version={chrome.runtime.getManifest?.().version} release={context.extension}/>:undefined} actions={<NotificationToggle/>} context={context} contextError={contextError} request={request} live={live} files={files} browser={browser} annotations={annotations}/></div>;
 }

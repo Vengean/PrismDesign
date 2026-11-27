@@ -69,7 +69,7 @@ export function App(){
  if(binding?.context){
   const release=binding.context.extension,version=chrome.runtime.getManifest?.().version;
   const upgrade=release?extensionCompatibility(version,release):undefined;
-  if(release&&upgrade?.required)return <div className="flex h-screen flex-col"><header className="relative z-20 flex h-11 shrink-0 items-center border-b bg-card px-2 text-xs font-semibold">{binding.context.title}<ExtensionUpgradeNotice version={version} release={release} floating/></header><p className="px-4 pt-32 text-xs text-muted-foreground">升级并刷新预览页后重新连接。</p></div>;
+  if(release&&upgrade?.required)return <div className="flex h-screen flex-col"><header className="relative z-20 flex h-11 shrink-0 items-center border-b bg-card px-2 text-xs font-semibold">{binding.context.title}<ExtensionUpgradeNotice onOpenExtensions={()=>{void chrome.tabs.create({url:'chrome://extensions/',active:true});}} version={version} release={release}/></header><p className="px-4 pt-32 text-xs text-muted-foreground">升级并刷新预览页后重新连接。</p></div>;
   return <PlatformPanel key={`${binding.tabId}:${binding.context.sessionId}`} tabId={binding.tabId} context={binding.context} contextError={binding.error} onRefreshContext={retry}/>;
  }
  return <div className="flex h-screen flex-col items-center justify-center gap-3 px-6 text-center"><img src="/icons/icon-48.png" alt="" className="h-10 w-10"/><h1 className="text-sm font-semibold">Prism Studio</h1><p role={binding?.error?'alert':undefined} className="text-xs leading-5 text-muted-foreground">{binding?.error||'请打开平台中的项目预览页面，插件会自动连接当前需求。'}</p><Button size="sm" variant="outline" onClick={retry}>重试</Button></div>;
