@@ -10,6 +10,7 @@ import {conversationSession,readConversationForRole,conversations} from './conve
 import {workspaceAttachments,readAttachmentBody,sendAttachment,AttachmentError} from './workspace-attachments.js';
 import {workspaceFiles} from './workspace-files.js';
 import {handleBrowserEndpoint} from './browser-endpoints.js';
+import {extensionRelease,sendExtensionArchive} from './extension-release.js';
 export function widgetBundle(){
  const base=path.dirname(fileURLToPath(import.meta.url));
  const candidates=[path.resolve(process.cwd(),'web/public/prism-widget.js'),path.resolve(process.cwd(),'platform/web/public/prism-widget.js'),path.resolve(base,'../web/dist/prism-widget.js'),path.resolve(base,'../../web/public/prism-widget.js')];
@@ -24,8 +25,9 @@ export async function handlePreviewClient(req:http.IncomingMessage,res:http.Serv
   if(req.method==='GET'&&action==='/widget.js'){res.writeHead(role==='viewer'?204:200,{'Content-Type':'application/javascript; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(role==='viewer'?undefined:widgetBundle());return true;}
   if(req.method==='GET'&&action==='/context'){
    const info=(await getDb().prepare('SELECT p.name,r.title FROM projects p JOIN requirements r ON r.project_id=p.id WHERE r.id=?').get(id)) as {name:string;title:string};
-   json(200,{protocol:1,projectId:r.project_id,requirementId:id,sessionId:(await conversationSession(id)),projectName:info.name,title:info.title,userId,role});return true;
+   json(200,{protocol:1,projectId:r.project_id,requirementId:id,sessionId:(await conversationSession(id)),projectName:info.name,title:info.title,userId,role,extension:extensionRelease(true)});return true;
   }
+  if(req.method==='GET'&&action==='/extension/download'){sendExtensionArchive(res);return true;}
   if((['/conversation','/messages','/cancel','/testing/start'].includes(action)||action.startsWith('/browser/')||action.startsWith('/attachments')||action.startsWith('/files'))&&url.searchParams.get('sessionId')!==(await conversationSession(id))){json(409,{error:'会话归属已变化，请刷新当前预览'});return true;}
   if(action.startsWith('/browser/')||action==='/testing/start'){
    if(role==='viewer'){json(403,{error:'只有项目编辑成员可以执行测试'});return true;}
@@ -66,7 +68,7 @@ export async function handlePreviewClient(req:http.IncomingMessage,res:http.Serv
    let body='';for await(const chunk of req){body+=chunk.toString();if(Buffer.byteLength(body)>128*1024)throw Error('请求体过大');}
    let data;try{data=JSON.parse(body);}catch{json(400,{error:'无效的 JSON 请求'});return true;}
    if(action==='/messages'){if(typeof data.message!=='string'||typeof data.requestId!=='string'){json(400,{error:'消息参数无效'});return true;}const attachments=await workspaceAttachments.resolve(id,userId,data.attachmentIds,data.requestId);json(202,(await conversations.submit(id,userId,data.message,data.requestId,data.clientContext,attachments,typeof data.browserBindingId==='string'?{bindingId:data.browserBindingId}:undefined)));}
-   else{if(typeof data.runId!=='string'){json(400,{error:'任务标识无效'});return true;}await conversations.cancel(id,data.runId);json(200,{message:'取消请求已发送'});}return true;
+   else{if(typeof data.runId!=='string'){json(400,{error:'任务标识无效'});return true;}await conversations.cancel(id,data.runId,userId);json(200,{message:'取消请求已发送'});}return true;
   }
   json(404,{error:'接口不存在'});
  }catch(e){json(e instanceof AttachmentError?e.status:409,{error:(e as Error).message});}return true;

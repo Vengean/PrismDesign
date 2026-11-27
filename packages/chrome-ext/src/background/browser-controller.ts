@@ -23,6 +23,16 @@ const sessions = new Set<number>();
 const refs = new Map<number, Map<string, RefDescriptor>>();
 const evidence = new Map<number, PageEvidence>();
 const delay = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+// Bound retention at ingestion, not only when returning the latest evidence.
+const MAX_EVIDENCE = 200;
+const MAX_REQUESTS = 256;
+const MAX_LOG_TEXT = 4096;
+const clip = (value: unknown) => String(value ?? '').slice(0, MAX_LOG_TEXT);
+function retain<T>(items:T[],item:T){
+  items.push(item);
+  if(items.length>MAX_EVIDENCE)items.splice(0,items.length-MAX_EVIDENCE);
+}
+function internalRequest(url:string){try{return new URL(url).pathname.startsWith('/__prism_platform__/');}catch{return false;}}
 
 function sanitizeJsonForAgent(value: unknown) {
   const sensitiveName = /^(?:access_?token|auth(?:orization)?|code|cookie|credential|key|password|refresh_?token|secret|session(?:id)?|token)$/i;
@@ -101,7 +111,7 @@ async function attach(tabId: number) {
     await Promise.all([
       command(tabId, "Runtime.enable"),
       command(tabId, "Page.enable"),
-      command(tabId, "Network.enable"),
+      command(tabId, "Network.enable", {maxTotalBufferSize:8*1024*1024,maxResourceBufferSize:1024*1024,maxPostDataSize:0}),
       command(tabId, "Log.enable"),
     ]);
   } catch (error) {
@@ -127,25 +137,29 @@ chrome.debugger.onEvent.addListener((source, method, raw) => {
   if (!log) return;
   const params = raw as any;
   if (method === "Runtime.consoleAPICalled") {
-    const text = (params.args || []).map((arg: any) => arg.value ?? arg.description ?? "").join(" ");
-    log.console.push({ type: params.type || "log", text, timestamp: params.timestamp });
+    const text = (params.args || []).slice(0,20).map((arg: any) => clip(arg.value ?? arg.description)).join(" ").slice(0,MAX_LOG_TEXT);
+    retain(log.console,{ type: clip(params.type || "log"), text, timestamp: params.timestamp });
   } else if (method === "Runtime.exceptionThrown") {
-    log.pageErrors.push(params.exceptionDetails?.exception?.description || params.exceptionDetails?.text || "Page exception");
+    retain(log.pageErrors,clip(params.exceptionDetails?.exception?.description || params.exceptionDetails?.text || "Page exception"));
   } else if (method === "Log.entryAdded") {
     const entry = params.entry || {};
     if(String(entry.url||'').includes('/__prism_platform__/'))return;
-    if (entry.level === "error") log.pageErrors.push(entry.text || "Page error");
-    else log.console.push({ type: entry.level || "log", text: entry.text || "", timestamp: entry.timestamp });
+    if (entry.level === "error") retain(log.pageErrors,clip(entry.text || "Page error"));
+    else retain(log.console,{ type: clip(entry.level || "log"), text: clip(entry.text), timestamp: entry.timestamp });
   } else if (method === "Network.requestWillBeSent") {
-    log.requests.set(params.requestId, { method: params.request?.method, url: params.request?.url, resourceType: params.type });
+    if(internalRequest(params.request?.url||''))return;
+    log.requests.delete(params.requestId);
+    log.requests.set(params.requestId, { method: clip(params.request?.method), url: clip(params.request?.url), resourceType: clip(params.type) });
+    while(log.requests.size>MAX_REQUESTS)log.requests.delete(log.requests.keys().next().value!);
   } else if (method === "Network.responseReceived") {
     const response = params.response || {};
     const request = log.requests.get(params.requestId) || {};
-    log.network.push({ requestId: params.requestId, method: request.method, url: response.url || request.url, status: response.status, mimeType: response.mimeType, resourceType: params.type || request.resourceType });
     log.requests.delete(params.requestId);
+    if(internalRequest(response.url||request.url||''))return;
+    retain(log.network,{ requestId: params.requestId, method: request.method, url: clip(response.url || request.url), status: response.status, mimeType: clip(response.mimeType), resourceType: clip(params.type || request.resourceType) });
   } else if (method === "Network.loadingFailed") {
     const request = log.requests.get(params.requestId) || {};
-    log.network.push({ requestId: params.requestId, ...request, status: 0, resourceType: params.type || request.resourceType || "failed", errorText: params.errorText });
+    retain(log.network,{ requestId: params.requestId, ...request, status: 0, resourceType: clip(params.type || request.resourceType || "failed"), errorText: clip(params.errorText) });
     log.requests.delete(params.requestId);
   }
 });
@@ -168,9 +182,12 @@ async function observe(tabId: number) {
       role: el.getAttribute('role') || (el.tagName === 'BUTTON' ? 'button' : el.tagName === 'A' ? 'link' : ['INPUT','TEXTAREA'].includes(el.tagName) ? 'textbox' : el.tagName.toLowerCase()),
       name: el.getAttribute('aria-label') || (el.labels && el.labels[0] && el.labels[0].innerText) || el.innerText?.trim() || el.placeholder || el.name || ''
     });
-    return nodes.map((el, index) => {
+    const occurrences = new Map();
+    return nodes.map(el => {
       const item = describe(el);
-      const occurrence = nodes.slice(0, index).filter(candidate => { const other = describe(candidate); return other.tag === item.tag && other.role === item.role && other.name === item.name; }).length;
+      const key = JSON.stringify([item.tag,item.role,item.name]);
+      const occurrence = occurrences.get(key) || 0;
+      occurrences.set(key,occurrence+1);
       return { ...item, occurrence, value: el.type === 'password' ? '[REDACTED]' : el.value || '', disabled: !!el.disabled || el.getAttribute('aria-disabled') === 'true' };
     });
   })()`);

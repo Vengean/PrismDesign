@@ -7,6 +7,7 @@ import { getDb, findUserById } from "../services/db.js";
 import { createProject, defaultProjectAccess, emptyConfig, projectConfig, projectMembers, projectRole, storeProjectConfig, type ProjectConfig, type ProjectRole } from "../services/projects.js";
 import type { AuthRequest } from "../types.js";
 import {projectAuth} from '../services/project-auth.js';
+import {validKnowledge} from '../services/project-knowledge.js';
 
 const router: RouterType = Router();
 router.use(authenticate);
@@ -18,8 +19,9 @@ function validConfig(value: unknown): value is ProjectConfig {
   if (!value || typeof value !== "object") return false;
   const c = value as ProjectConfig;
   // Git credential inputs are extracted before storing project settings.
-  const allowed = ["repos","gitAuth","model","initScript","startupScript","guidance"];
+  const allowed = ["repos","gitAuth","model","initScript","startupScript","guidance","knowledge"];
   if (Object.keys(c).some(k => !allowed.includes(k))) return false;
+  if(c.knowledge!==undefined&&!validKnowledge(c.knowledge))return false;
   if (!Array.isArray(c.repos) || c.repos.length > 30) return false;
   const a = c.gitAuth;
   if (!a || !["token","ssh"].includes(a.mode) || !Number.isInteger(a.sshPort) || a.sshPort < 1 || a.sshPort > 65535 ||
@@ -126,8 +128,8 @@ router.get("/:id", asyncHandler(async (req: AuthRequest, res) => {
     ...(role !== "viewer" ? { release_repositories: config.repos.map(({name,branch}) => ({name,branch})) } : {}),
     members: (await projectMembers(id)),
     ...(role === "admin" ? { member_candidates: (await getDb().prepare(
-      "SELECT id FROM users WHERE role!='admin' AND id!=(SELECT created_by FROM projects WHERE id=?) ORDER BY id"
-    ).all(id)) } : {}),
+      "SELECT id FROM users WHERE role!='admin' AND id!=(SELECT created_by FROM projects WHERE id=?) AND NOT EXISTS (SELECT 1 FROM project_members WHERE project_id=? AND user_id=users.id) ORDER BY id"
+    ).all(id,id)) } : {}),
     requirements: (await getDb().prepare(`SELECT r.*,s.id AS session_id FROM requirements r
       JOIN project_sessions s ON s.requirement_id=r.id WHERE r.project_id=? ORDER BY r.created_at DESC,r.id`).all(id)),
     releases: (await getDb().prepare("SELECT * FROM releases WHERE project_id=? ORDER BY created_at DESC,id").all(id)),

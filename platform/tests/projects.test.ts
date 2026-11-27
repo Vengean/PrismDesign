@@ -61,6 +61,17 @@ test("project access, settings and persistent default sessions",async t => {
     (await getDb().prepare("UPDATE users SET role='user' WHERE id='outsider'").run());
     assert.equal((await call("outsider","GET",`/${projectId}`)).status,404);
   });
+  await t.test('member invitations exclude existing members and explicit member roles can be updated',async()=>{
+    let detail=(await call('test-admin','GET',`/${projectId}`)).data;
+    assert.ok(!detail.member_candidates.some((u:{id:string})=>['editor','viewer','test-admin'].includes(u.id)));
+    assert.ok(detail.member_candidates.some((u:{id:string})=>u.id==='outsider'));
+    assert.equal((await call('test-admin','PUT',`/${projectId}/members/editor`,{role:'viewer'})).status,200);
+    assert.equal((await call('editor','GET',`/${projectId}`)).data.access_role,'viewer');
+    assert.equal((await call('test-admin','PUT',`/${projectId}/members/editor`,{role:'editor'})).status,200);
+    detail=(await call('test-admin','GET',`/${projectId}`)).data;
+    assert.equal(detail.members.find((m:{user_id:string})=>m.user_id==='editor').role,'editor');
+    assert.equal(detail.members.filter((m:{user_id:string})=>m.user_id==='editor').length,1);
+  });
   await t.test("creator access survives missing or stale membership and platform role changes",async () => {
     (await getDb().prepare("DELETE FROM project_members WHERE project_id=? AND user_id='test-admin'").run(projectId));
     (await getDb().prepare("UPDATE users SET role='user' WHERE id='test-admin'").run());

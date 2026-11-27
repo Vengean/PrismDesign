@@ -18,7 +18,7 @@ const services:ReturnType<typeof createConversationService>[]=[];
 function controlled(options={debounceMs:0,autowake:false}){
  const turns:{id:string;prompt:string;finish:(body:string,cancelled?:boolean)=>void}[]=[];
  let running=0,maxRunning=0;
- const service=createConversationService({async run(_id,input,event){running++;maxRunning=Math.max(running,maxRunning);event({type:'bridge.ready',data:{cancelSupported:true}});event({type:'run.started',data:{runId:input.runId}});await new Promise<void>(resolve=>turns.push({id:input.runId,prompt:input.message,finish(body,cancelled=false){event({type:'bridge.result',data:{success:true,message:body,cancelled}});running--;resolve();}}));},async cancel(){}},options);
+ const service=createConversationService({async run(_id,input,event){running++;maxRunning=Math.max(running,maxRunning);await event({type:'bridge.ready',data:{cancelSupported:true}});await event({type:'run.started',data:{runId:input.runId}});await new Promise<void>(resolve=>turns.push({id:input.runId,prompt:input.message,finish(body,cancelled=false){event({type:'bridge.result',data:{success:true,message:body,cancelled}});running--;resolve();}}));},async cancel(){}},options);
  services.push(service);return {service,turns,max:()=>maxRunning};
 }
 async function until(check:()=>boolean){const deadline=Date.now()+2000;while(!check()){assert.ok(Date.now()<deadline,'scheduler did not advance');await new Promise(resolve=>setTimeout(resolve,5));}}
@@ -55,6 +55,32 @@ test('cancellation consumes only the cancelled input, does not restart it, and k
  const id=(await demand()),{service,turns}=controlled();const first=(await service.submit(id,'alice','耗时任务','cancel-group-01'));await until(()=>turns.length===1);
  await service.cancel(id,first.runId!);const next=(await service.submit(id,'bob','执行另一件独立的事','cancel-group-02'));assert.equal((await activeWorkspaceRun(id))?.status,'cancelling');assert.equal(turns.length,1);
  turns[0].finish('',true);await service.wait(first.id);await until(()=>turns.length===2);const incoming=JSON.parse(turns[1].prompt.split('[本批未读消息]\n')[1]);assert.deepEqual(incoming.map((m:any)=>m.messageId),[next.id]);turns[1].finish(result('reply'));await service.wait(next.id);await new Promise(resolve=>setTimeout(resolve,15));assert.equal(turns.length,2);
+});
+test('new arrivals stay pending until the next batch is claimed, then the waiting marker clears',async()=>{
+ const id=await demand(),{service,turns}=controlled();
+ const first=await service.submit(id,'alice','当前耗时任务','waiting-first-01');await until(()=>turns.length===1);
+ const next=await service.submit(id,'bob','后续消息','waiting-next-01');
+ assert.equal((await readConversation(id)).agent_pending_message?.id,next.id);
+ turns[0].finish(result('reply'));await service.wait(first.id);await until(()=>turns.length===2);
+ const processing=await readConversation(id);assert.equal(processing.agent_pending_message,null);assert.ok(processing.agent_read_cursor<(processing.messages as any[]).find(m=>m.id===next.id).seq);
+ turns[1].finish(result('reply'));await service.wait(next.id);
+});
+test('confirmed cancellation creates one durable notice attributed to the actual cancelling member',async()=>{
+ const id=await demand(),{service,turns}=controlled();
+ const post=await service.submit(id,'alice','耗时任务','cancel-actor-01');await until(()=>turns.length===1);
+ await assert.rejects(service.cancel(id,post.runId!,'viewer'),/编辑成员/);
+ await service.cancel(id,post.runId!,'bob');await service.cancel(id,post.runId!,'alice');
+ assert.ok(!(await readConversation(id)).messages.some((m:any)=>m.id==='cancel-notice-'+post.runId));
+ turns[0].finish('',true);await service.wait(post.id);
+ const notices=(await readConversation(id)).messages.filter((m:any)=>m.id==='cancel-notice-'+post.runId) as any[];
+ assert.equal(notices.length,1);assert.equal(notices[0].body,'bob 取消了本次任务。');assert.equal(JSON.parse(notices[0].client_context).systemNotice.userId,'bob');
+});
+test('failed cancellation restores the running state and never creates a cancellation notice',async()=>{
+ const id=await demand();let finish:(()=>void)|undefined;
+ const service=createConversationService({async run(_id,input,event){await event({type:'bridge.ready',data:{cancelSupported:true}});await event({type:'run.started',data:{runId:input.runId}});await new Promise<void>(resolve=>{finish=resolve;});await event({type:'bridge.result',data:{success:true,message:'正常完成'}});},async cancel(){throw Error('取消失败');}},{debounceMs:0,autowake:false});services.push(service);
+ const post=await service.submit(id,'alice','继续执行','cancel-failed-01');await until(()=>!!finish);
+ await assert.rejects(service.cancel(id,post.runId!,'bob'),/取消失败/);assert.equal((await activeWorkspaceRun(id))?.status,'running');finish!();await service.wait(post.id);
+ assert.ok(!(await readConversation(id)).messages.some((m:any)=>m.id==='cancel-notice-'+post.runId));
 });
 test('persisted unread posts resume without an open client and viewer posts are rejected',async()=>{
  const id=(await demand()),old=controlled({debounceMs:1000,autowake:false});const post=(await old.service.submit(id,'alice','离线时的任务','resume-group-01'));assert.equal(post.runId,null);old.service.close();

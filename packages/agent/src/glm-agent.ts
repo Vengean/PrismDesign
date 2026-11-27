@@ -1,5 +1,6 @@
 import {ReplyBuffer} from './core/reply-buffer.js';
 import {prismBrowserMcp} from './browser-mcp.js';
+import {projectMcpServers,type SharedMcpServer} from './project-context.js';
 import { spawn, type ChildProcess } from "node:child_process";
 import fs from 'node:fs';
 import path from 'node:path';
@@ -183,9 +184,12 @@ async function createSession(clientId: string): Promise<GlmSession> {
   console.log(`[GLM] ACP 连接建立 (protocol v${initResult.protocolVersion})`);
 
   // Set mode to bypass_permissions for non-interactive use
+  const shared:Record<string,SharedMcpServer>={...Object.fromEntries(Object.entries(projectMcpServers(projectRoot)).filter(([name])=>!readonly||name==='prism_project')),...(clientId.startsWith('platform-browser-')?{prism_browser:prismBrowserMcp()}:{})};
+  const supported=Object.entries(shared).filter(([,server])=>!('url'in server)||initResult.agentCapabilities?.mcpCapabilities?.http===true);
+  if(supported.length!==Object.keys(shared).length)console.warn('[GLM] 当前 CLI 未声明 HTTP MCP 能力；共享定义仍保留在 .global/mcp.json，可按 SDK 规范配置兼容接入');
   const sessionResult = await connection.newSession({
     cwd: projectRoot,
-    mcpServers: clientId.startsWith('platform-browser-')?[{name:'prism_browser',...prismBrowserMcp(),env:Object.entries(prismBrowserMcp().env).map(([name,value])=>({name,value}))}]:[],
+    mcpServers:supported.map(([name,server])=>'url'in server?{name,type:'http' as const,url:server.url,headers:Object.entries(server.headers||{}).map(([name,value])=>({name,value}))}:{name,command:server.command,args:server.args||[],env:Object.entries(server.env||{}).map(([name,value])=>({name,value}))}),
   });
 
   const sessionId = sessionResult.sessionId;

@@ -2,20 +2,21 @@ import {PlatformClient,type PlatformRequest} from '../../../../packages/ui/src/s
 import {captureChatAnchor,restoreChatAnchor,type ChatScrollAnchor} from '../../../../packages/ui/src/studio/chat-history';
 import {toast} from '@/components/ui/toast';
 import {observeMentionVisibility,scrollToMention} from '../../../../packages/ui/src/studio/mention-visibility';
+import {isCancellationNotice,messageBubbleClass,pendingMessageBoundary,PendingMessagesDivider} from '../../../../packages/ui/src/studio/conversation-presentation';
 import {RunControl} from '../../../../packages/ui/src/studio/RunControl';
 import {TestRunDetails} from '../../../../packages/ui/src/studio/ChatPanel';
 import type {ChatMessage} from '../../../../packages/ui/src/studio/types';
 import {MessageMarkdown} from '../../../../packages/ui/src/studio/MessageMarkdown';
 import {useAuth} from '@/hooks/use-auth';
 import {conversationProgress} from '../../../../packages/ui/src/studio/conversation-progress';
-import {useEffect,useLayoutEffect,useRef,useState,type FormEvent} from 'react';
+import {Fragment,useCallback,useEffect,useLayoutEffect,useRef,useState,type FormEvent} from 'react';
 import {MessageSquare,Send,Loader2} from 'lucide-react';
 import {isRunWorking,runMessageBody,connectionMessage} from '../../../../packages/ui/src/studio/run-state';
 import {api,type Conversation,type ConversationMessage} from '@/lib/api';
 import {Button} from '@/components/ui/button';
 import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from '@/components/ui/dialog';
 import WorkspaceFiles from './WorkspaceFiles';
-import {saveAttachment} from '../../../../packages/ui/src/studio/attachment-client';
+import {saveAttachment,workspaceImageBlob} from '../../../../packages/ui/src/studio/attachment-client';
 const createRequestId=()=>globalThis.crypto.randomUUID?.() || Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)),v=>v.toString(16).padStart(2,'0')).join('');
 const statusLabels:Record<string,string>={queued:'等待开始',running:'正在处理',cancelling:'正在取消',succeeded:'已完成',failed:'执行失败',cancelled:'已取消',interrupted:'任务已中断'};
 export default function RequirementConversation({projectId,requirementId,sessionId,title,editor,readOnly=false}:{projectId:string;requirementId:string;sessionId:string;title:string;editor:boolean;readOnly?:boolean}){
@@ -28,6 +29,7 @@ export default function RequirementConversation({projectId,requirementId,session
  const [connectionError,setConnectionError]=useState(''),[recovering,setRecovering]=useState(false),[loadingHistory,setLoadingHistory]=useState(false),[historyError,setHistoryError]=useState('');
  const historyClient=useRef<PlatformClient|undefined>(undefined),historyRequested=useRef(false),historyAnchor=useRef<ChatScrollAnchor|undefined>(undefined),pendingMention=useRef<string|undefined>(undefined);
  const refreshNow=useRef<()=>void>(()=>{});
+ const loadWorkspaceImage=useCallback(async(path:string)=>workspaceImageBlob(await api.downloadWorkspaceFile(projectId,requirementId,path)),[projectId,requirementId]);
  const request=useRef<{message:string;id:string}|undefined>(undefined);
  const bottom=useRef<HTMLDivElement>(null);
  useEffect(()=>{
@@ -78,6 +80,7 @@ export default function RequirementConversation({projectId,requirementId,session
   const timer=setInterval(check,1000);return()=>{active=false;clearInterval(timer);};
  },[recovering,open,projectId,requirementId]);
  async function recover(){if(recovering)return;setError('');setRecovering(true);try{await api.environmentAction(projectId,requirementId,'start');}catch(e){setRecovering(false);setError(connectionMessage(e));}}
+ const waitingMessageId=pendingMessageBoundary(value);
  const active=value?.active_run,run=value?.runs.find(r=>r.id===active?.id),latestRun=value?.runs[0];
  if(!editor)return null;
  return <>
@@ -88,13 +91,14 @@ export default function RequirementConversation({projectId,requirementId,session
     {value?.restricted?<p className="text-sm text-muted-foreground">当前可查看协作状态，完整对话可能包含源码，仅编辑成员可见。</p>:messages.length?messages.map(m=>{const messageRun=value?.runs.find(item=>item.id===m.run_id);const processing=m.run_id===active?.id&&isRunWorking(active?.status)&&!connectionError&&!recovering;
      let testing:Pick<ChatMessage,'testRun'|'verification'>={};if(m.role==='assistant'){try{testing=JSON.parse((m as typeof m&{client_context?:string}).client_context||'{}');}catch{}}
      const own=m.role==='user'&&m.user_id===user?.id;let ids:string[]=[];try{ids=JSON.parse(m.mentions||'[]');}catch{}
-     return <div key={m.id} data-message-id={m.id} className={`flex items-start gap-2 ${own?'justify-end':''}`}>
+     if(m.role==='assistant'&&isCancellationNotice(m.client_context))return <div key={m.id} data-message-id={m.id} data-system-notice role="note" className="py-2 text-center text-xs text-muted-foreground">{m.body}</div>;
+     return <Fragment key={m.id}>{m.id===waitingMessageId&&<PendingMessagesDivider/>}<div data-message-id={m.id} className={`flex items-start gap-2 ${own?'justify-end':''}`}>
       <div className="min-w-0 max-w-[85%]">{!own&&<div className="message-author mb-1 text-xs leading-5 text-muted-foreground">{m.user_id||'Agent'}</div>}
-      <div className={`rounded-xl px-3 py-2 ${m.role==='user'?'bg-muted':'bg-background'}`}>
+      <div data-message-bubble={m.role==='user'?(own?'sent':'received'):'agent'} className={m.role==='user'?`rounded-xl px-3 py-2 ${messageBubbleClass(m.role,own)}`:''}>
        {m.role==='assistant'&&processing&&run?.title&&<p className="message-task-title mb-1 text-sm font-normal leading-7">{run.title}</p>}
-       {m.role==='assistant'&&processing?<div className="flex items-start gap-2 text-sm leading-7 text-muted-foreground"><RunControl canStop={run?.cancel_supported===1&&active?.status==='running'} onStop={cancel} disabled={busy} className="mt-0.5"/><span className="flex-1">{progress||'Agent 正在处理…'}</span></div>:<div className="chat-markdown text-sm leading-7 [overflow-wrap:anywhere]"><MessageMarkdown onWorkspaceDownload={path=>{void download(path);}} mentions={JSON.stringify(ids)} currentUserId={user?.id} content={(m.role==='assistant'?runMessageBody(m.body,messageRun):m.body)||(m.run_id===active?.id&&active.status==='interrupted'?'任务已中断，请重启环境后继续。':'本轮未返回文本')}/></div>}
+       {m.role==='assistant'&&processing?<div className="flex items-start gap-2 text-sm leading-7 text-muted-foreground"><RunControl canStop={run?.cancel_supported===1&&active?.status==='running'} onStop={cancel} disabled={busy} className="mt-0.5"/><span className="flex-1">{progress||'Agent 正在处理…'}</span></div>:<div className="chat-markdown text-sm leading-7 [overflow-wrap:anywhere]"><MessageMarkdown loadWorkspaceImage={loadWorkspaceImage} onWorkspaceDownload={path=>{void download(path);}} mentions={JSON.stringify(ids)} currentUserId={user?.id} content={(m.role==='assistant'?runMessageBody(m.body,messageRun):m.body)||(m.run_id===active?.id&&active.status==='interrupted'?'任务已中断，请重启环境后继续。':'本轮未返回文本')}/></div>}
       {testing.testRun&&<div className="mt-3 text-xs"><TestRunDetails run={testing.testRun}/></div>}
-      </div></div></div>}):<p className="py-12 text-center text-sm text-muted-foreground">描述这个需求需要修改的内容，开始协作。</p>}
+      </div></div></div></Fragment>}):<p className="py-12 text-center text-sm text-muted-foreground">描述这个需求需要修改的内容，开始协作。</p>}
     {active?.status==='interrupted'&&editor&&!readOnly&&!connectionError&&!recovering&&<div className="pl-4"><Button size="sm" variant="outline" onClick={recover}>重启需求环境</Button></div>}
     <div ref={bottom}/>
    </div>

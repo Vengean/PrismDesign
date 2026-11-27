@@ -51,7 +51,7 @@ router.post('/messages',asyncHandler(async(req:AuthRequest,res)=>{
  catch(e){res.status(e instanceof AttachmentError?e.status:409).json({error:(e as Error).message});}
 }));
 router.post('/runs/:runId/cancel',asyncHandler(async(req:AuthRequest,res)=>{
- try{await conversations.cancel(String(req.params.requirementId),String(req.params.runId));res.json({message:'取消请求已发送，正在等待 Agent 停止'});}
+ try{await conversations.cancel(String(req.params.requirementId),String(req.params.runId),req.user!.userId);res.json({message:'取消请求已发送，正在等待 Agent 停止'});}
  catch(e){res.status(409).json({error:(e as Error).message});}
 }));
 export default router;

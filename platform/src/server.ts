@@ -18,6 +18,7 @@ import projectRoutes from "./routes/projects.js";
 import { initProjectTables } from "./services/projects.js";
 import {projectAuth} from './services/project-auth.js';
 import {projectAuthRoutes,attachProjectAuthWebSocket} from './routes/project-auth.js';
+import {extensionRelease,sendExtensionArchive} from './services/extension-release.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -44,10 +45,12 @@ await releaseWorkflow.recover();
 
 // Middleware
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json());
+app.use(express.json({limit:'1mb'}));
 
 // API routes
 app.get("/api/health", (_req,res) => res.json({service:"prism-platform",status:"ready"}));
+app.get('/api/extension/release',(_req,res)=>{res.setHeader('Cache-Control','no-store');res.json(extensionRelease());});
+app.get('/api/extension/download',(_req,res)=>sendExtensionArchive(res));
 app.use("/api/auth", authRoutes);
 app.use("/api/projects/:id/requirements/:requirementId/conversation", conversationRoutes);
 app.use("/api/projects/:id/requirements/:requirementId/environment", environmentRoutes);

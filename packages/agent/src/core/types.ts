@@ -44,7 +44,8 @@ export interface AgentProvider {
   readonly name: AgentProviderName;
   readonly model: string;
   readonly capabilities: AgentCapabilities;
-  run(clientId: string, runId: string, message: string, emit: EventCallback, signal?: AbortSignal): Promise<AgentResult>;
+  run(clientId: string, runId: string, message: string, emit: EventCallback, signal?: AbortSignal,options?:{readOnly?:boolean}): Promise<AgentResult>;
   clearSession(clientId: string): Promise<void> | void;
+  refreshConfiguration?(clientId:string):Promise<void>|void;
   close(): Promise<void> | void;
 }

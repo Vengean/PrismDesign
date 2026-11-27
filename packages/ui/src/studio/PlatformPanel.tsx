@@ -1,4 +1,5 @@
 import {conversationProgress} from './conversation-progress.js';
+import {isCancellationNotice,pendingMessageBoundary} from './conversation-presentation.js';
 import {createConnectionLogger} from './connection-diagnostics.js';
 import {pageConversationLive,watchConversation,type ConversationLive} from './conversation-stream.js';
 import {pageAttachmentClient,type AttachmentClient} from './attachment-client.js';
@@ -12,7 +13,7 @@ import {StudioPanel} from './StudioPanel';
 import type {AnnotationAdapter} from './annotations.js';
 import type {ReactNode} from 'react';
 
-export function PlatformPanel({context,contextError,request,live=pageConversationLive,files,annotations,actions,surface,browser}:{contextError?:string;surface:'widget'|'extension';context:PlatformContext;request:PlatformRequest;live?:ConversationLive;files?:AttachmentClient;annotations:AnnotationAdapter;actions?:ReactNode;browser?:{prepare:()=>Promise<string>}}){
+export function PlatformPanel({context,contextError,request,live=pageConversationLive,files,annotations,actions,surface,browser,headerOverlay,enabled=true}:{headerOverlay?:ReactNode;enabled?:boolean;contextError?:string;surface:'widget'|'extension';context:PlatformContext;request:PlatformRequest;live?:ConversationLive;files?:AttachmentClient;annotations:AnnotationAdapter;actions?:ReactNode;browser?:{prepare:()=>Promise<string>}}){
  const pageFiles=useMemo(()=>pageAttachmentClient(context.sessionId),[context.sessionId]),attachmentClient=files||pageFiles;
  const [value,setValue]=useState<PlatformConversation>(),[error,setError]=useState(''),[posting,setPosting]=useState(false);
  const [connectionError,setConnectionError]=useState('');
@@ -22,11 +23,19 @@ export function PlatformPanel({context,contextError,request,live=pageConversatio
  const [optimistic,setOptimistic]=useState<{id:string;acceptedId?:string;legacyRunId?:string;message:ChatMessage}[]>([]);
  const retry=useRef<()=>void>(()=>{});
  const client=useRef<PlatformClient|undefined>(undefined);
+ const clientRequest=useRef<PlatformRequest|undefined>(undefined);
  const pending=useRef<{key:string;id:string}|undefined>(undefined);
+ const [pageVisible,setPageVisible]=useState(()=>typeof document==='undefined'||document.visibilityState!=='hidden');
+ useEffect(()=>{const update=()=>setPageVisible(document.visibilityState!=='hidden');document.addEventListener('visibilitychange',update);return()=>document.removeEventListener('visibilitychange',update);},[]);
+ useEffect(()=>()=>{client.current=undefined;clientRequest.current=undefined;},[]);
  useEffect(()=>{
+  if(!enabled||!pageVisible){setLiveConnected(false);return;}
   let active=true;
-  const current=new PlatformClient(context,request);client.current=current;
-  setValue(undefined);setOptimistic([]);setPosting(false);pending.current=undefined;setError('');setConnectionError('');setLiveConnected(false);setLoadingHistory(false);setHistoryError('');
+  const previous=client.current;
+  const reuse=previous?.context.sessionId===context.sessionId&&previous.context.userId===context.userId&&clientRequest.current===request;
+  const current=reuse?previous!:new PlatformClient(context,request);client.current=current;clientRequest.current=request;
+  if(!reuse){setValue(undefined);setOptimistic([]);setPosting(false);pending.current=undefined;setError('');setLoadingHistory(false);setHistoryError('');}
+  setConnectionError('');setLiveConnected(false);
   function failed(error:unknown,durationMs:number){
    if(!active)return;
    const message=connectionMessage(error);
@@ -36,15 +45,19 @@ export function PlatformPanel({context,contextError,request,live=pageConversatio
   }
   function apply(snapshot:PlatformConversation,connected:boolean){
    if(!active)return;
-   setValue(previous=>JSON.stringify(previous)===JSON.stringify(snapshot)?previous:snapshot);
+   setValue(snapshot);
    if(connected){setLiveConnected(true);setConnectionError('');connectionLog.recovered('realtime');}
-   setOptimistic(previous=>snapshot.restricted?[]:previous.filter(item=>!snapshot.messages.some(message=>message.role==='user'&&message.user_id===context.userId&&(message.id===item.acceptedId||message.request_id===item.id||!!item.legacyRunId&&message.run_id===item.legacyRunId))));
+   setOptimistic(previous=>{
+    if(!previous.length)return previous;
+    const next=snapshot.restricted?[]:previous.filter(item=>!snapshot.messages.some(message=>message.role==='user'&&message.user_id===context.userId&&(message.id===item.acceptedId||message.request_id===item.id||!!item.legacyRunId&&message.run_id===item.legacyRunId)));
+    return next.length===previous.length?previous:next;
+   });
 
   }
   const subscription=watchConversation(current,live,{snapshot:apply,error:failed});
   retry.current=()=>{setLiveConnected(false);subscription.retry();};
-  return()=>{active=false;subscription.close();client.current=undefined;};
- },[request,live,context.sessionId,connectionLog]);
+  return()=>{active=false;subscription.close();};
+ },[request,live,context.sessionId,context.userId,connectionLog,enabled,pageVisible]);
  useEffect(()=>{
   if(contextError)connectionLog.failed('context',contextError);else connectionLog.recovered('context');
  },[contextError,connectionLog]);
@@ -56,7 +69,7 @@ export function PlatformPanel({context,contextError,request,live=pageConversatio
   const run=value?.runs.find(item=>item.id===message.run_id);
   const working=message.role==='assistant'&&message.run_id===value?.active_run?.id&&isRunWorking(value?.active_run?.status);
   let mentions:string[]=[];try{mentions=JSON.parse(message.mentions||'[]');}catch{}
-  return {verification:testing.verification,testRun:testing.testRun,id:message.id,userId:message.user_id||undefined,authorName:message.role==='user'?(value?.participants?.find(member=>member.id===message.user_id)?.name||message.user_id||'成员'):'Agent',runId:message.run_id||undefined,taskTitle:working?run?.title:undefined,mentions,canCancel:working&&value?.active_run?.status==='running'&&run?.cancel_supported===1,role:message.role==='user'?'user':'ai',content:metadata?.text??((message.role==='assistant'?runMessageBody(message.body,run):message.body)||(working?'⏳ Agent 正在处理…':message.run_id===value?.active_run?.id&&value.active_run.status==='interrupted'?'任务已中断，请重启需求环境后继续。':'')),comments:metadata?.comments,attachments:metadata?.attachments,contextOrder:metadata?.contextOrder,pending:working,timestamp:message.created_at?Date.parse(message.created_at+'Z'):message.seq};
+  return {systemNotice:message.role==='assistant'&&isCancellationNotice(message.client_context),verification:testing.verification,testRun:testing.testRun,id:message.id,userId:message.user_id||undefined,authorName:message.role==='user'?(value?.participants?.find(member=>member.id===message.user_id)?.name||message.user_id||'成员'):'Agent',runId:message.run_id||undefined,taskTitle:working?run?.title:undefined,mentions,canCancel:working&&value?.active_run?.status==='running'&&run?.cancel_supported===1,role:message.role==='user'?'user':'ai',content:metadata?.text??((message.role==='assistant'?runMessageBody(message.body,run):message.body)||(working?'⏳ Agent 正在处理…':message.run_id===value?.active_run?.id&&value.active_run.status==='interrupted'?'任务已中断，请重启需求环境后继续。':'')),comments:metadata?.comments,attachments:metadata?.attachments,contextOrder:metadata?.contextOrder,pending:working,timestamp:message.created_at?Date.parse(message.created_at+'Z'):message.seq};
  });
  for(const item of optimistic)if(!value?.messages.some(message=>message.id===item.acceptedId||message.request_id===item.id))result.push(item.message);
  if(error)result.push({role:'ai',content:error,timestamp:0});
@@ -91,10 +104,12 @@ export function PlatformPanel({context,contextError,request,live=pageConversatio
   setError('');setPosting(true);try{const bindingId=await browser.prepare();await request('/testing/start?sessionId='+encodeURIComponent(context.sessionId),'POST',{bindingId,goal:verification.goal,proposedChecks:verification.proposedChecks,requestId:requestId()});}catch(error){setError(connectionMessage(error));}finally{setPosting(false);}
  }
  const chat:ChatState={
+  waitingMessageId:pendingMessageBoundary(value),
   uploadAttachment:(file,signal,onProgress)=>attachmentClient.upload(file,signal,onProgress),
   removeAttachment:id=>attachmentClient.remove(id),
   downloadAttachment:file=>attachmentClient.download(file),
   downloadWorkspaceFile:attachmentClient.downloadWorkspaceFile?path=>attachmentClient.downloadWorkspaceFile!(path):undefined,
+  loadWorkspaceImage:attachmentClient.loadWorkspaceImage,
   hasMoreHistory:value?.has_more_history,loadingHistory,historyError,loadOlder,loadMention,
   currentUserId:context.userId,collaborative:true,mentionTarget:mentionTarget?.id,onMentionRead(){if(mentionTarget){try{localStorage.setItem(mentionKey,String(mentionTarget.seq));}catch{}setMentionTarget(undefined);}},
   messages,activityText:isRunWorking(active?.status)?value?.messages.find(m=>m.role==='assistant'&&m.run_id===active?.id)?.body:'',progress:progress.label,activity:progress.tools,sending:posting,blocked:posting||!!connectionIssue||!liveConnected,blockedReason,canCancel:active?.status==='running'&&activeRun?.cancel_supported===1,
@@ -125,5 +140,5 @@ export function PlatformPanel({context,contextError,request,live=pageConversatio
   fixVerification(verification,testRun){void chat.sendMessage(`请根据测试结果修复问题，修复完成后提出复测，暂不自动测试。\n目标：${verification.goal}\n失败分类：${verification.failureCategory||'unknown'}\n修复建议：${verification.fixSuggestion||''}\n失败用例：${JSON.stringify(testRun?.cases?.filter(item=>item.status==='failed')||[])}`);},
  };
  if(context.role==='viewer'||value?.restricted)return <div className="p-4 text-xs text-muted-foreground">当前账号仅可预览页面，群聊仅向编辑成员开放。</div>;
- return <StudioPanel surface={surface} chat={chat} context={context} annotations={annotations} actions={actions} connection={{connected:liveConnected&&!connectionIssue,error:connectionIssue,retry:()=>retry.current()}}/>;
+ return <StudioPanel headerOverlay={headerOverlay} surface={surface} chat={chat} context={context} annotations={annotations} actions={actions} connection={{connected:liveConnected&&!connectionIssue,error:connectionIssue,retry:()=>retry.current()}}/>;
 }

@@ -132,7 +132,7 @@ export function applyConfigToEnv(config: PrismConfig, force = false) {
 
   const permissions = config.permissions;
   const setPermission = (name: string, value: string | boolean | undefined) => {
-    if (value !== undefined && (force || process.env[name] === undefined)) process.env[name] = String(value);
+    if (value !== undefined && ((force&&process.env.PRISM_RUNTIME_CONTAINER!=='true') || process.env[name] === undefined)) process.env[name] = String(value);
   };
   setPermission("PRISM_PERMISSION_FILESYSTEM", permissions?.filesystem);
   setPermission("PRISM_PERMISSION_COMMANDS", permissions?.commands);

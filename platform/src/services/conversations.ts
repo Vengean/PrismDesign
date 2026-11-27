@@ -12,6 +12,7 @@ import {collaborationInstructions,collaborationReply,messageMentions,type Pendin
 import type {WorkspaceAttachment} from './workspace-attachments.js';
 import {projectAuth} from './project-auth.js';
 import {withProjectAuthGate} from './project-auth-storage.js';
+import {queryAgentHistory} from './agent-history.js';
 
 export function messageContext(value:unknown,attachments:WorkspaceAttachment[]=[]):string{
  if(value===undefined&&!attachments.length)return '';
@@ -93,7 +94,7 @@ export async function readConversation(id:string,after=0,eventAfter=0,page:Conve
  const rows=(historical?batch.slice(0,50).reverse():batch) as {seq:number;run_id?:string|null}[];
  const history=historical?{has_more_history:batch.length>50,oldest_message_cursor:rows[0]?.seq||0}:{};
  const latestMention=page.latest&&page.userId?await getDb().prepare(`SELECT id,seq FROM conversation_messages WHERE session_id=? AND ${getDb().dialect==='mysql'?'INSTR(CAST(mentions AS BINARY),CAST(? AS BINARY))':'INSTR(mentions,?)'}>0 ORDER BY seq DESC LIMIT 1`).get(sessionId,JSON.stringify(page.userId)):undefined;
- const eventRows=(await getDb().prepare(`SELECT * FROM conversation_events WHERE session_id=? AND seq>? AND type IN ('run.queued','run.started','run.finished','run.cancelling') ORDER BY seq ${historical?'DESC':'ASC'} LIMIT 200`).all(sessionId,historical?0:eventAfter)) as {seq:number;data:string}[];
+ const eventRows=(await getDb().prepare(`SELECT * FROM conversation_events WHERE session_id=? AND seq>? AND type IN ('run.queued','run.started','run.finished','run.cancelling','run.cancel_rejected') ORDER BY seq ${historical?'DESC':'ASC'} LIMIT 200`).all(sessionId,historical?0:eventAfter)) as {seq:number;data:string}[];
  const events=historical?eventRows.reverse():eventRows;
  const changed=historical?[]:events.filter(event=>(event as {type?:string}).type==='run.finished').map(event=>JSON.parse(event.data).runId as string);
  const activeId=(await activeWorkspaceRun(id))?.id;if(activeId&&(!historical||rows.some(row=>row.run_id===activeId)))changed.push(activeId);
@@ -114,7 +115,8 @@ export async function readConversation(id:string,after=0,eventAfter=0,page:Conve
   const display={...run,title:displayTitle};
   return ['interrupted','failed'].includes(run.status)?{...display,error:conversationError(run.error,run.status==='interrupted')}:display;}));
  const agentState=(await getDb().prepare('SELECT read_cursor,pending_questions,paused FROM conversation_agent_state WHERE session_id=?').get(sessionId)) as {read_cursor:number;pending_questions:string;paused:number}|undefined;
- return {...history,...(page.latest?{latest_mention:latestMention||null}:{}),session_id:sessionId,participants:(await conversationMembers(id)),agent_read_cursor:agentState?.read_cursor||0,pending_questions:JSON.parse(agentState?.pending_questions||'[]'),agent_paused:agentState?.paused===1,messages:rows.map(row=>({...row,...display(row)})),current_messages:currentMessages.map(display),events:[...events.map(e=>({...e,data:JSON.parse(e.data)})),...(working?live.events:[])],runs,active_run:active || null,next_live_cursor:working?live.cursor:'',
+ const pendingMessage=await getDb().prepare("SELECT id,seq FROM conversation_messages WHERE session_id=? AND role='user' AND run_id IS NULL AND seq>? ORDER BY seq LIMIT 1").get(sessionId,agentState?.read_cursor||0);
+ return {...history,...(page.latest?{latest_mention:latestMention||null}:{}),session_id:sessionId,participants:(await conversationMembers(id)),agent_pending_message:pendingMessage||null,agent_read_cursor:agentState?.read_cursor||0,pending_questions:JSON.parse(agentState?.pending_questions||'[]'),agent_paused:agentState?.paused===1,messages:rows.map(row=>({...row,...display(row)})),current_messages:currentMessages.map(display),events:[...events.map(e=>({...e,data:JSON.parse(e.data)})),...(working?live.events:[])],runs,active_run:active || null,next_live_cursor:working?live.cursor:'',
   next_message_cursor:rows.at(-1)?.seq || after,next_event_cursor:events.at(-1)?.seq || eventAfter};
 }
 export async function readConversationForRole(id:string,role:string,after=0,eventAfter=0,page:ConversationPage={}){
@@ -215,14 +217,12 @@ export function createConversationService(transport:AgentTransport=dockerAgentTr
   let eventQueue=Promise.resolve();
   const safe=async (value:string)=>{try{return (await redactRuntimeText(id,value)).slice(0,100000);}catch{return '需求凭证不可读取，请检查平台数据和密钥文件';}};
   try{
-   const history=(await getDb().prepare("SELECT * FROM conversation_messages WHERE session_id=? AND seq<? AND body!='' ORDER BY seq DESC LIMIT 30").all(sessionId,batch[0].seq)) as Post[];
-   const context=history.reverse().map(post=>`[${post.role==='user'?post.user_id:'Agent'}] ${post.body.slice(-3000)}${references(post.client_context)}`).join('\n\n').slice(-32000);
    const incoming=batch.map(post=>({messageId:post.id,seq:post.seq,userId:post.user_id,text:post.body,attachments:references(post.client_context)}));
    const browser=JSON.parse(batch[0].client_context||'{}').browser as {bindingId:string;pageUrl:string;verifyOnly:boolean}|undefined;
-   const prompt=(browser?.verifyOnly?'本轮是用户已确认的真实浏览器测试。只操作绑定页面，不修改源码。定义业务测试用例、执行、采集截图和运行证据、逐条记录结果并提交 verification_complete。测试失败时给出修复建议，等待用户发起修复。\n':'')+collaborationInstructions(members,questions)+'\n\n[历史上下文]\n'+context+'\n\n[本批未读消息]\n'+JSON.stringify(incoming);
+   const prompt=(browser?.verifyOnly?'本轮是用户已确认的真实浏览器测试。只操作绑定页面，不修改源码。定义业务测试用例、执行、采集截图和运行证据、逐条记录结果并提交 verification_complete。测试失败时给出修复建议，等待用户发起修复。\n':'')+collaborationInstructions(members,questions)+'\n\n[聊天历史按需查询]\n历史正文未自动注入。涉及此前决策或缺少上下文时，用 prism_project/chat_history 自行选择 query、limit 和 before。当前需求以外的聊天不可查询。\n\n[本批未读消息]\n'+JSON.stringify(incoming);
    (await getDb().prepare("UPDATE conversation_runs SET status='running' WHERE id=?").run(runId));
    const clientId=browser?`platform-browser-${browser.verifyOnly?'test-':''}${sessionId}-${runId}`:`platform-${sessionId}-${runId}`;
-   await transport.run(id,{runId,clientId,message:prompt,...(browser?{browser:{pageUrl:browser.pageUrl,verifyOnly:browser.verifyOnly,execute:(command:Record<string,unknown>)=>platformBrowser.execute(browser.bindingId,id,batch[0].user_id!,command)}}:{})},event=>{eventQueue=eventQueue.then(async()=>{
+   await transport.run(id,{runId,clientId,message:prompt,projectTools:{execute:command=>{if(command.action!=='chat_history'||command.runId!==runId)throw Error('项目查询作用域无效');return queryAgentHistory(id,runId,batch[0].user_id!,command);}},...(browser?{browser:{pageUrl:browser.pageUrl,verifyOnly:browser.verifyOnly,execute:(command:Record<string,unknown>)=>platformBrowser.execute(browser.bindingId,id,batch[0].user_id!,command)}}:{})},event=>{eventQueue=eventQueue.then(async()=>{
     const data=JSON.parse((await redactRuntimeText(id,JSON.stringify(event.data)))) as Record<string,unknown>;
     if(['verification.proposed','verification.updated','test-run.updated'].includes(event.type)){
      const old=await getDb().prepare("SELECT client_context FROM conversation_messages WHERE run_id=? AND role='assistant'").get(runId);
@@ -252,6 +252,11 @@ export function createConversationService(transport:AgentTransport=dockerAgentTr
    (await getDb().transaction(async ()=>{
     (await getDb().prepare("UPDATE conversation_messages SET body=?,mentions=? WHERE run_id=? AND role='assistant'").run(body,JSON.stringify(reply.mentions),runId));
     (await getDb().prepare("UPDATE conversation_runs SET status=?,decision=?,error=?,updated_at=datetime('now') WHERE id=?").run(status,reply.decision,status==='failed'?(raw.slice(0,8000)||body):'',runId));
+    if(status==='cancelled'){
+     const requested=await getDb().prepare("SELECT data FROM conversation_events WHERE run_id=? AND type='run.cancelling' ORDER BY seq DESC LIMIT 1").get(runId);
+     let userId:string|undefined;try{userId=JSON.parse(String(requested?.data||'{}')).userId;}catch{}
+     if(userId)await getDb().prepare("INSERT OR IGNORE INTO conversation_messages(id,session_id,role,body,client_context) VALUES(?,?,'assistant',?,?)").run('cancel-notice-'+runId,sessionId,`${userId} 取消了本次任务。`,JSON.stringify({systemNotice:{type:'run.cancelled',userId,runId}}));
+    }
     if(status==='failed')(await getDb().prepare('UPDATE conversation_agent_state SET paused=1 WHERE session_id=?').run(sessionId));
     else (await getDb().prepare('UPDATE conversation_agent_state SET read_cursor=MAX(read_cursor,?),pending_questions=? WHERE session_id=?').run(through,JSON.stringify(status==='cancelled'?questions:reply.questions),sessionId));
     (await appendEvent(sessionId,runId,'run.finished',{status}));
@@ -268,13 +273,21 @@ export function createConversationService(transport:AgentTransport=dockerAgentTr
    if(browser&&!browserDetached)await platformBrowser.execute(browser.bindingId,id,batch[0].user_id!,{action:'detach'}).catch(()=>{});
   }
  }
- async function cancel(id:string,runId:string){
+ async function cancel(id:string,runId:string,userId?:string){
+  if(userId){const role=await projectRole((await requirement(id)).project_id,userId);if(!role||role==='viewer')throw Error('只有项目编辑成员可以取消任务');}
   const run=(await getDb().prepare('SELECT * FROM conversation_runs WHERE id=? AND requirement_id=?').get(runId,id)) as {session_id:string;status:string;cancel_supported:number}|undefined;
   if(!run||!['running','cancelling'].includes(run.status))throw Error('任务未在运行');
   if(!run.cancel_supported)throw Error('当前环境的 Agent SDK 暂不支持取消，请更新工作镜像后重试');
+  const claimed=await getDb().transaction(async()=>{
+   const current=await getDb().prepare(`SELECT status FROM conversation_runs WHERE id=? AND requirement_id=?${getDb().dialect==='mysql'?' FOR UPDATE':''}`).get(runId,id);
+   if(current?.status==='cancelling')return false;if(current?.status!=='running')throw Error('任务未在运行');
+   await getDb().prepare("UPDATE conversation_runs SET status='cancelling' WHERE id=?").run(runId);
+   await appendEvent(run.session_id,runId,'run.cancelling',{...(userId?{userId}:{})});return true;
+  })();
+  if(!claimed)return;
   const post=await getDb().prepare("SELECT client_context FROM conversation_messages WHERE run_id=? AND role='user' ORDER BY seq LIMIT 1").get(runId);const browser=JSON.parse(post?.client_context||'{}').browser;
-  await transport.cancel(id,runId,browser?`platform-browser-${browser.verifyOnly?'test-':''}${run.session_id}-${runId}`:`platform-${run.session_id}-${runId}`);
-  (await getDb().prepare("UPDATE conversation_runs SET status='cancelling' WHERE id=? AND status='running'").run(runId));(await appendEvent(run.session_id,runId,'run.cancelling',{}));
+  try{await transport.cancel(id,runId,browser?`platform-browser-${browser.verifyOnly?'test-':''}${run.session_id}-${runId}`:`platform-${run.session_id}-${runId}`);}
+  catch(error){await getDb().prepare("UPDATE conversation_runs SET status='running' WHERE id=? AND status='cancelling'").run(runId);await appendEvent(run.session_id,runId,'run.cancel_rejected',{});throw error;}
  }
  const deleted=(id:string)=>{const timer=timers.get(id);if(timer)clearTimeout(timer);timers.delete(id);owned.delete(id);};
  const changed=(id:string)=>{if(owned.has(id))void schedule(id).catch(error=>console.error("[Conversation scheduler]",error.code||"failed"));};if(options.autowake){workspaceEvents.on('changed',changed);workspaceEvents.on('deleted',deleted);}

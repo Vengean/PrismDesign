@@ -5,11 +5,15 @@ const prefix='/__prism_platform__';
 function platformPage(){return !!document.querySelector('meta[name="prism-platform"]');}
 const uploads=new Map<string,AbortController>();
 chrome.runtime.onMessage.addListener((message,_sender,respond)=>{
- if(!['PRISM_ATTACHMENT_UPLOAD','PRISM_ATTACHMENT_DOWNLOAD','PRISM_ATTACHMENT_REMOVE','PRISM_ATTACHMENT_ABORT','PRISM_WORKSPACE_DOWNLOAD'].includes(message?.type))return;
+ if(!['PRISM_ATTACHMENT_UPLOAD','PRISM_ATTACHMENT_DOWNLOAD','PRISM_ATTACHMENT_REMOVE','PRISM_ATTACHMENT_ABORT','PRISM_WORKSPACE_DOWNLOAD','PRISM_WORKSPACE_IMAGE'].includes(message?.type))return;
  if(message.type==='PRISM_ATTACHMENT_ABORT'){uploads.get(message.requestId)?.abort();respond({success:true});return false;}
  if(!platformPage()||typeof message.sessionId!=='string'){respond({success:false,error:'当前页面或会话不可用'});return false;}
  void(async()=>{
   const client=pageAttachmentClient(message.sessionId);
+  if(message.type==='PRISM_WORKSPACE_IMAGE'){
+   if(typeof message.path!=='string'||message.path.length>2048)throw Error('文件路径无效');
+   const blob=await client.loadWorkspaceImage!(message.path);respond({success:true,data:bytesToBase64(new Uint8Array(await blob.arrayBuffer())),mimeType:blob.type});return;
+  }
   if(message.type==='PRISM_WORKSPACE_DOWNLOAD'){
    if(typeof message.path!=='string'||message.path.length>2048)throw Error('文件路径无效');
    await client.downloadWorkspaceFile!(message.path);respond({success:true});return;
@@ -45,11 +49,11 @@ chrome.runtime.onMessage.addListener((message,_sender,respond)=>{
  if(!platformPage()){respond({platform:false});return false;}
  const path=String(message.path || ''),method=message.method || 'GET';
  if(!((method==='GET' && /^\/(context|conversation|browser\/commands)(\?|$)/.test(path))||(method==='POST'&&/^\/(messages|cancel|browser\/(register|result|unregister)|testing\/start)(\?|$)/.test(path)))){respond({platform:true,error:'不支持的平台操作'});return false;}
- void fetch(prefix+path,{signal:AbortSignal.timeout(path.includes('wait=1')||path.startsWith('/browser/commands')?30000:10000),method,credentials:'same-origin',headers:{'Content-Type':'application/json'},...(message.body===undefined?{}:{body:JSON.stringify(message.body)})}).then(async res=>{let data;try{data=await res.json();}catch{throw Error('平台接口返回了无效数据，请从平台重新打开预览');}respond({platform:true,status:res.status,data,error:res.ok?undefined:data.error || '平台鉴权失败'});}).catch(e=>respond({platform:true,error:e.message}));return true;
+ void fetch(prefix+path,{signal:AbortSignal.timeout(path.includes('wait=1')||path.startsWith('/browser/commands')?30000:10000),method,credentials:'same-origin',headers:{'Content-Type':'application/json'},...(message.body===undefined?{}:{body:JSON.stringify(message.body)})}).then(async res=>{let data;try{data=await res.json();}catch{throw Error('平台接口返回了无效数据，请从平台重新打开预览');}if(res.ok&&path.split('?')[0]==='/context'&&data?.extension)data.extension.downloadUrl=new URL('/__prism_platform__/extension/download',location.origin).href;respond({platform:true,status:res.status,data,error:res.ok?undefined:data.error || '平台鉴权失败'});}).catch(e=>respond({platform:true,error:e.message}));return true;
 });
 window.addEventListener('message',event=>{
  if(isContextInvalidated()||event.source!==window||event.origin!==location.origin||!platformPage())return;
- if(event.data?.type==='PRISM_EXTENSION_PING' && typeof event.data.nonce==='string')window.postMessage({type:'PRISM_EXTENSION_PONG',nonce:event.data.nonce},location.origin);
+ if(event.data?.type==='PRISM_EXTENSION_PING' && typeof event.data.nonce==='string')window.postMessage({type:'PRISM_EXTENSION_PONG',nonce:event.data.nonce,version:chrome.runtime.getManifest?.().version},location.origin);
 });
 // Capture the real click, before any asynchronous work, to preserve Chrome's
 // sidePanel user-gesture requirement. No page message can open the panel alone.

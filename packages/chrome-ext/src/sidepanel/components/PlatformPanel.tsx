@@ -1,3 +1,4 @@
+import {ExtensionUpgradeNotice} from '../../../../ui/src/studio/ExtensionUpgradeNotice';
 import {useNotificationPresence,NotificationToggle} from '../notifications';
 import {useMemo} from 'react';
 import {PlatformPanel as SharedPlatformPanel} from '../../../../ui/src/studio/PlatformPanel';
@@ -6,7 +7,7 @@ import type {AnnotationAdapter} from '../../../../ui/src/studio/annotations';
 import type {PrismMessage} from '../../shared/types';
 import {tabConversationLive} from '../platform-live';
 import {tabAttachmentClient} from '../attachment-client';
-export function PlatformPanel({tabId,context,contextError,onRefreshContext}:{tabId:number;context:PlatformContext;contextError?:string;onRefreshContext?:()=>void}){
+export function PlatformPanel({tabId,context,contextError,onRefreshContext,fitContainer=false}:{tabId:number;context:PlatformContext;contextError?:string;onRefreshContext?:()=>void;fitContainer?:boolean}){
  useNotificationPresence(tabId,context,!contextError);
  const live=useMemo(()=>tabConversationLive(tabId,onRefreshContext),[tabId,context.sessionId,onRefreshContext]);
  const files=useMemo(()=>tabAttachmentClient(tabId,context.sessionId),[tabId,context.sessionId]);
@@ -30,5 +31,5 @@ export function PlatformPanel({tabId,context,contextError,onRefreshContext}:{tab
    if(message.type==='COMMENT_CANCELLED')listener({type:'cancelled'});
   };chrome.runtime.onMessage.addListener(handler);return()=>chrome.runtime.onMessage.removeListener(handler);},
  }),[tabId]);
- return <div className="h-screen"><SharedPlatformPanel surface="extension" actions={<NotificationToggle/>} context={context} contextError={contextError} request={request} live={live} files={files} browser={browser} annotations={annotations}/></div>;
+ return <div className={fitContainer?'h-full':'h-screen'}><SharedPlatformPanel surface="extension" headerOverlay={context.extension?<ExtensionUpgradeNotice version={chrome.runtime.getManifest?.().version} release={context.extension} floating/>:undefined} actions={<NotificationToggle/>} context={context} contextError={contextError} request={request} live={live} files={files} browser={browser} annotations={annotations}/></div>;
 }

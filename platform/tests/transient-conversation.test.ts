@@ -16,7 +16,7 @@ const project=(await createProject('Transient','','owner',[],emptyConfig)),id=cr
 (await getDb().prepare('INSERT INTO requirements(id,project_id,title,description,acceptance,created_by) VALUES(?,?,?,?,?,?)').run(id,project,'R','','','owner'));
 (await getDb().prepare('INSERT INTO project_sessions(id,requirement_id) VALUES(?,?)').run(session,id));
 after(async ()=>{(await getDb().close());rmSync(dir,{recursive:true,force:true});});
-test('progress is live-only, completed history and next-turn context retain just the final reply',async()=>{
+test('progress is live-only and next turns retrieve only durable final replies through the history tool',async()=>{
  let dispatched=false;let finish=()=>{},emit:(type:string,data:Record<string,unknown>)=>void=()=>{};
  const service=createConversationService({async run(_id,input,onEvent){dispatched=true;emit=(type,data)=>onEvent({type,data:{runId:input.runId,...data}});emit('bridge.dispatch',{});emit('run.started',{});await new Promise<void>(resolve=>{finish=resolve;});emit('bridge.result',{success:true,message:'最终结果：修改完成。'});},async cancel(){}});
  const task=(await service.submit(id,'owner','修改按钮','transient-request-01'));const deadline=Date.now()+2000;while(!dispatched){assert.ok(Date.now()<deadline);await new Promise(resolve=>setTimeout(resolve,2));}
@@ -26,8 +26,8 @@ test('progress is live-only, completed history and next-turn context retain just
  assert.equal(((await getDb().prepare("SELECT count(*) AS n FROM conversation_events WHERE run_id=? AND type IN ('message.delta','tool.started')").get(task.runId!)) as {n:number}).n,0);
  finish();await service.wait(task.runId!);
  const complete=(await readConversation(id));assert.equal((complete.current_messages.find((m:any)=>m.role==='assistant') as {body:string}).body,'最终结果：修改完成。');assert.equal(complete.next_live_cursor,'');assert.ok(!JSON.stringify(complete).includes('接着验证'));assert.ok(!JSON.stringify(complete).includes('执行命令'));
- let context='';const next=createConversationService({async run(_id,input,onEvent){context=input.message;onEvent({type:'bridge.result',data:{success:true,message:'第二轮结果'}});},async cancel(){}});
- const nextTask=(await next.submit(id,'owner','继续','transient-request-02'));await next.wait(nextTask.id);assert.ok(context.includes('最终结果'));assert.ok(!context.includes('接着验证'));assert.ok(!context.includes('执行命令'));
+ let context='',history='';const next=createConversationService({async run(_id,input,onEvent){context=input.message;history=JSON.stringify(await input.projectTools!.execute({action:'chat_history',runId:input.runId}));onEvent({type:'bridge.result',data:{success:true,message:'第二轮结果'}});},async cancel(){}});
+ const nextTask=(await next.submit(id,'owner','继续','transient-request-02'));await next.wait(nextTask.id);assert.ok(!context.includes('最终结果'));assert.ok(history.includes('最终结果'));assert.ok(!history.includes('接着验证'));assert.ok(!history.includes('执行命令'));
  // Previously saved tool events remain in the database but are no longer returned as history.
  (await getDb().prepare('INSERT INTO conversation_events(session_id,run_id,type,data) VALUES(?,?,?,?)').run(session,task.runId!,'tool.started',JSON.stringify({runId:task.runId!,label:'旧工具记录'})));
  assert.ok(!JSON.stringify((await readConversation(id))).includes('旧工具记录'));

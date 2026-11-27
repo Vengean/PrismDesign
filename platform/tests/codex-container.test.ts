@@ -31,13 +31,13 @@ const server=http.createServer(async(req,res)=>{
   const name=url.searchParams.get('name')!;containers.add(name);
   specifications.push({name,...JSON.parse(body)});reply(201,{Id:name,Warnings:[]});return;
  }
- const container=route.match(/^\/containers\/([^/]+)\/(json|start|stop)$/);
+ const container=route.match(/^\/containers\/([^/]+)\/(json|start|stop|wait)$/);
  if(container){
   if(!containers.has(container[1])){reply(404,{message:'missing'});return;}
-  if(container[2]==='json')reply(200,{State:{Running:true}});else{res.writeHead(204);res.end();}return;
+  if(container[2]==='json')reply(200,{State:{Running:true}});else if(container[2]==='wait')reply(200,{StatusCode:0});else{res.writeHead(204);res.end();}return;
  }
  const name=route.match(/^\/containers\/([^/]+)$/)?.[1];
- if(req.method==='DELETE'&&name){containers.delete(name);containerDeletes++;res.writeHead(204);res.end();return;}
+ if(req.method==='DELETE'&&name){containers.delete(name);if(specifications.find(s=>s.name===name)?.Entrypoint?.[0]==='/project-entrypoint.sh')containerDeletes++;res.writeHead(204);res.end();return;}
  const volume=route.match(/^\/volumes\/([^/]+)$/)?.[1];
  if(req.method==='DELETE'&&volume){volumes.delete(volume);res.writeHead(204);res.end();return;}
  reply(500,{message:`Unexpected Docker request: ${req.method} ${route}`});
@@ -55,8 +55,9 @@ test('requirements share their project auth volume and deleting one preserves th
  const first=crypto.randomUUID(),second=crypto.randomUUID();
  for(const id of [first,second])await getDb().prepare('INSERT INTO requirements(id,project_id,title,description,acceptance,created_by) VALUES(?,?,?,?,?,?)').run(id,project,'Fixture','','','owner');
  await startRuntime(first);await startRuntime(first);await startRuntime(second);
- assert.equal(specifications.length,3);assert.equal(containerDeletes,1);
- const [initial,recreated,other]=specifications;
+ assert.equal(containerDeletes,1);
+ const runtimes=specifications.filter(s=>s.Entrypoint?.[0]==='/project-entrypoint.sh');assert.equal(runtimes.length,3);
+ const [initial,recreated,other]=runtimes;
  assert.deepEqual(initial.HostConfig.SecurityOpt,['no-new-privileges','label=type:prism_codex.process']);
  assert.deepEqual(initial.HostConfig.CapDrop,['ALL']);
  assert.deepEqual(initial.HostConfig.Binds,recreated.HostConfig.Binds);
@@ -67,6 +68,11 @@ test('requirements share their project auth volume and deleting one preserves th
  assert.ok(volumes.has(authBind.split(':')[0]));
  assert.ok(initial.Env.includes('CODEX_HOME=/project-auth/codex'));
  assert.ok(initial.Env.includes('CODEX_AUTH_MODE=subscription'));
+ assert.ok(initial.Env.includes('PRISM_PERMISSION_MCP=true'));
+ assert.ok(initial.Env.includes('PRISM_RUNTIME_CONTAINER=true'));
+ assert.ok(initial.Env.includes('PRISM_PERMISSION_NETWORK=true'));
+ assert.ok(initial.Env.includes('PRISM_PROJECT_GLOBAL=/workspace/.global/current'));
+ assert.ok(!initial.Env.some((v:string)=>v.startsWith('PRISM_MCP_CONFIGURATION=')));
  assert.ok(initial.Env.includes('PRISM_MODEL_PROXY_URL=http://proxy.example.com:7890'));
  assert.ok(!initial.Env.some((value:string)=>/^(https?_proxy|HTTPS?_PROXY)=/.test(value)));
  assert.ok(!initial.Env.some((value:string)=>value.startsWith('CODEX_API_KEY=')||value.startsWith('ANTHROPIC_API_KEY=')));
@@ -84,7 +90,7 @@ test('Claude subscription persists its login directory and launches the subscrip
  const id=crypto.randomUUID(),offset=specifications.length;
  await getDb().prepare('INSERT INTO requirements(id,project_id,title,description,acceptance,created_by) VALUES(?,?,?,?,?,?)').run(id,project,'Fixture','','','owner');
  await startRuntime(id);await startRuntime(id);
- const [first,second]=specifications.slice(offset);
+ const [first,second]=specifications.slice(offset).filter(s=>s.Entrypoint?.[0]==='/project-entrypoint.sh');
  assert.deepEqual(first.HostConfig.SecurityOpt,['no-new-privileges']);
  assert.deepEqual(first.HostConfig.Binds,second.HostConfig.Binds);
  const bind=first.HostConfig.Binds.find((value:string)=>value.endsWith(':/project-auth'));
@@ -104,4 +110,16 @@ test('Codex SELinux selection is opt-in and rejects malformed types',()=>{
   assert.throws(()=>workspaceSecurityOptions('codex'),/无效/);
   assert.deepEqual(workspaceSecurityOptions('claude'),['no-new-privileges']);
  }finally{if(previous===undefined)delete process.env.PRISM_CODEX_SELINUX_TYPE;else process.env.PRISM_CODEX_SELINUX_TYPE=previous;}
+});
+test('requirements mount shared knowledge read-only separately from credentials and preserve repository guidance',async()=>{
+ const project=await createProject('Knowledge fixture','','owner',[],{
+  ...emptyConfig,repos:[{name:'app',url:'https://git.example.com/app.git',branch:'main'}],gitAuth:{mode:'token',sshPort:22,token:'fixture'},startupScript:'sleep infinity',guidance:'Shared project overview',
+  model:{provider:'codex',authMode:'subscription',baseUrl:'',model:''},knowledge:{documents:[],skills:[],mcpServers:{dataforge:{command:'node',args:['server.js']}}},
+ });
+ const id=crypto.randomUUID(),offset=specifications.length;await getDb().prepare('INSERT INTO requirements(id,project_id,title,description,acceptance,created_by) VALUES(?,?,?,?,?,?)').run(id,project,'Fixture','','','owner');
+ await startRuntime(id);const [helper,runtime]=specifications.slice(offset);
+ assert.ok(helper.HostConfig.Binds[0].endsWith('-knowledge:/project-global'));assert.equal(helper.HostConfig.Binds.length,1);
+ assert.ok(runtime.HostConfig.Binds.some((bind:string)=>bind.endsWith('-knowledge:/workspace/.global:ro')));
+ assert.ok(runtime.HostConfig.Binds.some((bind:string)=>bind.endsWith('-auth:/project-auth')));
+ assert.ok(runtime.Env.includes('PRISM_PROJECT_GLOBAL=/workspace/.global/current'));assert.ok(runtime.Env.includes('PRISM_PLATFORM_TOOLS=true'));assert.ok(!runtime.Env.some((env:string)=>env.startsWith('CLAUDE_MD=')));
 });

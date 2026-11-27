@@ -13,7 +13,8 @@ function builder(version:string,fail=false){let step=0;return async(_command:str
  const output=args[args.indexOf(step===1?'--out-dir':'--outDir')+1];
  if(step===1)write(path.join(output,'server.js'),serverSource);
  else if(step===2)write(path.join(output,'prism-studio-widget.iife.js'),'widget-'+version);
- else {if(fail)throw Error('fixture build failure');write(path.join(output,'index.html'),version);write(path.join(output,'prism-widget.js'),'stale public widget');}
+ else if(step===3){if(fail)throw Error('fixture build failure');write(path.join(output,'index.html'),version);write(path.join(output,'prism-widget.js'),'stale public widget');}
+ else {write(path.join(output,'manifest.json'),JSON.stringify({version:'0.7.0',background:{service_worker:'background.js'},side_panel:{default_path:'sidepanel.html'},content_scripts:[{js:['content.js']}]}));for(const name of ['background.js','sidepanel.html','content.js'])write(path.join(output,name),'fixture');}
 };}
 test('SIT releases isolate assets; failed build retains last usable package',async()=>{
  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'prism-sit-build-'));
@@ -37,7 +38,7 @@ test('running SIT ignores source edits and new builds; explicit restart selects 
  const start=()=>{child=spawn(process.execPath,['scripts/run-mode.mjs','sit'],{cwd:directory,env:{...process.env,DB_PASSWORD:'fixture',SIT_PORT:String(port)},stdio:['ignore','pipe','pipe']});child.stdout?.on('data',data=>logs+=data);child.stderr?.on('data',data=>logs+=data);};
  const stop=async()=>{if(!child||child.exitCode!==null)return;const stopped=new Promise(resolve=>child!.once('exit',resolve));child.kill('SIGTERM');await stopped;};
  try{
-  for(const name of ['run-mode.mjs','sit-release.mjs'])write(path.join(directory,'scripts',name),fs.readFileSync(new URL('../scripts/'+name,import.meta.url),'utf8'));
+  for(const name of ['run-mode.mjs','sit-release.mjs','extension-distribution.mjs'])write(path.join(directory,'scripts',name),fs.readFileSync(new URL('../scripts/'+name,import.meta.url),'utf8'));
   write(path.join(directory,'.env.sit.local'),'DB_PASSWORD=fixture\n');
   await buildSitRelease({directory,run:builder('first')});start();await until(async()=>await get(port)==='first');const pid=child!.pid;
   write(path.join(directory,'src/server.ts'),'invalid modified source');write(path.join(directory,'web/src/App.tsx'),'modified UI');write(path.join(directory,'dist/server.js'),'invalid rebuilt output');write(path.join(directory,'web/dist/index.html'),'shared output');

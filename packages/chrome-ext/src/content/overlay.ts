@@ -91,6 +91,7 @@ function observeHover(element: HTMLElement) {
   // Also track scroll & animation frames for position changes
   const tick = () => {
     if (!hoverTarget) return;
+    if(!hoverTarget.isConnected){hideHoverHighlight();return;}
     syncHoverPosition();
     animFrame = requestAnimationFrame(tick);
   };
@@ -110,6 +111,8 @@ function stopObserving() {
 // ── public API ──
 
 export function initOverlays() {
+  stopObserving();
+  hideSelectHighlight();
   document.getElementById("prism-studio-hover")?.remove();
   document.getElementById("prism-studio-label")?.remove();
   styleEl?.remove();
@@ -141,7 +144,7 @@ export function showHoverHighlight(element: HTMLElement, componentName?: string)
     left: `${rect.left + window.scrollX}px`,
   });
 
-  observeHover(element);
+  if(hoverTarget!==element)observeHover(element);
 }
 
 export function hideHoverHighlight() {

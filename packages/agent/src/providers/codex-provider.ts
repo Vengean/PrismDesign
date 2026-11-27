@@ -3,6 +3,9 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { Codex, type Thread, type ThreadItem } from "@openai/codex-sdk";
 import { codexAuthentication } from './codex-auth.js';
+import {persistCodexImages} from './codex-images.js';
+import {projectMcpServers} from '../project-context.js';
+import {executionPolicy} from '../execution-policy.js';
 import type { AgentProvider, AgentResult, EventCallback } from "../core/types.js";
 
 const SESSION_TIMEOUT = 30 * 60 * 1000;
@@ -12,32 +15,7 @@ interface SessionEntry {
   lastActive: number;
 }
 
-type ProjectMcpServer = {
-  command: string;
-  args?: string[];
-  env?: Record<string, string>;
-  defaultToolsApprovalMode?: "approve" | "prompt" | "deny";
-};
-
-function loadProjectMcpServers(): Record<string, Record<string, unknown>> {
-  if (process.env.PRISM_PERMISSION_MCP !== "true" || !process.env.PRISM_MCP_SERVERS) return {};
-  try {
-    const configured = JSON.parse(process.env.PRISM_MCP_SERVERS) as Record<string, ProjectMcpServer>;
-    return Object.fromEntries(Object.entries(configured).map(([name, server]) => {
-      if (!/^[a-zA-Z0-9_-]+$/.test(name) || !server?.command) throw new Error(`Invalid MCP server: ${name}`);
-      return [name, {
-        command: server.command,
-        args: server.args || [],
-        env: server.env || {},
-        default_tools_approval_mode: server.defaultToolsApprovalMode || process.env.PRISM_MCP_APPROVAL || "prompt",
-      }];
-    }));
-  } catch (error) {
-    throw new Error(`Invalid prism.config mcpServers: ${error instanceof Error ? error.message : String(error)}`);
-  }
-}
-
-export function codexClientOptions() {
+export function codexClientOptions(projectRoot=process.cwd()) {
     // Subscription mode reuses the official CLI login state under CODEX_HOME.
     // API mode supplies a key explicitly; neither mode reads auth.json here.
     const auth=codexAuthentication();
@@ -54,7 +32,7 @@ export function codexClientOptions() {
         "browser@openai-bundled": { enabled: false },
       },
       mcp_servers: {
-        ...loadProjectMcpServers(),
+        ...Object.fromEntries(Object.entries(projectMcpServers(projectRoot)).map(([name,server])=>[name,{...('url'in server?{url:server.url,http_headers:server.headers||{}}:{command:server.command,args:server.args||[],env:server.env||{}}),default_tools_approval_mode:server.defaultToolsApprovalMode||'approve'}])),
         // Codex validates transport even for disabled servers. A complete,
         // inert stdio definition also works in clean container profiles.
         node_repl: { enabled: false, command: process.execPath, args: ['--version'] },
@@ -96,35 +74,19 @@ export class CodexProvider implements AgentProvider {
   readonly name = "codex" as const;
   readonly model = process.env.CODEX_MODEL || "Codex CLI default";
   readonly capabilities = { streaming: true, sessions: true, cancel: true, rollback: false };
-  private codex: Codex | null = null;
   private readonly sessions = new Map<string, SessionEntry>();
   private readonly cleanupTimer: ReturnType<typeof setInterval>;
 
-  constructor(private readonly projectRoot: string) {
+  constructor(private readonly projectRoot: string,private readonly clientFactory=(options:ReturnType<typeof codexClientOptions>)=>new Codex(options)) {
     this.cleanupTimer = setInterval(() => this.cleanupSessions(), 5 * 60 * 1000);
   }
 
-  private getCodex(): Codex {
-    return this.codex ||= new Codex(codexClientOptions());
-  }
-
-  private getThread(clientId: string): Thread {
-    const existing = this.sessions.get(clientId);
-    if (existing) {
-      existing.lastActive = Date.now();
-      return existing.thread;
-    }
-    const thread = this.getCodex().startThread({
-      workingDirectory: this.projectRoot,
-      sandboxMode: process.env.PRISM_PERMISSION_FILESYSTEM === "read-only" ? "read-only" : "workspace-write",
-      approvalPolicy: process.env.PRISM_PERMISSION_COMMANDS === "workspace" ? "never" : "on-request",
-      model: process.env.CODEX_MODEL || undefined,
-      modelReasoningEffort: (process.env.CODEX_REASONING_EFFORT as "minimal" | "low" | "medium" | "high" | "xhigh" | undefined),
-      networkAccessEnabled: process.env.PRISM_PERMISSION_NETWORK === "true",
-      skipGitRepoCheck: true,
-    });
-    this.sessions.set(clientId, { thread, lastActive: Date.now() });
-    return thread;
+  private getThread(clientId:string,readOnly=false):Thread {
+    const existing=this.sessions.get(clientId),client=this.clientFactory(codexClientOptions(this.projectRoot));
+    const options={workingDirectory:this.projectRoot,...executionPolicy(this.projectRoot,readOnly),model:process.env.CODEX_MODEL||undefined,
+      modelReasoningEffort:(process.env.CODEX_REASONING_EFFORT as "minimal"|"low"|"medium"|"high"|"xhigh"|undefined),skipGitRepoCheck:true};
+    const thread=existing?.thread.id?client.resumeThread(existing.thread.id,options):client.startThread(options);
+    this.sessions.set(clientId,{thread,lastActive:Date.now()});return thread;
   }
 
   private toolLabel(item: ThreadItem): { tool: string; label: string } | null {
@@ -143,7 +105,7 @@ export class CodexProvider implements AgentProvider {
 
   private snapshotProjectFiles(): Map<string, string> {
     const snapshot = new Map<string, string>();
-    const ignored = new Set([".git", "node_modules", "dist", "build", ".next", ".turbo", "coverage"]);
+    const ignored = new Set([".git", ".codex", ".global", "node_modules", "dist", "build", ".next", ".turbo", "coverage"]);
     const visit = (directory: string) => {
       let entries: fs.Dirent[];
       try { entries = fs.readdirSync(directory, { withFileTypes: true }); } catch { return; }
@@ -163,14 +125,15 @@ export class CodexProvider implements AgentProvider {
     return snapshot;
   }
 
-  async run(clientId: string, runId: string, message: string, emit: EventCallback, signal?: AbortSignal): Promise<AgentResult> {
+  async run(clientId: string, runId: string, message: string, emit: EventCallback, signal?: AbortSignal,options:{readOnly?:boolean}={}): Promise<AgentResult> {
     const beforeFiles = this.snapshotProjectFiles();
     const filesModified = new Set<string>();
     const messageTextById = new Map<string, string>();
     let finalMessage = "";
     let terminalFailure: string | null = null;
     let streamWarning: string | null = null;
-    const streamed = await this.getThread(clientId).runStreamed(message, { signal });
+    const thread=this.getThread(clientId,options.readOnly);
+    const streamed = await thread.runStreamed(message, { signal });
 
     const emitMessageUpdate = (item: Extract<ThreadItem, { type: "agent_message" }>) => {
       const previous = messageTextById.get(item.id) || "";
@@ -227,6 +190,9 @@ export class CodexProvider implements AgentProvider {
 
     if (terminalFailure) throw new Error(terminalFailure);
     if (!finalMessage && streamWarning) throw new Error(streamWarning);
+    const images=persistCodexImages(this.projectRoot,thread.id,runId);
+    for(const image of images){filesModified.add(image);emit({type:'file.changed',runId,path:image,operation:'create'});}
+    if(images.length)finalMessage+='\n\n'+images.map((image,index)=>`![生成图片 ${index+1}](/workspace/${image})\n\n[下载原图 ${index+1}](/workspace/${image})`).join('\n\n');
     const afterFiles = this.snapshotProjectFiles();
     for (const [filePath, fingerprint] of afterFiles) {
       if (beforeFiles.get(filePath) !== fingerprint) filesModified.add(filePath);

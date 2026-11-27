@@ -10,3 +10,4 @@ dist/
 
 # Immutable local SIT build snapshots
 platform/.sit/
+platform/web/public/downloads/prism-studio-chrome-ext-*.zip

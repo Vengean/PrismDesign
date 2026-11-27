@@ -9,6 +9,7 @@ import { PassThrough } from 'node:stream';
 import { getDb } from './db.js';
 import { projectConfig, resolveProjectAgentRuntime, resolveProjectGitCredential } from './projects.js';
 import { buildAgentEnvironment } from './agent-runtime.js';
+import {prepareProjectKnowledge} from './project-knowledge.js';
 
 export function workspaceSecurityOptions(provider?:string){
  const options=['no-new-privileges'];
@@ -94,6 +95,7 @@ async function prepareRuntime(id:string,editing=false) {
     const securityOptions=workspaceSecurityOptions(agent?.provider);
     (await state(id,editing?'stopped':'preparing'));
     const engine=containerEngine();const name=runtimeResourceNames(id).container;
+    const knowledge=await prepareProjectKnowledge(engine,r.project_id,config.guidance,config.knowledge);
     let container=engine.getContainer(name);
     try {
       const info=await container.inspect();
@@ -108,6 +110,7 @@ async function prepareRuntime(id:string,editing=false) {
     const volume=runtimeResourceNames(id).volume;
     await engine.createVolume({Name:volume,Labels:{'prism.requirement':id}});
     const binds=[`${volume}:/workspace`];
+    binds.push(`${knowledge}:/workspace/.global:ro`);
     if(agent?.authMode==='subscription'){
       const authVolume=projectAuthVolume(r.project_id);
       await engine.createVolume({Name:authVolume,Labels:{'prism.project':r.project_id,'prism.purpose':'project-auth','prism.mode':process.env.PRISM_MODE||'dev'}});
@@ -115,9 +118,9 @@ async function prepareRuntime(id:string,editing=false) {
     }
     container=await engine.createContainer({name,Image:process.env.PRISM_WORKSPACE_IMAGE || 'prism-workspace:latest',
       Entrypoint:editing?['bash','-c',workspaceEditorEntrypoint]:['/project-entrypoint.sh'],WorkingDir:'/workspace',
-      Env:[...(agent?buildAgentEnvironment(agent,{proxyScope:'agent'}):[]),'PRISM_PERMISSION_FILESYSTEM=workspace-write','PRISM_PERMISSION_COMMANDS=workspace','PRISM_PERMISSION_BROWSER=true',`PRISM_REPOS=${JSON.stringify(sourceRepos)}`,`PRISM_BRANCH=${r.branch_name||`prism/requirement-${id}`}`,
+      Env:[...(agent?buildAgentEnvironment(agent,{proxyScope:'agent'}):[]),'PRISM_RUNTIME_CONTAINER=true','PRISM_PERMISSION_FILESYSTEM=workspace-write','PRISM_PERMISSION_COMMANDS=workspace','PRISM_PERMISSION_NETWORK=true','PRISM_PERMISSION_BROWSER=true','PRISM_PERMISSION_MCP=true',`PRISM_REPOS=${JSON.stringify(sourceRepos)}`,`PRISM_BRANCH=${r.branch_name||`prism/requirement-${id}`}`,
         `GIT_ACCESS_TOKEN=${git.mode==='token'?git.secret:''}`,`GIT_SSH_KEY=${git.mode==='ssh'?git.secret:''}`,`GIT_SSH_PORT=${config.gitAuth.sshPort}`,
-        `INIT_SCRIPT=${config.initScript}`,`STARTUP_SCRIPT=${config.startupScript}`,`CLAUDE_MD=${config.guidance}`,`PRISM_PREPARE_TIMEOUT=${process.env.PRISM_PREPARE_TIMEOUT || 1800}`,`PRISM_STARTUP_TIMEOUT=${process.env.PRISM_STARTUP_TIMEOUT || 120}`],
+        `INIT_SCRIPT=${config.initScript}`,`STARTUP_SCRIPT=${config.startupScript}`,'PRISM_PLATFORM_TOOLS=true','PRISM_PROJECT_GLOBAL=/workspace/.global/current',`PRISM_PREPARE_TIMEOUT=${process.env.PRISM_PREPARE_TIMEOUT || 1800}`,`PRISM_STARTUP_TIMEOUT=${process.env.PRISM_STARTUP_TIMEOUT || 120}`],
       Labels:{'prism.requirement':id,'prism.project':r.project_id,'prism.runtime-mode':editing?'edit':'service'},ExposedPorts:{'8090/tcp':{},'8080/tcp':{}},
       HostConfig:{Binds:binds,PortBindings:{'8090/tcp':[{HostIp:'127.0.0.1',HostPort:''}],'8080/tcp':[{HostIp:'127.0.0.1',HostPort:''}]},
         Memory:4*1024*1024*1024,NanoCpus:2e9,PidsLimit:512,CapDrop:['ALL'],SecurityOpt:securityOptions,LogConfig:{Type:'json-file',Config:{'max-size':'10m','max-file':'3'}}}});

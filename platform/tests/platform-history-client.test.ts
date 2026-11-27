@@ -25,3 +25,20 @@ test('network failures retain history and cursors, and recovery appends messages
  const recovered=await client.sync();assert.deepEqual(recovered.messages.map(m=>m.id),['old','new']);assert.equal(recovered.messages[0],initial.messages[0]);assert.match(paths[2],/after=1&/);
  assert.deepEqual((await client.sync()).messages,recovered.messages);
 });
+
+test('passive long-lived conversations keep a recent window and paginate evicted history without losing explicitly loaded messages',async()=>{
+ const row=(seq:number)=>({id:'m'+seq,seq,run_id:'r'+seq,role:'assistant' as const,user_id:null,body:'Message '+seq});
+ const base={session_id:'s',restricted:false,current_messages:[],events:[],active_run:null,next_event_cursor:0};
+ const client=new PlatformClient(context,async<T>(path)=>{
+  assert.match(path,/before=801/);
+  return {...base,messages:Array.from({length:50},(_,i)=>row(751+i)),runs:[],has_more_history:true,oldest_message_cursor:751,next_message_cursor:800} as T;
+ });
+ for(let i=1;i<=1000;i++)client.apply({...base,messages:[row(i)],runs:[{id:'r'+i,status:'succeeded'}],next_message_cursor:i});
+ let value=client.snapshot()!;
+ assert.equal(value.messages.length,200);assert.equal(value.messages[0].seq,801);assert.equal(value.oldest_message_cursor,801);assert.equal(value.has_more_history,true);assert.ok(value.runs.length<=201);
+ value=client.apply({...base,messages:[],runs:[],next_message_cursor:1000,has_more_history:false});
+ assert.equal(value.oldest_message_cursor,801);assert.equal(value.has_more_history,true);
+ value=await client.loadOlder();assert.equal(value.messages.length,250);assert.equal(value.messages[0].seq,751);
+ value=client.apply({...base,messages:[row(1001)],runs:[],next_message_cursor:1001});assert.equal(value.messages.length,251);assert.equal(value.messages[0].seq,751,'explicitly loaded history stays available while reading');
+ assert.equal(client.cursor().after,1001);
+});

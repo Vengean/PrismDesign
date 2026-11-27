@@ -10,7 +10,7 @@ export interface PanelAPI {
   toggle(): void;
   isVisible(): boolean;
   getBody(): HTMLElement;
-  onVisibilityChange(cb: (visible: boolean) => void): void;
+  onVisibilityChange(cb: (visible: boolean) => void): () => void;
   destroy(): void;
 }
 
@@ -155,8 +155,9 @@ export function createPanel(shadowRoot: ShadowRoot, position: "bottom-right" | "
     toggle,
     isVisible: () => visible,
     getBody: () => body,
-    onVisibilityChange: (cb) => visibilityCbs.push(cb),
+    onVisibilityChange: (cb) => {visibilityCbs.push(cb);return()=>{const index=visibilityCbs.indexOf(cb);if(index!==-1)visibilityCbs.splice(index,1);};},
     destroy: () => {
+      visibilityCbs.length=0;
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("resize", updateViewport);
       window.visualViewport?.removeEventListener("resize", updateViewport);

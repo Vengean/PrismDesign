@@ -16,11 +16,12 @@ const {issueRuntimeLink}=await import('../src/services/preview-gateway.js');
 const {default:router}=await import('../src/routes/conversations.js');
 const {default:environmentRouter}=await import('../src/routes/environments.js');
 const {signToken}=await import('../src/middleware/auth.js');
+const {queryAgentHistory}=await import('../src/services/agent-history.js');
 (await initProjectTables());(await initRuntimeTables());(await initConversationTables());(await initConversationTables());
 for(const user of ['editor','viewer','stranger'])(await createUser(user,'unused'));
 const project=(await createProject('Fixture','','owner',[{userId:'editor',role:'editor'},{userId:'viewer',role:'viewer'}],{...emptyConfig}));
 async function demand(){const id=crypto.randomUUID();(await getDb().prepare('INSERT INTO requirements(id,project_id,title,description,acceptance,created_by) VALUES(?,?,?,?,?,?)').run(id,project,'Fixture','','','owner'));(await getDb().prepare('INSERT INTO project_sessions(id,requirement_id) VALUES(?,?)').run(crypto.randomUUID(),id));return id;}
-let done:()=>void=()=>{};let send:(type:string,data:Record<string,unknown>)=>void=()=>{};let input:{runId:string;message:string};let cancelled=false;
+let done:()=>void=()=>{};let send:(type:string,data:Record<string,unknown>)=>void=()=>{};let input:{runId:string;message:string;projectTools?:{execute:(command:Record<string,unknown>)=>Promise<unknown>}};let cancelled=false;
 const service=createConversationService({async run(_id,value,onEvent){input=value;assert.ok((await readConversation(_id)).messages.length);send=(type,data)=>onEvent({type,data});send('bridge.ready',{cancelSupported:true});send('bridge.dispatch',{});send('run.started',{runId:value.runId});await new Promise<void>(resolve=>{done=resolve;});send('bridge.result',{success:true,message:cancelled?'cancelled':'fixture answer',cancelled});},async cancel(){cancelled=true;}});
 const app=express();app.use(express.json());app.use('/api/projects/:id/requirements/:requirementId/conversation',router);
 app.use('/api/projects/:id/requirements/:requirementId/environment',environmentRouter);
@@ -39,7 +40,19 @@ test('persists messages before execution, preserves workspace lock and replays r
  assert.equal((await call(id,'viewer')).status,403);
  assert.equal((await call(id,'viewer','POST','/messages',{message:'denied',requestId:'request-0003'})).status,403);assert.equal((await call(id,'stranger')).status,404);
  done();await service.wait(result.runId!);assert.equal((await activeWorkspaceRun(id)),undefined);assert.ok(((await readConversation(id)).messages as {body:string}[]).some(m=>m.body==='fixture answer'));
- const next=(await service.submit(id,'editor','follow up','request-0004'));await ready(id);assert.match(input.message,/first request/);assert.match(input.message,/fixture answer/);assert.match(input.message,/follow up/);done();await service.wait(next.id);
+ const next=(await service.submit(id,'editor','follow up','request-0004'));await ready(id);
+ assert.ok(!input.message.includes('first request'));assert.ok(!input.message.includes('fixture answer'));assert.match(input.message,/follow up/);
+ const tool=input.projectTools!,runId=input.runId;
+ const history=await tool.execute({action:'chat_history',runId,query:'first request',limit:1}) as {messages:{body:string}[]};
+ assert.equal(history.messages.length,1);assert.equal(history.messages[0].body,'first request');
+ const latest=await tool.execute({action:'chat_history',runId,limit:1}) as {messages:{body:string}[];nextBefore:number;hasMore:boolean};
+ assert.equal(latest.messages[0].body,'fixture answer');assert.equal(latest.hasMore,true);
+ const earlier=await tool.execute({action:'chat_history',runId,before:latest.nextBefore,limit:1}) as {messages:{body:string}[]};assert.equal(earlier.messages[0].body,'first request');
+ await assert.rejects(queryAgentHistory(id,runId,'viewer',{}),/无权/);
+ await assert.rejects(queryAgentHistory(await demand(),runId,'editor',{}),/回合有效/);
+ await assert.rejects(async()=>tool.execute({action:'chat_history',runId:'other',limit:1}),/作用域/);
+ await assert.rejects(async()=>tool.execute({action:'chat_history',runId,limit:51}),/参数/);
+ done();await service.wait(next.id);await assert.rejects(async()=>tool.execute({action:'chat_history',runId,limit:1}),/回合有效/);
 });
 test('cancellation acknowledgement retains lock until Agent execution actually finishes',async()=>{
  const id=(await demand());const result=(await service.submit(id,'editor','cancel request','cancel-0001'));await ready(id);await service.cancel(id,result.runId!);

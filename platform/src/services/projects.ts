@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { getDb } from "./db.js";
 import type { AgentRuntimeConfig } from "./agent-runtime.js";
+import type {ProjectKnowledge} from './project-knowledge.js';
 
 export type ProjectRole = "viewer" | "editor" | "admin";
 export interface GitAuthConfig {
@@ -23,6 +24,7 @@ export interface ProjectConfig {
   initScript: string;
   startupScript: string;
   guidance: string;
+  knowledge?:ProjectKnowledge;
 }
 export const emptyConfig: ProjectConfig = {
   repos: [], gitAuth: { mode: "token", sshPort: 22 }, model: { provider: "", baseUrl: "", model: "" },
@@ -159,6 +161,7 @@ export function normalizeProjectConfig(raw: Omit<Partial<ProjectConfig>, "repos"
     initScript: raw.initScript ?? raw.installCommand ?? "",
     startupScript: raw.services ? migratedStartup : raw.startupScript || "",
     guidance: raw.guidance || "",
+    ...(raw.knowledge?{knowledge:raw.knowledge}:{}),
   };
 }
 

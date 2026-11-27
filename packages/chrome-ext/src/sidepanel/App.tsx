@@ -2,6 +2,8 @@ import {PlatformPanel} from './components/PlatformPanel';
 import {isPlatformContext,type PlatformContext} from '../../../widget/src/platform-client.js';
 import {useCallback,useEffect,useState} from 'react';
 import {Button} from './components/ui/button';
+import {ExtensionUpgradeNotice} from '../../../ui/src/studio/ExtensionUpgradeNotice';
+import {extensionCompatibility} from '../../../ui/src/studio/extension-compatibility';
 
 export function App(){
  const [retryKey,setRetryKey]=useState(0);
@@ -10,6 +12,7 @@ export function App(){
   useEffect(() => {
     let port: chrome.runtime.Port | null = null;
     let unmounted = false;
+    let reconnect:ReturnType<typeof setTimeout>|undefined;
 
     function connectPort() {
       if (unmounted) return;
@@ -17,7 +20,7 @@ export function App(){
         port = chrome.runtime.connect({ name: "prism-sidepanel" });
         port.onDisconnect.addListener(() => {
           port = null;
-          if (!unmounted) setTimeout(connectPort, 500);
+          if (!unmounted) reconnect=setTimeout(connectPort, 500);
         });
       } catch {
         // Extension context gone
@@ -27,6 +30,7 @@ export function App(){
 
     return () => {
       unmounted = true;
+      clearTimeout(reconnect);
       port?.disconnect();
     };
   }, []);
@@ -62,6 +66,11 @@ export function App(){
  const retry=useCallback(()=>{setRetryKey(key=>key+1);},[]);
  if(binding===undefined)return <div className="p-4 text-sm text-muted-foreground">正在识别当前页面…</div>;
  if(binding?.context?.role==='viewer')return <div className="p-4 text-xs text-muted-foreground">当前账号仅可预览页面，群聊仅向编辑成员开放。</div>;
- if(binding?.context)return <PlatformPanel key={`${binding.tabId}:${binding.context.sessionId}`} tabId={binding.tabId} context={binding.context} contextError={binding.error} onRefreshContext={retry}/>;
+ if(binding?.context){
+  const release=binding.context.extension,version=chrome.runtime.getManifest?.().version;
+  const upgrade=release?extensionCompatibility(version,release):undefined;
+  if(release&&upgrade?.required)return <div className="flex h-screen flex-col"><header className="relative z-20 flex h-11 shrink-0 items-center border-b bg-card px-2 text-xs font-semibold">{binding.context.title}<ExtensionUpgradeNotice version={version} release={release} floating/></header><p className="px-4 pt-32 text-xs text-muted-foreground">升级并刷新预览页后重新连接。</p></div>;
+  return <PlatformPanel key={`${binding.tabId}:${binding.context.sessionId}`} tabId={binding.tabId} context={binding.context} contextError={binding.error} onRefreshContext={retry}/>;
+ }
  return <div className="flex h-screen flex-col items-center justify-center gap-3 px-6 text-center"><img src="/icons/icon-48.png" alt="" className="h-10 w-10"/><h1 className="text-sm font-semibold">Prism Studio</h1><p role={binding?.error?'alert':undefined} className="text-xs leading-5 text-muted-foreground">{binding?.error||'请打开平台中的项目预览页面，插件会自动连接当前需求。'}</p><Button size="sm" variant="outline" onClick={retry}>重试</Button></div>;
 }

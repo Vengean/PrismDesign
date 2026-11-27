@@ -4,7 +4,7 @@ English | [简体中文](./README.zh-CN.md)
 
 Prism Studio connects a running web page to its source project and an AI coding agent. Product managers, designers, developers, and testers can describe changes in natural language, attach element-level comments, edit the live page visually, and verify the result in a real browser while all durable changes remain in source control.
 
-For the project-based platform, see [development progress and handoff](./platform/docs/development-progress.md) and [system design](./platform/docs/system-design.md).
+For the project-based platform, see [current development handoff](./platform/docs/development-handoff.md), [development progress](./platform/docs/development-progress.md), and [system design](./platform/docs/system-design.md).
 
 ## What it provides
 
@@ -83,6 +83,8 @@ For persistent provider, model, permission, proxy, browser, and MCP settings, cr
 Platform project settings first select API key or subscription authentication, then Claude, GLM, or Codex SDK. API mode stores the key encrypted; Codex defaults to the official OpenAI API when the service URL is empty. In subscription mode, save the project, then open the administrator-only login terminal. An isolated helper runs `claude auth login`, `codex login --device-auth`, or `glm-acp-agent --setup`; GLM keys are entered in the terminal. Subscription mode accepts an empty model name to use the SDK default.
 
 Each project has one auth volume mounted at `/project-auth`, with `codex/`, `claude/`, and `glm/` subdirectories and separate DEV/SIT names. Requirements keep independent containers and source volumes, while subscription containers share project authorization. Deleting a requirement retains the project auth volume. Existing requirement logins are not automatically migrated: log in once at project level, then recreate existing requirement containers. Terminal sessions support input, resizing, authorization links, and login results; closing them removes helpers without deleting credentials, and terminal content is not logged. Reauthentication and logout are blocked while Agent tasks remain active. Members with requirement terminal access can access shared credentials and must be trusted account users.
+
+Project guidance, documents, Skills, and MCP definitions share a separate read-only volume at `/workspace/.global/current`. Guidance becomes `README.md`; repository instructions and local configuration remain independent. Development Agents can use terminal networking and write their local SDK configuration to initialize services themselves. Configuration changes reload at the end of a model invocation and continue the original task. Existing containers need recreation to acquire these permissions and mounts, while source and project login volumes persist. See [project Agent configuration](./platform/docs/project-agent-context.md).
 
 The optional proxy URL configures an HTTP / HTTPS forward proxy reachable from the container, separately from the model service URL. It applies to the Agent process and subscription login helper; repository cloning, initialization scripts, and business startup scripts use the container's own network settings. Proxy URLs containing credentials are not supported. Restart environments after configuration changes. Before first use, rebuild the workspace image with `pnpm --dir platform build:image`. Login status reflects locally stored CLI authorization; account entitlements and validity are confirmed by actual model requests.
 

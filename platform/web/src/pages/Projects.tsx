@@ -8,6 +8,7 @@ import {FormField} from '@/components/ui/form-field';
 import GitAuthFields from "@/components/GitAuthFields";
 import { Folder, Plus, Search, Sparkles, X } from "lucide-react";
 import SubscriptionLogin from '@/components/SubscriptionLogin';
+import ProjectKnowledgeFields from '@/components/ProjectKnowledgeFields';
 
 export const roleLabels: Record<ProjectRole,string> = { viewer: "查看者", editor: "开发者", admin: "项目管理员" };
 export const initialConfig: ProjectConfig = {
@@ -109,7 +110,8 @@ export function ConfigFields({ value, onChange,projectId,savedModel }: { value: 
       <Field label="初始化脚本（Bash）" hint="首次准备环境时执行，用于安装依赖、代码生成或初始化测试数据；也可手动重跑。"><textarea className={`${fieldClass} min-h-28 font-mono`} placeholder={'pnpm --dir frontend install\npnpm --dir backend install'} value={value.initScript} onChange={e => patch({ initScript: e.target.value })} /></Field>
       <Field label="启动脚本（Bash）" hint="每次启动环境时执行，统一启动前后端；Web 程序应监听 0.0.0.0。多个程序需在后台启动并等待，避免脚本提前退出。"><textarea className={`${fieldClass} min-h-36 font-mono`} placeholder={'pnpm --dir frontend dev --host 0.0.0.0 &\npnpm --dir backend dev &\nwait -n'} value={value.startupScript} onChange={e => patch({ startupScript: e.target.value })} /></Field>
     </section>
-    <Field label="项目说明" hint="工作区没有 CLAUDE.md 时用于创建该文件；已有文件会保留，不随重启覆盖。"><textarea placeholder="告诉 Agent 项目架构、编码规范和测试要求。" className={`${fieldClass} min-h-28`} value={value.guidance} onChange={e => patch({ guidance: e.target.value })} /></Field>
+    <Field label="项目说明" hint="保存为共享 .global 中的 README.md，不覆盖仓库说明。"><textarea placeholder="告诉 Agent 项目架构、编码规范和测试要求。" className={`${fieldClass} min-h-28`} value={value.guidance} onChange={e => patch({ guidance: e.target.value })} /></Field>
+    <ProjectKnowledgeFields value={value.knowledge} onChange={knowledge=>patch({knowledge})}/>
   </div>;
 }
 

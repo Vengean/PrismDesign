@@ -41,9 +41,6 @@ while IFS= read -r spec; do
     git -C "$name" switch "$PRISM_BRANCH"
   fi
 done < <(node -e 'for(const r of JSON.parse(process.env.PRISM_REPOS))console.log(JSON.stringify([r.name,r.url,r.branch]))')
-if [ ! -e /workspace/CLAUDE.md ] && [ ! -L /workspace/CLAUDE.md ]; then
-  printf '%s\n' "${CLAUDE_MD:-}" > /workspace/CLAUDE.md
-fi
 init_hash=$(printf '%s' "$INIT_SCRIPT" | sha256sum | cut -d' ' -f1)
 if [ "$(cat /workspace/.prism-init-hash 2>/dev/null || true)" != "$init_hash" ]; then
   node /runtime-health.cjs initializing

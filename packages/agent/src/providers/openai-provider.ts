@@ -52,7 +52,7 @@ export class OpenAIProvider implements AgentProvider {
     return session;
   }
 
-  private createTools(clientId: string, runId: string, emit: EventCallback, filesModified: Set<string>) {
+  private createTools(clientId: string, runId: string, emit: EventCallback, filesModified: Set<string>,readOnly=false) {
     let sequence = 0;
     const execute = async <T>(name: string, label: string, fn: () => Promise<T>): Promise<T> => {
       const toolCallId = `${runId}-${name}-${++sequence}`;
@@ -137,7 +137,7 @@ export class OpenAIProvider implements AgentProvider {
         }),
       }),
     ];
-    const permittedWorkspaceTools = process.env.PRISM_PERMISSION_FILESYSTEM === "read-only"
+    const permittedWorkspaceTools = readOnly||process.env.PRISM_PERMISSION_FILESYSTEM === "read-only"
       ? workspaceTools.slice(0, 3)
       : workspaceTools;
     if (!this.toolRegistry) return permittedWorkspaceTools;
@@ -159,7 +159,7 @@ export class OpenAIProvider implements AgentProvider {
     ];
   }
 
-  async run(clientId: string, runId: string, message: string, emit: EventCallback, signal?: AbortSignal): Promise<AgentResult> {
+  async run(clientId: string, runId: string, message: string, emit: EventCallback, signal?: AbortSignal,options:{readOnly?:boolean}={}): Promise<AgentResult> {
     if (!process.env.OPENAI_API_KEY) throw new Error("OPENAI_API_KEY 未配置");
     const filesModified = new Set<string>();
     const agent = new Agent({
@@ -172,7 +172,7 @@ export class OpenAIProvider implements AgentProvider {
         "When asked to verify a running web application, use browser tools and base conclusions on observed evidence. Do not generate test scripts unless explicitly requested.",
         `The project root is ${this.projectRoot}.`,
       ].join("\n"),
-      tools: this.createTools(clientId, runId, emit, filesModified),
+      tools: this.createTools(clientId, runId, emit, filesModified,options.readOnly),
     });
 
     const stream = await run(agent, message, { stream: true, session: this.getSession(clientId), signal });

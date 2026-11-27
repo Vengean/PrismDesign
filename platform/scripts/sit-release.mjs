@@ -3,9 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
+import {packageExtension} from './extension-distribution.mjs';
 const platformDirectory=fileURLToPath(new URL('../',import.meta.url));
 const required=['dist/server.js','web/dist/index.html','web/dist/prism-widget.js'];
-function validate(directory){for(const file of required)if(!fs.statSync(path.join(directory,file),{throwIfNoEntry:false})?.isFile())throw Error(`SIT 测试包不完整：缺少 ${file}，请重新运行 pnpm build:sit`);}
+function validate(directory){const meta=path.join(directory,'release.json');const extension=fs.existsSync(meta)?JSON.parse(fs.readFileSync(meta,'utf8')).extension:undefined;for(const file of [...required,...(extension?['web/dist/downloads/'+extension]:[])])if(!fs.statSync(path.join(directory,file),{throwIfNoEntry:false})?.isFile())throw Error(`SIT 测试包不完整：缺少 ${file}，请重新运行 pnpm build:sit`);}
 export function resolveSitRelease(directory=platformDirectory){
  const current=path.join(directory,'.sit/current.json');
  if(!fs.existsSync(current))throw Error('SIT 测试包不存在，请先运行 pnpm build:sit（仓库根目录：pnpm build:sit:platform）');
@@ -30,10 +31,13 @@ export async function buildSitRelease({directory=platformDirectory,run=execute}=
   await run(process.execPath,[path.join(directory,'node_modules/tsup/dist/cli-default.js'),'--out-dir',path.join(staging,'dist')],{cwd:directory,env});
   await run(process.execPath,[path.join(widget,'node_modules/vite/bin/vite.js'),'build','--outDir',path.join(staging,'widget'),'--emptyOutDir'],{cwd:widget,env});
   await run(process.execPath,[path.join(directory,'web/node_modules/vite/bin/vite.js'),'build','--outDir',path.join(staging,'web/dist'),'--emptyOutDir'],{cwd:path.join(directory,'web'),env});
+  const extensionDirectory=path.resolve(directory,'../packages/chrome-ext'),extensionOutput=path.join(staging,'extension');
+  await run(process.execPath,[path.join(extensionDirectory,'node_modules/vite/bin/vite.js'),'build','--outDir',extensionOutput,'--emptyOutDir'],{cwd:extensionDirectory,env});
+  const extension=packageExtension(extensionOutput,path.join(staging,'web/dist/downloads'));fs.rmSync(extensionOutput,{recursive:true,force:true});
   fs.copyFileSync(path.join(staging,'widget/prism-studio-widget.iife.js'),path.join(staging,'web/dist/prism-widget.js'));
   fs.rmSync(path.join(staging,'widget'),{recursive:true,force:true});
   fs.writeFileSync(path.join(staging,'package.json'),JSON.stringify({private:true,type:'module'}));
-  fs.writeFileSync(path.join(staging,'release.json'),JSON.stringify({id,builtAt:new Date().toISOString(),node:process.version},null,2)+'\n');
+  fs.writeFileSync(path.join(staging,'release.json'),JSON.stringify({id,builtAt:new Date().toISOString(),node:process.version,extension},null,2)+'\n');
   validate(staging);fs.renameSync(staging,release);
   const pointer=path.join(root,'.current-'+id+'.json');fs.writeFileSync(pointer,JSON.stringify({id})+'\n');fs.renameSync(pointer,path.join(root,'current.json'));
   console.log(`[sit] 测试包已构建：${id}\n[sit] 运行 pnpm sit 启动；已运行的 SIT 保持原版本，手动重启后切换。`);

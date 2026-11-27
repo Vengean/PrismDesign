@@ -1,6 +1,6 @@
 {
   "name": "@prism-studio-ai/widget",
-  "version": "0.3.9",
+  "version": "0.3.11",
   "type": "module",
   "main": "dist/prism-studio-widget.iife.js",
   "module": "dist/prism-studio-widget.es.js",

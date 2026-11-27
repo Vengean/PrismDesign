@@ -32,16 +32,16 @@ test('workspace stores original binary files and manifests; authorized download 
  await files.remove(id,'owner',file.id);await assert.rejects(files.download(id,'owner',file.id),/清理|不存在/);
 });
 
-test('attachments bind to messages, appear in Agent file context and follow-up context, and replay after cleanup',async()=>{
+test('attachments bind to messages, appear in current context and queried history, and replay after cleanup',async()=>{
  const {id}=(await demand()),file=await files.upload(id,'owner','需求说明.md','text/markdown',Buffer.from('# 需求\n新增一个保存按钮'));
- const prompts:string[]=[];const service=createConversationService({async run(_id,input,emit){prompts.push(input.message);emit({type:'bridge.result',data:{success:true,message:'done'}});},async cancel(){}});
+ const prompts:string[]=[];let history='';const service=createConversationService({async run(_id,input,emit){prompts.push(input.message);if(prompts.length===2)history=JSON.stringify(await input.projectTools!.execute({action:'chat_history',runId:input.runId}));emit({type:'bridge.result',data:{success:true,message:'done'}});},async cancel(){}});
  const prepared=await files.resolve(id,'owner',[file.id]);
  const context={text:'',comments:[],contextOrder:['attachments']};
  const run=(await service.submit(id,'owner','','attachments-0001',context,prepared));await service.wait(run.id);
  const stored=((await readConversation(id)).messages as any[]).find(message=>message.role==='user');
  assert.equal(JSON.parse(stored.client_context).attachments[0].name,'需求说明.md');assert.ok(prompts[0].includes('/workspace/'+file.workspacePath));
  assert.ok(prompts[0].includes('保留附件原件'));
- const next=(await service.submit(id,'owner','把刚才附件中的按钮改为蓝色','attachments-0002'));await service.wait(next.id);assert.ok(prompts[1].includes(file.workspacePath));
+ const next=(await service.submit(id,'owner','把刚才附件中的按钮改为蓝色','attachments-0002'));await service.wait(next.id);assert.ok(!prompts[1].includes(file.workspacePath));assert.ok(history.includes(file.workspacePath));
  await assert.rejects(files.remove(id,'owner',file.id),/不能单独删除/);
  assert.deepEqual((await files.download(id,'editor',file.id)).content,Buffer.from('# 需求\n新增一个保存按钮'));
  rmSync(roots.get(id)!,{recursive:true,force:true});

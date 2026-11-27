@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
+import {extensionCompatibility} from '../../packages/ui/src/studio/extension-compatibility.js';
 
 test('side panel retains the same conversation through reloads and probe failures',async()=>{
  const states:any[]=[];let cursor=0,mounted=false;const effects:Function[]=[];let requests=0,heldResponse:Promise<any>|undefined;
+ const reconnects=new Set<unknown>();
  const listeners=new Map<string,Function>();const event=(name:string)=>({addListener:(fn:Function)=>listeners.set(name,fn),removeListener:()=>{}});
  const tab={id:7,windowId:1,status:'complete'};let response:any={platform:true,data:{sessionId:'s'}},failure=false;
  const Panel=()=>null;
@@ -14,9 +16,9 @@ test('side panel retains the same conversation through reloads and probe failure
  const exports:any={};
  const source=fs.readFileSync(new URL('../../packages/chrome-ext/src/sidepanel/App.tsx',import.meta.url),'utf8');
  vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText,{
-  exports,require:(name:string)=>name==='react'?react:name.includes('jsx-runtime')?{jsx,jsxs:jsx}:name.includes('platform-client')?{isPlatformContext:(value:any)=>!!value?.sessionId}:name.includes('PlatformPanel')?{PlatformPanel:Panel}:{Button:()=>null},
-  chrome:{runtime:{connect:()=>({onDisconnect:event('disconnect'),disconnect(){}})},tabs:{query:async()=>[tab],sendMessage:async()=>{requests++;if(heldResponse){const held=heldResponse;heldResponse=undefined;return held;}if(failure)throw Error('Disconnected');return response;},onActivated:event('activated'),onUpdated:event('updated')}},
-  setInterval:()=>assert.fail('context must not use fixed polling'),setTimeout(){},
+  exports,require:(name:string)=>name==='react'?react:name.includes('jsx-runtime')?{jsx,jsxs:jsx}:name.includes('extension-compatibility')?{extensionCompatibility}:name.includes('platform-client')?{isPlatformContext:(value:any)=>!!value?.sessionId}:name.includes('PlatformPanel')?{PlatformPanel:Panel}:{Button:()=>null},
+  chrome:{runtime:{getManifest:()=>({version:'0.7.0'}),connect:()=>({onDisconnect:event('disconnect'),disconnect(){}})},tabs:{query:async()=>[tab],sendMessage:async()=>{requests++;if(heldResponse){const held=heldResponse;heldResponse=undefined;return held;}if(failure)throw Error('Disconnected');return response;},onActivated:event('activated'),onUpdated:event('updated')}},
+  setInterval:()=>assert.fail('context must not use fixed polling'),setTimeout(fn:Function){const timer={fn};reconnects.add(timer);return timer;},clearTimeout(timer:unknown){reconnects.delete(timer);},
  });
  const render=()=>{cursor=0;return exports.App();};
  render();const cleanups=effects.map(fn=>fn());mounted=true;await new Promise(resolve=>setImmediate(resolve));
@@ -49,7 +51,12 @@ test('side panel retains the same conversation through reloads and probe failure
  for(let i=0;i<5;i++)listeners.get('updated')!(8,{status:'complete'});
  release({platform:true,data:{sessionId:'stale'}});await slow;await new Promise(resolve=>setImmediate(resolve));
  assert.equal(requests,burstBefore+2);assert.equal(render().props.context.sessionId,'other-tab');
- cleanups.forEach(cleanup=>cleanup());const afterUnmount=requests;await poll();assert.equal(requests,afterUnmount);
+ response={platform:true,data:{sessionId:'other-tab',extension:{latestVersion:'0.8.0',minVersion:'0.8.0',downloadUrl:'https://fixture/download'}}};await poll();
+ assert.equal(render().type,'div');assert.equal(render().props.children[1].type,'p','incompatible plugin does not mount the interactive panel');
+ response.data.extension.minVersion='0.7.0';await poll();assert.equal(render().type,Panel,'compatible updates keep the same panel without a wrapper or remount');
+ response.data.extension.latestVersion='0.7.0';await poll();assert.equal(render().type,Panel);
+ listeners.get('disconnect')!();assert.equal(reconnects.size,1);
+ cleanups.forEach(cleanup=>cleanup());assert.equal(reconnects.size,0,'unmount releases a pending reconnect timer');const afterUnmount=requests;await poll();assert.equal(requests,afterUnmount);
 });
 
 test('stream reconnection checks context once without checking every snapshot or heartbeat',()=>{

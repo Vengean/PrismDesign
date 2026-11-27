@@ -219,6 +219,10 @@ export function inspectElement(element: HTMLElement): ElementSelection {
 
   const component = getCachedComponentInfo(element);
   const chainDetail = getCachedChainDetail(element);
+  // The cache is only for these two reads. Do not pin a detached DOM subtree
+  // (and its framework fibers) for the lifetime of the content script.
+  _cachedElement = null;
+  _cachedResult = null;
 
   const rect = element.getBoundingClientRect();
   const tag = element.tagName.toLowerCase();

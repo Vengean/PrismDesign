@@ -59,6 +59,7 @@ export interface DOMTreeNode {
 }
 
 export interface ChatMessage {
+  systemNotice?:boolean;
   id?: string;
   userId?:string;
   authorName?:string;

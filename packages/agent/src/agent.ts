@@ -1,5 +1,6 @@
 import {ReplyBuffer} from './core/reply-buffer.js';
 import {prismBrowserMcp} from './browser-mcp.js';
+import {projectMcpServers,sdkMcpServer} from './project-context.js';
 import {
   unstable_v2_createSession,
   query,
@@ -86,13 +87,25 @@ function getSession(clientId: string): UserSession {
   console.log(`[Claude] 环境变量: BASE_URL=${process.env.ANTHROPIC_BASE_URL || "(default)"}, KEY=${(process.env.ANTHROPIC_API_KEY ? "(configured)" : "(unset)")}...`);
 
   let session:UserSession['session'];
-  if(clientId.startsWith('platform-browser-')){
-    const controller=new AbortController();let prompt='';
+  const shared=Object.fromEntries(Object.entries(projectMcpServers(projectRoot)).map(([name,server])=>[name,sdkMcpServer(server)]));
+  if(clientId.startsWith('platform-')||Object.keys(shared).length){
+    const controller=new AbortController();let prompt='',resumeId:string|undefined;
     const readonly=clientId.startsWith('platform-browser-test-');
-    const options={...sessionOptions,mcpServers:{prism_browser:prismBrowserMcp()},abortController:controller,
-      allowedTools:readonly?['Read','Glob','Grep','mcp__prism_browser__*']:[...allowedTools,'mcp__prism_browser__*'],
+    const mcpServers={...(readonly?Object.fromEntries(Object.entries(shared).filter(([name])=>name==='prism_project')):shared),...(clientId.startsWith('platform-browser-')?{prism_browser:prismBrowserMcp()}:{})};
+    const tools=Object.keys(mcpServers).map(name=>`mcp__${name}__*`);
+    const options={...sessionOptions,mcpServers,abortController:controller,
+      allowedTools:readonly?['Read','Glob','Grep',...tools]:[...allowedTools,...tools],
       disallowedTools:[...(sessionOptions.disallowedTools as string[]),...(readonly?['Write','Edit','Bash']:[])]};
-    session={async send(value){prompt=typeof value==='string'?value:JSON.stringify(value);},stream(){return query({prompt,options:options as any});},close(){controller.abort();}};
+    session={
+      async send(value){prompt=typeof value==='string'?value:JSON.stringify(value);},
+      async *stream(){
+        for await(const message of query({prompt,options:{...options,...(resumeId?{resume:resumeId}:{})} as any})){
+          if('session_id'in message&&typeof message.session_id==='string')resumeId=message.session_id;
+          yield message;
+        }
+      },
+      close(){controller.abort();},
+    };
   }else session=unstable_v2_createSession(sessionOptions as any);
 
   userSession = { session, lastActive: Date.now() };

@@ -47,10 +47,8 @@ if [ -n "$GIT_ACCESS_TOKEN" ]; then
   done
 fi
 
-# 4. Seed project instructions only when the workspace has no CLAUDE.md.
-if [ -n "$CLAUDE_MD" ] && [ ! -e /workspace/CLAUDE.md ] && [ ! -L /workspace/CLAUDE.md ]; then
-  printf '%s\n' "$CLAUDE_MD" > /workspace/CLAUDE.md
-fi
+# 4. Project instructions are supplied through the read-only knowledge mount.
+# Repository instruction files are owned by the repository and are never seeded.
 
 echo "Workspace initialized."
 } 2>&1 | log_main

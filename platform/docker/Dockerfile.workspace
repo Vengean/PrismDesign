@@ -3,7 +3,7 @@ FROM ${NODE_IMAGE}
 
 RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null; \
     sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list 2>/dev/null; true
-RUN apt-get update && apt-get install -y git curl openssh-client && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y git curl openssh-client ca-certificates unzip zip python3 python3-venv && rm -rf /var/lib/apt/lists/*
 RUN npm config set registry https://registry.npmmirror.com/
 RUN npm install -g pnpm@9
 RUN npm install -g @anthropic-ai/claude-code
@@ -33,7 +33,8 @@ RUN useradd -m -s /bin/bash prism && \
     chmod 700 /home/prism/.codex /home/prism/.claude && \
     mkdir -p /project-auth/codex /project-auth/claude /project-auth/glm && \
     chown -R prism:prism /project-auth && chmod 700 /project-auth && \
-    cp -a /home/prism /home/prism-skel
+    cp -a /home/prism /home/prism-skel && \
+    mkdir -p /project-global && chown prism:prism /project-global
 
 # Codex normally exposes apply_patch via a per-session temporary PATH. Provide
 # the official native entry point for login shells and other SDKs as well.

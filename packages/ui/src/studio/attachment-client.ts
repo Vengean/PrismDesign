@@ -4,10 +4,18 @@ export interface AttachmentClient {
  remove:(id:string)=>Promise<void>;
  download:(file:AttachmentMeta)=>Promise<void>;
  downloadWorkspaceFile?:(path:string)=>Promise<void>;
+ loadWorkspaceImage?:(path:string)=>Promise<Blob>;
 }
 export const MAX_ATTACHMENT_SIZE=5*1024*1024,MAX_ATTACHMENT_TOTAL=20*1024*1024,MAX_ATTACHMENTS=5;
 export function bytesToBase64(bytes:Uint8Array){let text='';for(let i=0;i<bytes.length;i+=8192)text+=String.fromCharCode(...bytes.subarray(i,i+8192));return btoa(text);}
 export function base64ToBytes(value:string){const text=atob(value);return Uint8Array.from(text,char=>char.charCodeAt(0));}
+export async function workspaceImageBlob(blob:Blob){
+ if(blob.size>20*1024*1024)throw Error('图片超过 20 MB 预览限制，请下载原图');
+ const bytes=new Uint8Array(await blob.slice(0,12).arrayBuffer());
+ const type=bytes[0]===137&&bytes[1]===80&&bytes[2]===78&&bytes[3]===71?'image/png':bytes[0]===255&&bytes[1]===216?'image/jpeg':String.fromCharCode(...bytes.slice(0,4))==='RIFF'&&String.fromCharCode(...bytes.slice(8,12))==='WEBP'?'image/webp':undefined;
+ if(!type)throw Error('不支持的图片格式，请下载原文件');
+ return new Blob([blob],{type});
+}
 export function saveAttachment(blob:Blob,name:string){const url=URL.createObjectURL(blob),anchor=document.createElement('a');anchor.href=url;anchor.download=name;anchor.style.display='none';document.documentElement.appendChild(anchor);anchor.click();anchor.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 function attachmentUrl(sessionId:string,id?:string){return '/__prism_platform__/attachments'+(id?'/'+encodeURIComponent(id):'')+'?sessionId='+encodeURIComponent(sessionId);}
 async function errorMessage(response:Response){try{return (await response.json()).error||'附件操作失败';}catch{return `附件请求失败 (${response.status})`;}}
@@ -27,5 +35,6 @@ export function pageAttachmentClient(sessionId:string):AttachmentClient{
   async remove(id){const response=await fetch(attachmentUrl(sessionId,id),{method:'DELETE',credentials:'same-origin',signal:AbortSignal.timeout(15000)});if(!response.ok)throw Error(await errorMessage(response));},
   async download(file){saveAttachment(await fetchAttachment(sessionId,file.id),file.name);},
   async downloadWorkspaceFile(path){const response=await fetch('/__prism_platform__/files/download?sessionId='+encodeURIComponent(sessionId)+'&path='+encodeURIComponent(path),{credentials:'same-origin',signal:AbortSignal.timeout(60000)});if(!response.ok)throw Error(await errorMessage(response));saveAttachment(await response.blob(),path.split('/').at(-1)||'download');},
+  async loadWorkspaceImage(path){const response=await fetch('/__prism_platform__/files/download?sessionId='+encodeURIComponent(sessionId)+'&path='+encodeURIComponent(path),{credentials:'same-origin',signal:AbortSignal.timeout(60000)});if(!response.ok)throw Error(await errorMessage(response));return workspaceImageBlob(await response.blob());},
  };
 }

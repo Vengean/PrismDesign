@@ -45,3 +45,32 @@ test('manual retry closes the old subscription and permission-restricted snapsho
  watch.retry();await flush();assert.equal(closed,1);assert.equal(reads,2);
  watch.close();
 });
+
+test('48 hours of idle heartbeats do not create extra reads, subscriptions, messages or events',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});let reads=0,subscriptions=0,closed=0,updates=0;
+ let emit:(event:ConversationStreamEvent)=>void=()=>{};
+ const request:PlatformRequest=async<T>()=>{reads++;return snapshot(1) as T;};
+ const client=new PlatformClient(context,request),watch=watchConversation(client,(_cursor,listener)=>{subscriptions++;emit=listener;return()=>{closed++;};},{snapshot:()=>updates++,error:()=>assert.fail('idle connection must not fail')});
+ await flush();const initialUpdates=updates;
+ for(let tick=0;tick<8640;tick++){
+  emit({type:'heartbeat'});t.mock.timers.tick(20000);
+ }
+ await flush();assert.equal(reads,1);assert.equal(subscriptions,1);assert.equal(updates,initialUpdates);
+ assert.equal(client.snapshot()!.messages.length,1);assert.equal(client.snapshot()!.events.length,0);
+ watch.close();assert.equal(closed,1);
+});
+
+test('repeated idle reconnects keep one subscription and stop retrying after teardown',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});let reads=0,active=0,maxActive=0,closed=0;
+ let emit:(event:ConversationStreamEvent)=>void=()=>{};
+ const request:PlatformRequest=async<T>()=>{reads++;return snapshot(1) as T;};
+ const client=new PlatformClient(context,request),watch=watchConversation(client,(_cursor,listener)=>{emit=listener;maxActive=Math.max(maxActive,++active);return()=>{active--;closed++;};},{snapshot:()=>{},error:()=>{}});
+ await flush();
+ for(let index=0;index<1000;index++){
+  emit({type:'closed',message:'simulated idle transport disconnect'});assert.equal(active,0);
+  t.mock.timers.tick(40000);await flush();assert.equal(active,1);
+ }
+ assert.equal(maxActive,1);assert.equal(reads,1001);assert.equal(client.snapshot()!.messages.length,1);
+ watch.close();assert.equal(closed,1001);assert.equal(active,0);
+ t.mock.timers.tick(7*86400000);await flush();assert.equal(reads,1001);
+});

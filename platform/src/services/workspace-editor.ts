@@ -34,9 +34,6 @@ while IFS= read -r spec; do
   git -C "$name" switch "$PRISM_BRANCH"
  fi
 done < <(node -e 'for(const r of JSON.parse(process.env.PRISM_REPOS))console.log(JSON.stringify([r.name,r.url,r.branch]))')
-if [ ! -e /workspace/CLAUDE.md ] && [ ! -L /workspace/CLAUDE.md ]; then
- printf '%s\n' "${'$'}{CLAUDE_MD:-}" > /workspace/CLAUDE.md
-fi
 if [ -n "${'$'}{PRISM_AGENT_PROVIDER:-}" ]; then
  node /prism-agent/dist/cli.js start --port 9527 --provider "$PRISM_AGENT_PROVIDER" > /var/log/prism/agent.log 2>&1 &
 fi

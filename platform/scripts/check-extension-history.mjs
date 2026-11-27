@@ -16,9 +16,9 @@ const comments=[
  {element:{tagName:'P',domPath:'body > main > section.checkout-summary > p.description',pagePath:'/checkout/order/preview',textContent:'提交后将保留当前配置，并进入下一步确认。'},comment:'说明文字与标题左对齐，行距保持一致。'},
 ];
 messages[38].client_context=JSON.stringify({text:'请调整这两处内容的排版。',comments,contextOrder:['comments']});
-let activeRun=null,runRows=[];
+let activeRun=null,runRows=[],pendingMessage;
 const sockets=new Map();let reads=0,connections=0,heartbeats=0,contextFailure=false;
-const snapshot=after=>({session_id:'s',restricted:false,messages:messages.filter(m=>m.seq>after),current_messages:[...messages.slice(-2),...messages.filter(m=>m.role==='assistant'&&m.run_id==='collaboration-run')],participants:[{id:'u',name:'u'},{id:'alice',name:'alice'},{id:'bob',name:'bob'}],active_run:activeRun,runs:runRows,events:[],next_message_cursor:messages.at(-1)?.seq||after,next_event_cursor:0,next_live_cursor:''});
+const snapshot=after=>({session_id:'s',...(pendingMessage===undefined?{}:{agent_pending_message:pendingMessage}),restricted:false,messages:messages.filter(m=>m.seq>after),current_messages:[...messages.slice(-2),...messages.filter(m=>m.role==='assistant'&&m.run_id==='collaboration-run')],participants:[{id:'u',name:'u'},{id:'alice',name:'alice'},{id:'bob',name:'bob'}],active_run:activeRun,runs:runRows,events:[],next_message_cursor:messages.at(-1)?.seq||after,next_event_cursor:0,next_live_cursor:''});
 const attachedFiles=new Map();let failUpload=true,uploadRequests=0,deletedFiles=0;
 const app=http.createServer(async(req,res)=>{
  const url=new URL(req.url,'http://fixture');
@@ -98,8 +98,13 @@ try {
   messages.push({id:'group-alice',seq:messages.at(-1).seq+1,run_id:null,role:'user',body:'补充：按钮保持蓝色',user_id:'alice'});push();
   const task=page.locator('[data-message-id="group-task"]');await task.getByRole('button',{name:'取消运行',exact:true}).waitFor();await task.getByText('调整按钮样式',{exact:true}).waitFor();await page.screenshot({path:'/tmp/prism-group-running.png'});
   assert.equal(await page.locator('[data-message-id="group-alice"] .message-author').innerText(),'alice');assert.equal(await page.locator('[data-message-id] img, [data-message-id] time').count(),0);assert.equal(await page.locator('[data-message-id="m38"] .message-author').count(),0);assert.equal(await task.getByRole('button',{name:'取消运行',exact:true}).innerText(),'');assert.equal(await task.locator('[data-run-control]').count(),1);assert.equal(await task.locator('button[data-run-control] [data-run-spinner]').count(),1);assert.equal(await task.locator('button[data-run-control] [data-stop-square]').count(),1);const titleSize=await task.locator('.message-task-title').evaluate(el=>getComputedStyle(el).fontSize);assert.equal(titleSize,await page.locator('[data-message-id="group-alice"] .chat-markdown').evaluate(el=>getComputedStyle(el).fontSize));
+  assert.equal(await page.locator('[data-agent-waiting]').count(),1);
+  const ownColor=await page.locator('[data-message-id="m38"] [data-message-bubble]').evaluate(el=>getComputedStyle(el).backgroundColor);
+  const receivedColor=await page.locator('[data-message-id="group-alice"] [data-message-bubble]').evaluate(el=>getComputedStyle(el).backgroundColor);
+  assert.notEqual(ownColor,receivedColor);assert.equal(await task.locator('[data-message-bubble]').evaluate(el=>getComputedStyle(el).backgroundColor),'rgba(0, 0, 0, 0)');
   const input=page.locator('textarea');await input.fill('运行中继续发消息');const send=page.getByRole('button',{name:/^(发送|Send)$/});assert.equal(await send.isEnabled(),true);await send.click();await page.waitForFunction(()=>!document.querySelector('textarea').value);
   await page.waitForTimeout(100);assert.equal(messages.filter(m=>m.body==='运行中继续发消息').length,1);assert.equal(await page.getByRole('button',{name:'取消运行',exact:true}).count(),1);
+  pendingMessage=null;push();await page.locator('[data-agent-waiting]').waitFor({state:'hidden'});
   await page.evaluate(()=>{window.taskNode=document.querySelector('[data-message-id="group-task"]');const list=document.querySelector('[data-chat-viewport]>div');list.scrollTop=300;window.groupScroll=list.scrollTop;});await page.waitForTimeout(100);
   const row=messages.find(m=>m.id==='group-task');row.body='已完成修改。\n\n@u 请确认按钮颜色。';row.mentions=JSON.stringify(['u']);activeRun=null;runRows=[{id:'collaboration-run',status:'succeeded',user_id:'alice',cancel_supported:1}];push();
   await task.getByText('已完成修改。',{exact:true}).waitFor();assert.equal(await task.getByRole('button',{name:'取消运行',exact:true}).count(),0);assert.equal(await task.locator('[data-mention-user="u"]').count(),1);
@@ -131,7 +136,12 @@ try {
   // The next running turn owns its cancellation control; cancelling keeps sending enabled.
   activeRun={id:'collaboration-run',status:'running',user_id:'bob'};runRows=[{...activeRun,title:'调整按钮样式',cancel_supported:1}];row.body='正在执行下一轮';push();await task.getByRole('button',{name:'取消运行',exact:true}).click();await page.waitForTimeout(100);assert.equal(activeRun.status,'cancelling');assert.equal(await task.getByRole('button',{name:'取消运行',exact:true}).count(),0);await input.fill('取消期间也能继续讨论');assert.equal(await send.isEnabled(),true);await input.fill('');
   activeRun=null;runRows=[{id:'collaboration-run',status:'cancelled',user_id:'bob'}];row.body='任务已取消。';push();await task.getByText('任务已取消。',{exact:true}).waitFor();
+  messages.push({id:'cancel-notice',seq:messages.at(-1).seq+1,run_id:null,role:'assistant',body:'bob 取消了本次任务。',client_context:JSON.stringify({systemNotice:{type:'run.cancelled',userId:'bob',runId:'collaboration-run'}})});push();
+  await page.locator('[data-system-notice]').getByText('bob 取消了本次任务。',{exact:true}).waitFor();
+  assert.equal(await page.locator('[data-message-id="cancel-notice"] .message-author').count(),0);
   const widget=await browser.newPage();await widget.addInitScript(()=>localStorage.setItem('prism-panel-visible','1'));await widget.goto(base+'/?widget=1');const root=widget.locator('#prism-studio-widget');await root.locator('[data-message-id="group-task"]').waitFor();assert.equal(await root.locator('[data-message-id="group-alice"] .message-author').innerText(),'alice');assert.equal(await root.locator('[data-message-id] img, [data-message-id] time').count(),0);
+  assert.equal(await root.locator('[data-message-id="group-alice"] [data-message-bubble]').evaluate(el=>getComputedStyle(el).backgroundColor),receivedColor);
+  assert.equal(await root.locator('[data-system-notice]').count(),1);
   await root.getByRole('button',{name:'关闭面板',exact:true}).click();
   const hiddenMention={id:'hidden-mention',seq:messages.at(-1).seq+1,run_id:'hidden',role:'assistant',body:'@u 关闭面板时收到的消息。',mentions:JSON.stringify(['u']),user_id:null};messages.push(hiddenMention);push();
   await root.locator('[data-message-id="hidden-mention"]').waitFor({state:'attached'});await widget.waitForTimeout(100);assert.ok(await widget.evaluate(seq=>Number(localStorage.getItem('prism-mention-seen:s:u'))<seq,hiddenMention.seq));

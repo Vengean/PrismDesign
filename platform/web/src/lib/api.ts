@@ -151,6 +151,7 @@ export interface ProjectConfig {
   initScript: string;
   startupScript: string;
   guidance: string;
+  knowledge?:{documents:{path:string;content:string}[];skills:{name:string;content:string}[];mcpServers:Record<string,{type?:'stdio'|'http';command?:string;args?:string[];env?:Record<string,string>;url?:string;headers?:Record<string,string>}>};
 }
 export interface Project {
   id: string; name: string; description: string; created_by: string; created_at: string;

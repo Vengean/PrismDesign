@@ -1,4 +1,4 @@
-import {base64ToBytes,bytesToBase64,saveAttachment,MAX_ATTACHMENT_SIZE,type AttachmentClient,type AttachmentMeta} from '../../../ui/src/studio/attachment-client.js';
+import {base64ToBytes,bytesToBase64,saveAttachment,workspaceImageBlob,MAX_ATTACHMENT_SIZE,type AttachmentClient,type AttachmentMeta} from '../../../ui/src/studio/attachment-client.js';
 import {requestId} from '../../../ui/src/studio/platform-client.js';
 export function tabAttachmentClient(tabId:number,sessionId:string):AttachmentClient{
  async function call<T>(message:Record<string,unknown>,signal?:AbortSignal):Promise<T>{
@@ -26,6 +26,7 @@ export function tabAttachmentClient(tabId:number,sessionId:string):AttachmentCli
   async remove(id){await call({type:'PRISM_ATTACHMENT_REMOVE',id});},
   async download(file){const result=await call<{data:string}>({type:'PRISM_ATTACHMENT_DOWNLOAD',id:file.id});saveAttachment(new Blob([base64ToBytes(result.data)]),file.name);},
   async downloadWorkspaceFile(path){await call({type:'PRISM_WORKSPACE_DOWNLOAD',path});},
+  async loadWorkspaceImage(path){const result=await call<{data:string}>({type:'PRISM_WORKSPACE_IMAGE',path});return workspaceImageBlob(new Blob([base64ToBytes(result.data)]));},
  };
  return client;
 }

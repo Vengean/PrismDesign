@@ -6,9 +6,18 @@ export const NOTIFICATION_STATE='prism-notification-state-v1';
 export const NOTIFICATION_ENABLED='prism-notifications-enabled';
 const ROUTES='prism-notification-routes-v1';
 type Binding={tab:chrome.tabs.Tab;context:PlatformContext;scope:string};
-type Watcher={binding:Binding;stopped:boolean;attempt:number;port?:chrome.runtime.Port;timer?:ReturnType<typeof setTimeout>;queue:Promise<void>};
+type Watcher={binding:Binding;stopped:boolean;attempt:number;port?:chrome.runtime.Port;timer?:ReturnType<typeof setTimeout>;queue:Promise<void>;notificationKey?:string};
 type Route={tabId:number;windowId:number;url:string;scope:string};
 const scopeOf=(tab:chrome.tabs.Tab,context:PlatformContext)=>JSON.stringify([new URL(tab.url!).origin,context.sessionId,context.userId]);
+// Streaming text and tools cannot create notifications by themselves. Do not
+// queue and persist a whole snapshot on every progress frame.
+function notificationKey(value:PlatformConversation){
+ const messages=[...value.messages,...value.current_messages].map(message=>{
+  let verification;try{verification=JSON.parse(message.client_context||'{}').verification;}catch{}
+  return [message.id,message.mentions,verification?.id,verification?.status];
+ });
+ return JSON.stringify([value.session_id,value.restricted,value.next_message_cursor,value.next_event_cursor,value.active_run,value.runs.map(run=>[run.id,run.status]),value.pending_questions,messages]);
+}
 
 // Only preview-page cookies authenticate requests. Durable state contains cursors
 // and IDs, never Agent credentials or message bodies.
@@ -81,12 +90,17 @@ export function createNotificationService(api:typeof chrome){
    const query=new URLSearchParams({sessionId:context.sessionId,notification:'1',...(checkpoint?{after:String(checkpoint.after),eventAfter:String(checkpoint.eventAfter)}:{latest:'1'})});
    const snapshot=await request<PlatformConversation>(tabId,'/conversation?'+query);
    await consume(watcher,snapshot);if(watcher.stopped)return;
+   watcher.notificationKey=notificationKey(snapshot);
    const port=api.tabs.connect(tabId,{name:'prism-platform-live',frameId:0});watcher.port=port;
    port.onMessage.addListener((event:ConversationStreamEvent)=>{
     if(watcher.stopped||watcher.port!==port)return;
     if(event.type==='closed'){retry();return;}
     watcher.attempt=0;
-    if(event.type==='snapshot')watcher.queue=watcher.queue.then(()=>consume(watcher,event.value)).catch(()=>retry());
+    if(event.type==='snapshot'){
+     const key=notificationKey(event.value);if(watcher.notificationKey===key)return;
+     watcher.notificationKey=key;
+     watcher.queue=watcher.queue.then(()=>consume(watcher,event.value)).catch(()=>{watcher.notificationKey=undefined;retry();});
+    }
    });
    port.onDisconnect.addListener(()=>{if(watcher.port===port)retry();});
    const cursor=checkpoints[binding.scope];
@@ -136,7 +150,7 @@ export function createNotificationService(api:typeof chrome){
     if(Number.isInteger(value?.tabId)&&typeof value.sessionId==='string'&&typeof value.userId==='string')presence.set(port,{tabId:value.tabId,sessionId:value.sessionId,userId:value.userId,visible:value.visible===true});
    });port.onDisconnect.addListener(()=>presence.delete(port));
   });
-  api.tabs.onRemoved.addListener(tabId=>{generations.set(tabId,(generations.get(tabId)||0)+1);detach(tabId);pendingOpen.delete(tabId);});
+  api.tabs.onRemoved.addListener(tabId=>{generations.delete(tabId);detach(tabId);pendingOpen.delete(tabId);});
   api.tabs.onUpdated.addListener((tabId,change)=>{
    if(change.status==='loading'){generations.set(tabId,(generations.get(tabId)||0)+1);detach(tabId);}
    if(change.status==='complete'){

@@ -3,7 +3,7 @@ import type {ToolActivity} from './conversation-progress.js';
 import {observeMentionVisibility,scrollToMention} from './mention-visibility.js';
 import {observeChatViewport} from './chat-viewport.js';
 import React from 'react';
-import { useRef, useEffect, useLayoutEffect, useState } from "react";
+import { useRef, useEffect, useLayoutEffect, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "./button";
 import { Send, Trash2, MessageSquare, MessageSquareText, Loader2, AlertCircle, CheckCircle2, Circle, XCircle, ChevronDown, Paperclip, X, Pencil, FlaskConical, Copy, Download, RefreshCw } from "lucide-react";
@@ -13,6 +13,7 @@ import {MAX_ATTACHMENTS,MAX_ATTACHMENT_SIZE,MAX_ATTACHMENT_TOTAL,type Attachment
 
 import {RunControl} from './RunControl.js';
 import {MessageMarkdown} from './MessageMarkdown.js';
+import {messageBubbleClass,PendingMessagesDivider} from './conversation-presentation.js';
 
 async function copyText(text:string){
  if(navigator.clipboard?.writeText){try{await navigator.clipboard.writeText(text);return;}catch{/* HTTP previews use the selection fallback. */}}
@@ -20,6 +21,7 @@ async function copyText(text:string){
 }
 
 export interface ChatState {
+  waitingMessageId?:string;
   hasMoreHistory?:boolean;loadingHistory?:boolean;historyError?:string;loadOlder?:()=>Promise<boolean|void>;loadMention?:()=>Promise<void>;
   collaborative?:boolean;
   currentUserId?:string;
@@ -29,6 +31,7 @@ export interface ChatState {
   removeAttachment?:AttachmentClient["remove"];
   downloadAttachment?:AttachmentClient["download"];
   downloadWorkspaceFile?:AttachmentClient["downloadWorkspaceFile"];
+  loadWorkspaceImage?:AttachmentClient["loadWorkspaceImage"];
   messages: ChatMessage[];
   sending: boolean;
   progress?:string;
@@ -340,6 +343,11 @@ function ChatView({ scrollToBottomOnSend,readOnly,unavailable,chat, selection, c
   const uploads = useRef(new Map<string,AbortController>());
   const uploadQueue = useRef(Promise.resolve());
   const [attachmentError,setAttachmentError]=useState("");
+  const downloadRef=useRef(chat.downloadWorkspaceFile);
+  downloadRef.current=chat.downloadWorkspaceFile;
+  const downloadWorkspaceFile=useCallback((path:string)=>{
+    void downloadRef.current?.(path).catch(error=>setAttachmentError(error.message));
+  },[]);
   useEffect(()=>()=>{for(const controller of uploads.current.values())controller.abort();uploads.current.clear();},[]);
   const followLatest = useRef(true);
   const historyAnchor=useRef<ChatScrollAnchor|undefined>(undefined),historyRequested=useRef(false),pendingMention=useRef<string|undefined>(undefined);
@@ -474,11 +482,14 @@ function ChatView({ scrollToBottomOnSend,readOnly,unavailable,chat, selection, c
             const own=msg.role==="user"&&(!chat.collaborative||msg.userId===chat.currentUserId);
             const hasContent = Boolean(msg.content.trim());
             const hasContext = msg.role === "user" && Boolean(msg.comments?.length || msg.attachments?.length);
+            if(msg.systemNotice)return <div key={message.id??i} data-message-id={message.id} data-system-notice role="note" className="py-2 text-center text-xs text-muted-foreground">{msg.content}</div>;
             return (
+            <React.Fragment key={message.id??i}>
+            {message.id===chat.waitingMessageId&&<PendingMessagesDivider/>}
             <div key={message.id ?? i} data-message-id={message.id} className={`group flex gap-2 ${own ? "justify-end" : "justify-start"}`}>
               <div className="min-w-0 max-w-[85%] flex-1" style={{flex: '0 1 auto'}}>
               {chat.collaborative&&!own&&<div className="message-author mb-1 text-xs leading-5 text-muted-foreground">{msg.authorName||'Agent'}</div>}
-              <div className={`relative min-w-0 text-sm font-normal leading-relaxed ${hasContent && msg.role === "user" ? "px-3 py-2 rounded-xl" : ""} ${!msg.pending ? "mb-6" : ""} ${msg.verification && (msg.testRun || ["passed", "failed", "inconclusive"].includes(msg.verification.status || "")) ? "mb-7" : ""} ${hasContent && hasContext ? "mt-7" : ""} ${hasContent && msg.role === "user" ? "bg-[#dbeafe] text-[#2563eb] rounded-br-sm" : hasContent ? "text-foreground" : ""}`}>
+              <div data-message-bubble={msg.role==='user'?(own?'sent':'received'):'agent'} className={`relative min-w-0 text-sm font-normal leading-relaxed ${hasContent && msg.role === "user" ? "px-3 py-2 rounded-xl" : ""} ${!msg.pending ? "mb-6" : ""} ${msg.verification && (msg.testRun || ["passed", "failed", "inconclusive"].includes(msg.verification.status || "")) ? "mb-7" : ""} ${hasContent && hasContext ? "mt-7" : ""} ${hasContent && msg.role === "user" ? messageBubbleClass('user',own) : hasContent ? "text-foreground" : ""}`}>
                 {msg.pending&&msg.taskTitle&&<div className="message-task-title mb-1 text-sm font-normal leading-relaxed text-foreground [overflow-wrap:anywhere]">{msg.taskTitle}</div>}
                 {hasContext && <div className={`${hasContent ? (own?"absolute bottom-full right-0 mb-1":"absolute bottom-full left-0 mb-1") : ""} flex max-w-[calc(100vw-32px)] gap-1`}>{(msg.contextOrder?.length ? msg.contextOrder : ["comments", "attachments"]).map((kind) => kind === "comments" ? <CommentTag key={kind} comments={msg.comments || []} align={own?"right":"left"} /> : <AttachmentTag key={kind} files={msg.attachments || []} align={own?"right":"left"} onDownload={chat.downloadAttachment} />)}</div>}
                 {hasContent && (msg.content.startsWith("⏳") ? (
@@ -489,7 +500,7 @@ function ChatView({ scrollToBottomOnSend,readOnly,unavailable,chat, selection, c
                   </div>
                 ) : (
                   <div className="chat-markdown">
-                    <MessageMarkdown onWorkspaceDownload={chat.downloadWorkspaceFile?path=>{void chat.downloadWorkspaceFile!(path).catch(error=>setAttachmentError(error.message));}:undefined} mentions={JSON.stringify(msg.mentions||[])} currentUserId={chat.currentUserId} content={["passed", "failed", "inconclusive"].includes(msg.verification?.status || "")
+                    <MessageMarkdown loadWorkspaceImage={chat.loadWorkspaceImage} onWorkspaceDownload={chat.downloadWorkspaceFile?downloadWorkspaceFile:undefined} mentions={JSON.stringify(msg.mentions||[])} currentUserId={chat.currentUserId} content={["passed", "failed", "inconclusive"].includes(msg.verification?.status || "")
                       ? msg.content.replace(/^\s*测试(?:通过|未通过|结果不确定)[。！!]?\s*/i, "")
                       : msg.content} />
                   </div>
@@ -506,7 +517,7 @@ function ChatView({ scrollToBottomOnSend,readOnly,unavailable,chat, selection, c
                 </div>}
               </div>
               </div>
-            </div>
+            </div></React.Fragment>
           );})}
           </>
         )}

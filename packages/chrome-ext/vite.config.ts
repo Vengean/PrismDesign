@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { resolve } from "path";
 import { readFileSync, writeFileSync, rmSync } from "fs";
+let outputDirectory=resolve(__dirname,'dist');
 
 export default defineConfig({
   base: "./",
@@ -33,8 +34,12 @@ export default defineConfig({
     tailwindcss(),
     {
       name: "fix-chrome-ext-paths",
+      configResolved(config){outputDirectory=resolve(config.root,config.build.outDir);},
       async closeBundle() {
-        const distDir = resolve(__dirname, "dist");
+        const distDir = outputDirectory;
+        const manifest=JSON.parse(readFileSync(resolve(distDir,'manifest.json'),'utf8'));
+        manifest.version=JSON.parse(readFileSync(resolve(__dirname,'package.json'),'utf8')).version;
+        writeFileSync(resolve(distDir,'manifest.json'),JSON.stringify(manifest,null,2)+'\n');
         // Manifest content scripts are classic scripts. Bundle separately so
         // shared WebSocket code never introduces an unsupported ESM import.
         await build({
